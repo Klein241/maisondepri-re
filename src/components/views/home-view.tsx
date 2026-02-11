@@ -30,6 +30,7 @@ import { getDay } from '@/lib/program-data';
 import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
 import { supabase } from '@/lib/supabase';
+import { NotificationBell } from '@/components/notification-bell';
 
 interface HomeViewProps {
     onNavigateToDay: (day: number) => void;
@@ -115,12 +116,15 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                         {user.name.split(' ')[0]}
                     </h1>
                 </div>
-                <Avatar onClick={() => onNavigateTo('profile')} className="w-12 h-12 border-2 border-white/10 cursor-pointer shadow-lg hover:border-purple-500/50 transition-colors">
-                    <AvatarImage src={user.avatar} />
-                    <AvatarFallback className="bg-purple-600/20 text-purple-400 font-bold">
-                        {user.name.charAt(0)}
-                    </AvatarFallback>
-                </Avatar>
+                <div className="flex items-center gap-2">
+                    <NotificationBell />
+                    <Avatar onClick={() => onNavigateTo('profile')} className="w-12 h-12 border-2 border-white/10 cursor-pointer shadow-lg hover:border-purple-500/50 transition-colors">
+                        <AvatarImage src={user.avatar} />
+                        <AvatarFallback className="bg-purple-600/20 text-purple-400 font-bold">
+                            {user.name.charAt(0)}
+                        </AvatarFallback>
+                    </Avatar>
+                </div>
             </header>
 
             <main className="relative z-10 px-6 space-y-6">

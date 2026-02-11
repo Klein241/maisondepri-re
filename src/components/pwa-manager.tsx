@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import { useAppStore } from '@/lib/store';
+import { Download, X, Smartphone } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // VAPID public key - In production, generate your own pair:
 // npx web-push generate-vapid-keys
@@ -24,8 +26,8 @@ export function PWAManager() {
     const [isOnline, setIsOnline] = useState(true);
     const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
     const [isInstalled, setIsInstalled] = useState(false);
-    const [showInstallBanner, setShowInstallBanner] = useState(false);
     const [notifPermission, setNotifPermission] = useState<NotificationPermission>('default');
+    const [dismissed, setDismissed] = useState(false);
     const user = useAppStore(s => s.user);
 
     // Register service worker
@@ -87,7 +89,6 @@ export function PWAManager() {
                 description: 'Synchronisation des données en cours...',
                 duration: 3000,
             });
-            // Trigger background sync
             if (swRegistration && 'sync' in swRegistration) {
                 (swRegistration as any).sync.register('sync-progress').catch(() => { });
                 (swRegistration as any).sync.register('sync-prayers').catch(() => { });
@@ -121,20 +122,24 @@ export function PWAManager() {
             || (window.navigator as any).standalone === true;
         setIsInstalled(isStandalone);
 
+        // Check if user dismissed previously (with 24-hour expiration)
+        const dismissedAt = localStorage.getItem('pwa_install_dismissed');
+        if (dismissedAt) {
+            const elapsed = Date.now() - parseInt(dismissedAt);
+            if (elapsed < 24 * 60 * 60 * 1000) {
+                setDismissed(true);
+            } else {
+                localStorage.removeItem('pwa_install_dismissed');
+            }
+        }
+
         const handleBeforeInstall = (e: Event) => {
             e.preventDefault();
             setDeferredPrompt(e);
-            // Show install banner after 30 seconds
-            setTimeout(() => {
-                if (!isStandalone) {
-                    setShowInstallBanner(true);
-                }
-            }, 30000);
         };
 
         const handleAppInstalled = () => {
             setIsInstalled(true);
-            setShowInstallBanner(false);
             setDeferredPrompt(null);
             toast.success('🎉 Application installée !', {
                 description: 'MAISON DE PRIERE est maintenant sur votre écran d\'accueil.',
@@ -170,23 +175,18 @@ export function PWAManager() {
             if (permission === 'granted') {
                 toast.success('🔔 Notifications activées !');
 
-                // Subscribe to push notifications if VAPID key is set
                 if (VAPID_PUBLIC_KEY && swRegistration) {
                     try {
                         const subscription = await swRegistration.pushManager.subscribe({
                             userVisuallyPrompts: true,
                             applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
                         } as any);
-
-                        // Send subscription to server
-                        // In production, send this to your Supabase Edge Function
                         console.log('[PWA] Push subscription:', JSON.stringify(subscription));
                     } catch (e) {
                         console.warn('[PWA] Push subscription failed:', e);
                     }
                 }
 
-                // Show a test notification
                 if (swRegistration) {
                     swRegistration.showNotification('MAISON DE PRIERE', {
                         body: 'Les notifications sont activées ! Vous recevrez des rappels quotidiens.',
@@ -218,7 +218,7 @@ export function PWAManager() {
         const { outcome } = await deferredPrompt.userChoice;
 
         if (outcome === 'accepted') {
-            setShowInstallBanner(false);
+            setIsInstalled(true);
         }
         setDeferredPrompt(null);
     }, [deferredPrompt]);
@@ -253,18 +253,14 @@ export function PWAManager() {
     useEffect(() => {
         if (!swRegistration || notifPermission !== 'granted') return;
 
-        // Try periodic sync for daily reminders
         const registerPeriodicSync = async () => {
             try {
                 if ('periodicSync' in swRegistration) {
                     await (swRegistration as any).periodicSync.register('daily-reminder', {
-                        minInterval: 24 * 60 * 60 * 1000, // 24 hours
+                        minInterval: 24 * 60 * 60 * 1000,
                     });
-                    console.log('[PWA] Periodic sync registered');
                 }
             } catch (e) {
-                console.warn('[PWA] Periodic sync not supported, using fallback');
-                // Fallback: use setTimeout for next reminder
                 scheduleLocalReminder();
             }
         };
@@ -272,11 +268,10 @@ export function PWAManager() {
         registerPeriodicSync();
     }, [swRegistration, notifPermission]);
 
-    // Fallback reminder using setTimeout
     const scheduleLocalReminder = useCallback(() => {
         const now = new Date();
         const nextReminder = new Date();
-        nextReminder.setHours(8, 0, 0, 0); // 8 AM
+        nextReminder.setHours(8, 0, 0, 0);
 
         if (nextReminder <= now) {
             nextReminder.setDate(nextReminder.getDate() + 1);
@@ -289,7 +284,7 @@ export function PWAManager() {
                 '🙏 Temps de prière',
                 'Commencez votre journée avec la Parole !'
             );
-            scheduleLocalReminder(); // Schedule next one
+            scheduleLocalReminder();
         }, delay);
     }, [sendLocalNotification]);
 
@@ -297,7 +292,6 @@ export function PWAManager() {
     useEffect(() => {
         if (!user || notifPermission !== 'default') return;
 
-        // Wait 10 seconds after login to ask
         const timer = setTimeout(() => {
             requestNotificationPermission();
         }, 10000);
@@ -305,7 +299,7 @@ export function PWAManager() {
         return () => clearTimeout(timer);
     }, [user, notifPermission, requestNotificationPermission]);
 
-    // Expose PWA functions globally for other components
+    // Expose PWA functions globally
     useEffect(() => {
         (window as any).__pwa = {
             installApp,
@@ -314,13 +308,19 @@ export function PWAManager() {
             sendLocalNotification,
             isOnline,
             isInstalled,
-            showInstallBanner,
             notifPermission,
             swRegistration,
         };
-    }, [installApp, requestNotificationPermission, queueOfflineAction, sendLocalNotification, isOnline, isInstalled, showInstallBanner, notifPermission, swRegistration]);
+    }, [installApp, requestNotificationPermission, queueOfflineAction, sendLocalNotification, isOnline, isInstalled, notifPermission, swRegistration]);
 
-    // Render: Install banner + Offline indicator
+    const handleDismiss = () => {
+        setDismissed(true);
+        localStorage.setItem('pwa_install_dismissed', Date.now().toString());
+    };
+
+    // Show install button? Only when not installed, not dismissed, and prompt is available or general fallback
+    const showInstallButton = !isInstalled && !dismissed;
+
     return (
         <>
             {/* Offline indicator bar */}
@@ -330,34 +330,42 @@ export function PWAManager() {
                 </div>
             )}
 
-            {/* PWA Install Banner */}
-            {showInstallBanner && !isInstalled && (
-                <div className="fixed bottom-20 left-4 right-4 z-[9998] bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-4 shadow-2xl shadow-indigo-500/30 border border-indigo-500/30 animate-in slide-in-from-bottom-5">
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
-                            <span className="text-2xl">🙏</span>
-                        </div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-white font-bold text-sm">Installer MAISON DE PRIERE</p>
-                            <p className="text-white/70 text-xs mt-0.5">Accédez rapidement depuis votre écran d'accueil</p>
-                        </div>
-                        <div className="flex flex-col gap-1.5 shrink-0">
-                            <button
-                                onClick={installApp}
-                                className="bg-white text-indigo-700 font-bold text-xs px-4 py-2 rounded-xl hover:bg-white/90 transition-colors"
-                            >
-                                Installer
-                            </button>
-                            <button
-                                onClick={() => setShowInstallBanner(false)}
-                                className="text-white/60 text-[10px] hover:text-white/80"
-                            >
-                                Plus tard
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            {/* Fixed PWA Install Button - Bottom right, always visible */}
+            <AnimatePresence>
+                {showInstallButton && (
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.8, y: 20 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: 20 }}
+                        transition={{ delay: 2, duration: 0.4 }}
+                        className="fixed bottom-24 right-4 z-[9998] flex flex-col items-end gap-2"
+                    >
+                        {/* Dismiss button */}
+                        <button
+                            onClick={handleDismiss}
+                            className="h-6 w-6 rounded-full bg-white/10 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/20 transition-colors"
+                        >
+                            <X className="h-3 w-3" />
+                        </button>
+
+                        {/* Install button */}
+                        <motion.button
+                            onClick={installApp}
+                            whileHover={{ scale: 1.05 }}
+                            whileTap={{ scale: 0.95 }}
+                            className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-2xl shadow-indigo-500/30 border border-indigo-500/30 hover:shadow-indigo-500/50 transition-shadow"
+                        >
+                            <div className="h-9 w-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
+                                <Download className="h-5 w-5" />
+                            </div>
+                            <div className="text-left">
+                                <p className="text-xs font-bold leading-tight">Installer l&apos;app</p>
+                                <p className="text-[10px] text-white/60 leading-tight">Accès rapide</p>
+                            </div>
+                        </motion.button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </>
     );
 }

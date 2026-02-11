@@ -27,6 +27,7 @@ import { PrayerGroupManager } from "@/components/community/prayer-group-manager"
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { GroupCallManager } from "@/components/community/group-call-manager";
 import { FriendSystem } from "@/components/community/friend-system";
+import { NotificationBell } from "@/components/notification-bell";
 import { IncomingCallOverlay, useCallListener, DMCallButtons } from "@/components/community/call-system";
 import { EventCalendarButton } from "@/components/community/event-calendar";
 import { cn } from "@/lib/utils";
@@ -1234,6 +1235,7 @@ export function CommunityView() {
                                     </h1>
                                     <p className="text-slate-500 text-xs font-medium mt-0.5">Prions ensemble</p>
                                 </div>
+                                <NotificationBell />
                             </div>
                             {/* Action Buttons - horizontal scroll on mobile */}
                             <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
@@ -1802,7 +1804,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh]"
+                        className="relative z-10 flex flex-col h-[100dvh] pb-20"
                     >
                         <header className="px-6 pt-12 pb-4 border-b border-white/5">
                             <div className="flex items-center gap-4 mb-4">
@@ -1847,7 +1849,7 @@ export function CommunityView() {
                         {/* Group Messages */}
                         <div
                             ref={chatScrollRef}
-                            className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
+                            className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-4"
                         >
                             {loadingGroupMessages ? (
                                 <div className="flex justify-center py-12">

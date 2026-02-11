@@ -73,6 +73,35 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
 
     useEffect(() => {
         loadData();
+
+        // Subscribe to new user profiles in realtime
+        const profileSub = supabase
+            .channel(`new_profiles_${Date.now()}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'profiles',
+            }, (payload) => {
+                const newUser = payload.new as UserProfile;
+                if (newUser.id !== userId) {
+                    setAllUsers(prev => {
+                        if (prev.some(u => u.id === newUser.id)) return prev;
+                        return [...prev, {
+                            id: newUser.id,
+                            full_name: newUser.full_name,
+                            avatar_url: newUser.avatar_url,
+                            city: newUser.city,
+                            church: newUser.church,
+                            is_online: true,
+                        }].sort((a, b) => (a.full_name || '').localeCompare(b.full_name || ''));
+                    });
+                }
+            })
+            .subscribe();
+
+        return () => {
+            profileSub.unsubscribe();
+        };
     }, [userId]);
 
     const loadData = async () => {
