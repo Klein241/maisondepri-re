@@ -1133,7 +1133,7 @@ export function CommunityView() {
     const { incomingCall, acceptCall, rejectCall } = useCallListener(user?.id);
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white overflow-hidden">
+        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white overflow-hidden pb-0">
             {/* Incoming Call Overlay */}
             <AnimatePresence>
                 {incomingCall && (
@@ -1159,54 +1159,45 @@ export function CommunityView() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="relative z-10 flex flex-col h-[100dvh]"
+                        className="relative z-10 flex flex-col h-[100dvh] pb-20"
                     >
                         {/* Header */}
-                        <header className="px-6 pt-12 pb-4">
-                            <div className="flex items-center justify-between mb-6">
-                                <div>
-                                    <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
+                        <header className="px-4 pt-10 pb-3">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="shrink-0">
+                                    <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
                                         Communauté
                                     </h1>
-                                    <p className="text-slate-500 text-sm font-medium mt-1">Prions ensemble</p>
+                                    <p className="text-slate-500 text-xs font-medium mt-0.5">Prions ensemble</p>
                                 </div>
-                                <div className="flex gap-2">
-                                    {/* Bouton Trouver un Ami */}
-                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                        <Button
-                                            className="rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 shadow-lg shadow-pink-600/30 border-0 gap-2 px-3"
-                                            onClick={() => setViewState('friends')}
-                                        >
-                                            <UserPlus className="h-4 w-4" />
-                                            <span className="text-xs font-bold">Amis</span>
-                                        </Button>
-                                    </motion.div>
-                                    {/* Bouton Groupes de Prière */}
-                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                        <Button
-                                            className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-600/30 border-0 gap-2 px-3"
-                                            onClick={() => {
-                                                loadGroups();
-                                                setViewState('groups');
-                                            }}
-                                        >
-                                            <Users className="h-4 w-4" />
-                                            <span className="text-xs font-bold">Groupes</span>
-                                        </Button>
-                                    </motion.div>
-                                    {/* Bouton Messages Privés */}
-                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                        <Button
-                                            className="rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 border-0 gap-2 px-3"
-                                            onClick={() => setViewState('messages')}
-                                        >
-                                            <MessageCircle className="h-4 w-4" />
-                                            <span className="text-xs font-bold">Messages</span>
-                                        </Button>
-                                    </motion.div>
-                                    {/* Bouton Événements */}
-                                    <EventCalendarButton />
-                                </div>
+                            </div>
+                            {/* Action Buttons - horizontal scroll on mobile */}
+                            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
+                                <Button
+                                    size="sm"
+                                    className="shrink-0 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                    onClick={() => setViewState('friends')}
+                                >
+                                    <UserPlus className="h-3.5 w-3.5" />
+                                    Amis
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                    onClick={() => { loadGroups(); setViewState('groups'); }}
+                                >
+                                    <Users className="h-3.5 w-3.5" />
+                                    Groupes
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    className="shrink-0 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                    onClick={() => setViewState('messages')}
+                                >
+                                    <MessageCircle className="h-3.5 w-3.5" />
+                                    Messages
+                                </Button>
+                                <EventCalendarButton />
                             </div>
 
                             {/* Tab Navigation */}
@@ -1330,8 +1321,8 @@ export function CommunityView() {
                                 </TabsContent>
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
-                                <TabsContent value="chat" className="mt-0 flex flex-col flex-1 min-h-0 overflow-hidden -mx-6">
-                                    <div className="flex-1 relative" style={{ height: 'calc(100vh - 360px)' }}>
+                                <TabsContent value="chat" className="mt-0 flex flex-col flex-1 min-h-0 overflow-hidden -mx-4">
+                                    <div className="flex-1 relative" style={{ height: 'calc(100dvh - 320px)' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
@@ -1481,7 +1472,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-screen"
+                        className="relative z-10 flex flex-col h-[100dvh] pb-20"
                     >
                         <header className="px-6 pt-12 pb-4">
                             <div className="flex items-center justify-between mb-6">
@@ -1747,7 +1738,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-screen"
+                        className="relative z-10 flex flex-col h-[100dvh]"
                     >
                         <header className="px-6 pt-12 pb-4 border-b border-white/5">
                             <div className="flex items-center gap-4 mb-4">
@@ -1792,7 +1783,7 @@ export function CommunityView() {
                         {/* Group Messages */}
                         <div
                             ref={chatScrollRef}
-                            className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+                            className="flex-1 overflow-y-auto px-4 py-4 space-y-3"
                         >
                             {loadingGroupMessages ? (
                                 <div className="flex justify-center py-12">
@@ -1819,7 +1810,8 @@ export function CommunityView() {
                         </div>
 
                         {/* Message Input - Enhanced */}
-                        {selectedGroup.isOpen && (
+                        {/* Message input - always visible for group members */}
+                        {(
                             <div className="px-4 py-3 border-t border-white/10 bg-slate-900/80">
                                 {/* Emoji Picker */}
                                 <div className="relative">
@@ -1953,7 +1945,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-screen bg-[#0F1219]"
+                        className="relative z-10 flex flex-col h-[100dvh] bg-[#0F1219]"
                     >
                         <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
                             <div className="flex items-center justify-between mb-4">
@@ -2197,7 +2189,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-screen"
+                        className="relative z-10 flex flex-col h-[100dvh]"
                     >
                         <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
                             <div className="flex items-center gap-3">
@@ -2258,7 +2250,7 @@ export function CommunityView() {
                         {/* Messages */}
                         <div
                             ref={chatScrollRef}
-                            className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+                            className="flex-1 overflow-y-auto px-4 py-3 space-y-3"
                         >
                             {loadingDMs ? (
                                 <div className="flex justify-center py-12">

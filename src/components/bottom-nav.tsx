@@ -20,8 +20,8 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     ] as const;
 
     return (
-        <div className="fixed bottom-6 left-0 right-0 z-50 px-6 flex justify-center pointer-events-none">
-            <div className="glass-card flex items-center p-2 gap-1 pointer-events-auto bg-[#0F172A]/90 backdrop-blur-xl border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.5)] rounded-2xl w-full max-w-sm justify-between px-3">
+        <div className="fixed bottom-0 left-0 right-0 z-50 px-3 pb-[env(safe-area-inset-bottom,0px)] bg-gradient-to-t from-[#0B0E14] via-[#0B0E14]/95 to-transparent pt-3">
+            <div className="glass-card flex items-center p-1.5 gap-0.5 bg-[#0F172A]/95 backdrop-blur-xl border-white/10 shadow-[0_-4px_24px_rgba(0,0,0,0.5)] rounded-2xl w-full max-w-sm mx-auto justify-between px-2">
                 {navItems.map((item) => {
                     const isActive = activeTab === item.id;
                     return (
