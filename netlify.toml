@@ -6,15 +6,8 @@
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
-
-# Redirects for SPA
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-  conditions = {Role = ["admin"]}
+# Netlify auto-detects and uses the Next.js Runtime
+# No need to manually specify @netlify/plugin-nextjs
 
 # Headers for security and performance
 [[headers]]
