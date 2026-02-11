@@ -859,19 +859,66 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
         loadMessages('group', group.id);
     };
 
-    // Start new conversation
+    // Start new conversation - creates it in Supabase
     const startNewConversation = async (targetUser: ChatUser) => {
-        const conv: Conversation = {
-            id: targetUser.id,
-            participant: targetUser,
-            lastMessage: '',
-            lastMessageAt: new Date().toISOString(),
-            unreadCount: 0
-        };
-        setSelectedConversation(conv);
-        setView('conversation');
-        setShowNewConversation(false);
-        setMessages([]);
+        if (!user) return;
+        try {
+            let convId: string | null = null;
+
+            // Try RPC first
+            const { data: rpcData, error: rpcError } = await supabase
+                .rpc('get_or_create_conversation', { other_user_id: targetUser.id });
+
+            if (!rpcError && rpcData) {
+                convId = rpcData;
+            } else {
+                // Fallback: check if conversation exists
+                const { data: existing } = await supabase
+                    .from('conversations')
+                    .select('id')
+                    .or(`and(participant1_id.eq.${user.id},participant2_id.eq.${targetUser.id}),and(participant1_id.eq.${targetUser.id},participant2_id.eq.${user.id})`)
+                    .maybeSingle();
+
+                if (existing) {
+                    convId = existing.id;
+                } else {
+                    // Create new conversation
+                    const { data: newConv, error: insertError } = await supabase
+                        .from('conversations')
+                        .insert({
+                            participant1_id: user.id,
+                            participant2_id: targetUser.id,
+                            last_message_at: new Date().toISOString()
+                        })
+                        .select('id')
+                        .single();
+
+                    if (insertError) throw insertError;
+                    convId = newConv?.id || null;
+                }
+            }
+
+            if (!convId) {
+                toast.error('Impossible de créer la conversation');
+                return;
+            }
+
+            const conv: Conversation = {
+                id: convId,
+                participantId: targetUser.id,
+                participant: targetUser,
+                lastMessage: '',
+                lastMessageAt: new Date().toISOString(),
+                unreadCount: 0
+            };
+            setSelectedConversation(conv);
+            setView('conversation');
+            setShowNewConversation(false);
+            setMessages([]);
+        } catch (e) {
+            console.error('Error creating conversation:', e);
+            toast.error('Erreur lors de la création de la conversation');
+        }
     };
 
     const getInitials = (name: string | null) => {

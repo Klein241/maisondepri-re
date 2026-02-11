@@ -520,7 +520,7 @@ export function CommunityView() {
         if (!newMessage.trim() || !user || !selectedConversation) return;
 
         const messageContent = newMessage.trim();
-        const tempId = `temp_${Date.now()}`;
+        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
         // Optimistic update: add message to UI immediately
         const optimisticMessage = {
@@ -530,18 +530,18 @@ export function CommunityView() {
             content: messageContent,
             type: 'text',
             created_at: new Date().toISOString(),
-            sender: { id: user.id, full_name: 'Moi', avatar_url: null }
+            sender: { id: user.id, full_name: user.name || 'Moi', avatar_url: user.avatar || null }
         };
 
         setDirectMessages(prev => [...prev, optimisticMessage]);
         setNewMessage('');
 
-        // Scroll to bottom
-        setTimeout(() => {
+        // Scroll to bottom immediately
+        requestAnimationFrame(() => {
             if (chatScrollRef.current) {
                 chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
             }
-        }, 50);
+        });
 
         try {
             const { data, error } = await supabase
@@ -549,7 +549,8 @@ export function CommunityView() {
                 .insert({
                     conversation_id: selectedConversation.id,
                     sender_id: user.id,
-                    content: messageContent
+                    content: messageContent,
+                    type: 'text'
                 })
                 .select()
                 .single();
@@ -559,7 +560,10 @@ export function CommunityView() {
             // Replace temp message with real one from server
             if (data) {
                 setDirectMessages(prev =>
-                    prev.map(m => m.id === tempId ? { ...m, id: data.id, created_at: data.created_at } : m)
+                    prev.map(m => m.id === tempId
+                        ? { ...data, sender: optimisticMessage.sender }
+                        : m
+                    )
                 );
             }
 
@@ -601,25 +605,60 @@ export function CommunityView() {
         setLoadingGroupMessages(false);
     };
 
-    // Send group message
+    // Send group message with optimistic update
     const sendGroupMessage = async () => {
         if (!newMessage.trim() || !user || !selectedGroup) return;
 
+        const messageContent = newMessage.trim();
+        const tempId = `temp_grp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+        // Optimistic update
+        const optimisticMsg = {
+            id: tempId,
+            group_id: selectedGroup.id,
+            user_id: user.id,
+            content: messageContent,
+            type: 'text',
+            created_at: new Date().toISOString(),
+            profiles: { full_name: user.name || 'Moi', avatar_url: user.avatar || null }
+        };
+
+        setGroupMessages(prev => [...prev, optimisticMsg]);
+        setNewMessage('');
+
+        // Scroll to bottom
+        requestAnimationFrame(() => {
+            if (chatScrollRef.current) {
+                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+            }
+        });
+
         try {
-            const { error } = await supabase
+            const { data, error } = await supabase
                 .from('prayer_group_messages')
                 .insert({
                     group_id: selectedGroup.id,
                     user_id: user.id,
-                    content: newMessage.trim()
-                });
+                    content: messageContent
+                })
+                .select()
+                .single();
 
             if (error) throw error;
-            setNewMessage('');
-            // Refresh messages
-            loadGroupMessages(selectedGroup.id);
+
+            // Replace temp with real
+            if (data) {
+                setGroupMessages(prev =>
+                    prev.map(m => m.id === tempId
+                        ? { ...data, profiles: optimisticMsg.profiles }
+                        : m
+                    )
+                );
+            }
         } catch (e) {
             console.error('Error sending group message:', e);
+            setGroupMessages(prev => prev.filter(m => m.id !== tempId));
+            setNewMessage(messageContent);
             toast.error("Erreur lors de l'envoi du message");
         }
     };
@@ -931,21 +970,52 @@ export function CommunityView() {
     useEffect(() => {
         if (viewState === 'group-detail' && selectedGroup) {
             const subscription = supabase
-                .channel(`group_${selectedGroup.id}`)
+                .channel(`group_rt_${selectedGroup.id}_${Date.now()}`)
                 .on('postgres_changes', {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'prayer_group_messages',
                     filter: `group_id=eq.${selectedGroup.id}`
                 }, async (payload) => {
-                    const newMessage = payload.new;
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('full_name, avatar_url')
-                        .eq('id', newMessage.user_id)
-                        .single();
+                    const newMsg = payload.new as any;
 
-                    setGroupMessages(prev => [...prev, { ...newMessage, profiles: profile }]);
+                    // Skip if already exists (from optimistic update)
+                    setGroupMessages(prev => {
+                        if (prev.some(m => m.id === newMsg.id)) return prev;
+                        // If own message, replace temp
+                        if (newMsg.user_id === user?.id) {
+                            const tempIdx = prev.findIndex(m =>
+                                typeof m.id === 'string' && m.id.startsWith('temp_grp_')
+                            );
+                            if (tempIdx !== -1) {
+                                const updated = [...prev];
+                                updated[tempIdx] = { ...newMsg, profiles: prev[tempIdx].profiles };
+                                return updated;
+                            }
+                        }
+                        return prev; // Will be added after profile fetch below
+                    });
+
+                    // Fetch profile for new message from another user
+                    if (newMsg.user_id !== user?.id) {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('full_name, avatar_url')
+                            .eq('id', newMsg.user_id)
+                            .single();
+
+                        setGroupMessages(prev => {
+                            if (prev.some(m => m.id === newMsg.id)) return prev;
+                            return [...prev, { ...newMsg, profiles: profile || { full_name: 'Utilisateur', avatar_url: null } }];
+                        });
+
+                        // Scroll to see new message
+                        requestAnimationFrame(() => {
+                            if (chatScrollRef.current) {
+                                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                            }
+                        });
+                    }
                 })
                 .subscribe();
 
@@ -999,73 +1069,67 @@ export function CommunityView() {
         }
     }, [viewState, user]);
 
-    // Real-time subscription for direct messages with polling fallback
+    // Real-time subscription for direct messages
     useEffect(() => {
         if (viewState === 'conversation' && selectedConversation) {
             // Initial load
             loadDirectMessages(selectedConversation.id);
 
             // Setup realtime subscription
+            const channelName = `dm_cv_${selectedConversation.id}_${Date.now()}`;
             const subscription = supabase
-                .channel(`dm_realtime_${selectedConversation.id}_${Date.now()}`)
+                .channel(channelName)
                 .on('postgres_changes', {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'direct_messages',
                     filter: `conversation_id=eq.${selectedConversation.id}`
                 }, async (payload) => {
-                    const newMessage = payload.new as any;
+                    const newMsg = payload.new as any;
 
-                    // Skip own messages (already handled by optimistic update)
-                    if (newMessage.sender_id === user?.id) {
-                        // Replace only the OLDEST matching temp message with the real one
-                        setDirectMessages(prev => {
-                            // Check if we already have this exact message by server ID
-                            if (prev.some(m => m.id === newMessage.id)) return prev;
-
-                            // Find the first temp message from this user to replace
-                            const tempIndex = prev.findIndex(m => m.id?.startsWith('temp_') && m.sender_id === user?.id);
-                            if (tempIndex !== -1) {
-                                // Replace only that one temp message with the real server message
+                    // Skip if we already have this message (optimistic or duplicate)
+                    setDirectMessages(prev => {
+                        if (prev.some(m => m.id === newMsg.id)) return prev;
+                        // If this is our own message, replace the temp one
+                        if (newMsg.sender_id === user?.id) {
+                            const tempIdx = prev.findIndex(m =>
+                                typeof m.id === 'string' && m.id.startsWith('temp_') && m.sender_id === user?.id
+                            );
+                            if (tempIdx !== -1) {
                                 const updated = [...prev];
-                                updated[tempIndex] = { ...newMessage, sender: prev[tempIndex].sender };
+                                updated[tempIdx] = { ...newMsg, sender: prev[tempIdx].sender };
                                 return updated;
                             }
-                            // No temp message found, but we don't have this message yet - add it
-                            return [...prev, { ...newMessage, sender: { id: newMessage.sender_id } }];
-                        });
-                        return;
-                    }
-
-                    // For messages from other users: add if not duplicate
-                    setDirectMessages(prev => {
-                        if (prev.some(m => m.id === newMessage.id)) return prev;
-                        return [...prev, { ...newMessage, sender: { id: newMessage.sender_id } }];
+                            // No temp found but we don't have it - add it
+                            return [...prev, { ...newMsg, sender: { id: user.id, full_name: user.name || 'Moi' } }];
+                        }
+                        // Message from other user - add it immediately
+                        return [...prev, { ...newMsg, sender: { id: newMsg.sender_id, full_name: '...' } }];
                     });
 
-                    // Fetch profile for the new message
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('id, full_name, avatar_url')
-                        .eq('id', newMessage.sender_id)
-                        .single();
+                    // If message is from other user, fetch their profile and update
+                    if (newMsg.sender_id !== user?.id) {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('id, full_name, avatar_url')
+                            .eq('id', newMsg.sender_id)
+                            .single();
 
-                    // Update with full profile
-                    setDirectMessages(prev =>
-                        prev.map(m => m.id === newMessage.id ? { ...m, sender: profile } : m)
-                    );
-
-                    // Scroll to bottom
-                    setTimeout(() => {
-                        if (chatScrollRef.current) {
-                            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                        if (profile) {
+                            setDirectMessages(prev =>
+                                prev.map(m => m.id === newMsg.id ? { ...m, sender: profile } : m)
+                            );
                         }
-                    }, 100);
+
+                        // Scroll to see new message
+                        requestAnimationFrame(() => {
+                            if (chatScrollRef.current) {
+                                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                            }
+                        });
+                    }
                 })
                 .subscribe();
-
-            // NO POLLING - Realtime subscription above handles new messages
-            // The 3-second poll was causing constant refresh/flicker making chat unreadable
 
             return () => {
                 subscription.unsubscribe();
