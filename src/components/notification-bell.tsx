@@ -400,151 +400,162 @@ export function NotificationBell() {
                 )}
             </button>
 
-            {/* Notification Panel */}
+            {/* Notification Panel - FIXED position, above everything */}
             <AnimatePresence>
                 {isOpen && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -10, scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                        className="absolute right-0 top-12 w-80 sm:w-96 max-h-[70vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden z-[100]"
-                    >
-                        {/* Header */}
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
-                            <div className="flex items-center gap-2">
-                                <Bell className="h-4 w-4 text-amber-400" />
-                                <h3 className="font-bold text-sm text-white">Notifications</h3>
-                                {totalUnread > 0 && (
-                                    <Badge className="bg-red-500/20 text-red-400 border-none text-[10px] h-5">
-                                        {totalUnread}
-                                    </Badge>
-                                )}
-                            </div>
-                            <div className="flex gap-1">
-                                {unreadCount > 0 && (
-                                    <Button
-                                        variant="ghost" size="sm"
-                                        className="h-7 px-2 rounded-lg text-[10px] text-indigo-400"
-                                        onClick={markAllAsRead}
-                                    >
-                                        <Check className="h-3 w-3 mr-1" /> Tout lire
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="ghost" size="icon"
-                                    className="h-7 w-7 rounded-lg text-slate-500"
-                                    onClick={() => setIsOpen(false)}
-                                >
-                                    <X className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Unread Messages Summary */}
-                        {unreadMessages > 0 && (
-                            <div
-                                className="px-4 py-2.5 bg-indigo-600/10 border-b border-white/5 cursor-pointer hover:bg-indigo-600/20 transition-colors"
-                                onClick={() => { setActiveTab('community'); setIsOpen(false); }}
-                            >
+                    <>
+                        {/* Backdrop overlay */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
+                            onClick={() => setIsOpen(false)}
+                        />
+                        {/* Panel */}
+                        <motion.div
+                            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+                            transition={{ duration: 0.25 }}
+                            className="fixed top-16 left-3 right-3 sm:left-auto sm:right-4 sm:w-96 max-h-[75vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-[9999]"
+                        >
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
                                 <div className="flex items-center gap-2">
-                                    <div className="h-8 w-8 rounded-full bg-indigo-600/30 flex items-center justify-center">
-                                        <MessageSquare className="h-4 w-4 text-indigo-400" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <p className="text-xs font-bold text-white">
-                                            {unreadMessages} message{unreadMessages > 1 ? 's' : ''} non lu{unreadMessages > 1 ? 's' : ''}
-                                        </p>
-                                        <p className="text-[10px] text-slate-500">Appuyez pour voir</p>
-                                    </div>
-                                    <Badge className="bg-indigo-600 text-white border-none text-[10px]">
-                                        {unreadMessages}
-                                    </Badge>
+                                    <Bell className="h-4 w-4 text-amber-400" />
+                                    <h3 className="font-bold text-sm text-white">Notifications</h3>
+                                    {totalUnread > 0 && (
+                                        <Badge className="bg-red-500/20 text-red-400 border-none text-[10px] h-5">
+                                            {totalUnread}
+                                        </Badge>
+                                    )}
+                                </div>
+                                <div className="flex gap-1">
+                                    {unreadCount > 0 && (
+                                        <Button
+                                            variant="ghost" size="sm"
+                                            className="h-7 px-2 rounded-lg text-[10px] text-indigo-400"
+                                            onClick={markAllAsRead}
+                                        >
+                                            <Check className="h-3 w-3 mr-1" /> Tout lire
+                                        </Button>
+                                    )}
+                                    <Button
+                                        variant="ghost" size="icon"
+                                        className="h-7 w-7 rounded-lg text-slate-500"
+                                        onClick={() => setIsOpen(false)}
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </Button>
                                 </div>
                             </div>
-                        )}
 
-                        {/* Notification List */}
-                        <ScrollArea className="max-h-[50vh]">
-                            {notifications.length === 0 ? (
-                                <div className="text-center py-12 px-4">
-                                    <Bell className="h-10 w-10 text-slate-700 mx-auto mb-3" />
-                                    <p className="text-slate-500 text-sm">Aucune notification</p>
-                                    <p className="text-slate-600 text-xs mt-1">Vous serez notifié des nouveaux messages et événements</p>
-                                </div>
-                            ) : (
-                                <div className="py-1">
-                                    {notifications.map((notif) => (
-                                        <motion.div
-                                            key={notif.id}
-                                            initial={{ opacity: 0, x: -10 }}
-                                            animate={{ opacity: 1, x: 0 }}
-                                            className={cn(
-                                                "px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors border-b border-white/[0.03]",
-                                                !notif.read
-                                                    ? "bg-indigo-500/5 hover:bg-indigo-500/10"
-                                                    : "hover:bg-white/5"
-                                            )}
-                                            onClick={() => handleNotifClick(notif)}
-                                        >
-                                            {/* Icon or Avatar */}
-                                            <div className="shrink-0 mt-0.5">
-                                                {notif.sender_avatar ? (
-                                                    <Avatar className="h-9 w-9 border border-white/10">
-                                                        <AvatarImage src={notif.sender_avatar} />
-                                                        <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-xs">
-                                                            {notif.sender_name?.[0] || '?'}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                ) : (
-                                                    <div className="h-9 w-9 rounded-full bg-white/5 flex items-center justify-center">
-                                                        {getIcon(notif.type)}
-                                                    </div>
-                                                )}
-                                            </div>
-
-                                            {/* Content */}
-                                            <div className="flex-1 min-w-0">
-                                                <p className={cn(
-                                                    "text-xs leading-relaxed",
-                                                    !notif.read ? "text-white font-semibold" : "text-slate-300"
-                                                )}>
-                                                    {notif.sender_name && (
-                                                        <span className="font-bold">{notif.sender_name}: </span>
-                                                    )}
-                                                    {notif.title}
-                                                </p>
-                                                <p className="text-[11px] text-slate-500 truncate mt-0.5">
-                                                    {notif.message}
-                                                </p>
-                                                <p className="text-[10px] text-slate-600 mt-1">
-                                                    {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: fr })}
-                                                </p>
-                                            </div>
-
-                                            {/* Unread dot */}
-                                            {!notif.read && (
-                                                <div className="h-2.5 w-2.5 rounded-full bg-indigo-500 shrink-0 mt-2" />
-                                            )}
-                                        </motion.div>
-                                    ))}
+                            {/* Unread Messages Summary */}
+                            {unreadMessages > 0 && (
+                                <div
+                                    className="px-4 py-2.5 bg-indigo-600/10 border-b border-white/5 cursor-pointer hover:bg-indigo-600/20 transition-colors"
+                                    onClick={() => { setActiveTab('community'); setIsOpen(false); }}
+                                >
+                                    <div className="flex items-center gap-2">
+                                        <div className="h-8 w-8 rounded-full bg-indigo-600/30 flex items-center justify-center">
+                                            <MessageSquare className="h-4 w-4 text-indigo-400" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-xs font-bold text-white">
+                                                {unreadMessages} message{unreadMessages > 1 ? 's' : ''} non lu{unreadMessages > 1 ? 's' : ''}
+                                            </p>
+                                            <p className="text-[10px] text-slate-500">Appuyez pour voir</p>
+                                        </div>
+                                        <Badge className="bg-indigo-600 text-white border-none text-[10px]">
+                                            {unreadMessages}
+                                        </Badge>
+                                    </div>
                                 </div>
                             )}
-                        </ScrollArea>
 
-                        {/* Footer */}
-                        {notifications.length > 0 && (
-                            <div className="px-4 py-2 border-t border-white/5 flex justify-between">
-                                <Button
-                                    variant="ghost" size="sm"
-                                    className="h-7 rounded-lg text-[10px] text-red-400 hover:text-red-300"
-                                    onClick={clearAll}
-                                >
-                                    <Trash2 className="h-3 w-3 mr-1" /> Effacer tout
-                                </Button>
-                            </div>
-                        )}
-                    </motion.div>
+                            {/* Notification List */}
+                            <ScrollArea className="max-h-[55vh]">
+                                {notifications.length === 0 ? (
+                                    <div className="text-center py-12 px-4">
+                                        <Bell className="h-10 w-10 text-slate-700 mx-auto mb-3" />
+                                        <p className="text-slate-500 text-sm">Aucune notification</p>
+                                        <p className="text-slate-600 text-xs mt-1">Vous serez notifié des nouveaux messages et événements</p>
+                                    </div>
+                                ) : (
+                                    <div className="py-1">
+                                        {notifications.map((notif) => (
+                                            <motion.div
+                                                key={notif.id}
+                                                initial={{ opacity: 0, x: -10 }}
+                                                animate={{ opacity: 1, x: 0 }}
+                                                className={cn(
+                                                    "px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors border-b border-white/[0.03]",
+                                                    !notif.read
+                                                        ? "bg-indigo-500/5 hover:bg-indigo-500/10"
+                                                        : "hover:bg-white/5"
+                                                )}
+                                                onClick={() => handleNotifClick(notif)}
+                                            >
+                                                {/* Icon or Avatar */}
+                                                <div className="shrink-0 mt-0.5">
+                                                    {notif.sender_avatar ? (
+                                                        <Avatar className="h-9 w-9 border border-white/10">
+                                                            <AvatarImage src={notif.sender_avatar} />
+                                                            <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-xs">
+                                                                {notif.sender_name?.[0] || '?'}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                    ) : (
+                                                        <div className="h-9 w-9 rounded-full bg-white/5 flex items-center justify-center">
+                                                            {getIcon(notif.type)}
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* Content */}
+                                                <div className="flex-1 min-w-0">
+                                                    <p className={cn(
+                                                        "text-xs leading-relaxed",
+                                                        !notif.read ? "text-white font-semibold" : "text-slate-300"
+                                                    )}>
+                                                        {notif.sender_name && (
+                                                            <span className="font-bold">{notif.sender_name}: </span>
+                                                        )}
+                                                        {notif.title}
+                                                    </p>
+                                                    <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                                        {notif.message}
+                                                    </p>
+                                                    <p className="text-[10px] text-slate-600 mt-1">
+                                                        {formatDistanceToNow(new Date(notif.created_at), { addSuffix: true, locale: fr })}
+                                                    </p>
+                                                </div>
+
+                                                {/* Unread dot */}
+                                                {!notif.read && (
+                                                    <div className="h-2.5 w-2.5 rounded-full bg-indigo-500 shrink-0 mt-2" />
+                                                )}
+                                            </motion.div>
+                                        ))}
+                                    </div>
+                                )}
+                            </ScrollArea>
+
+                            {/* Footer */}
+                            {notifications.length > 0 && (
+                                <div className="px-4 py-2 border-t border-white/5 flex justify-between">
+                                    <Button
+                                        variant="ghost" size="sm"
+                                        className="h-7 rounded-lg text-[10px] text-red-400 hover:text-red-300"
+                                        onClick={clearAll}
+                                    >
+                                        <Trash2 className="h-3 w-3 mr-1" /> Effacer tout
+                                    </Button>
+                                </div>
+                            )}
+                        </motion.div>
+                    </>
                 )}
             </AnimatePresence>
         </div>

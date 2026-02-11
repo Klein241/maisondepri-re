@@ -49,3 +49,6 @@ next-env.d.ts
 # Agent files
 .agent/
 .gemini/
+
+# Local Netlify folder
+.netlify
