@@ -1,7 +1,7 @@
 {
-  "name": "Prayer Marathon - 40 Jours",
-  "short_name": "PrayerMarathon",
-  "description": "Marathon spirituel de 40 jours de jeûne et prière - Application communautaire mobile",
+  "name": "MAISON DE PRIERE - 40 Jours",
+  "short_name": "MaisonPriere",
+  "description": "MAISON DE PRIERE - Marathon spirituel de 40 jours de jeûne et prière",
   "start_url": "/",
   "id": "/",
   "display": "standalone",

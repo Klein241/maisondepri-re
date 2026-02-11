@@ -24,7 +24,11 @@ const ALLOWED_TABLES = [
     'daily_prayers',
     'notifications',
     'users',
-    'profiles'
+    'profiles',
+    'prayer_groups',
+    'prayer_group_members',
+    'prayer_group_messages',
+    'bible_chapters',
 ];
 
 export async function POST(request: NextRequest) {

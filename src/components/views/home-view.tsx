@@ -13,7 +13,8 @@ import {
     Youtube,
     Facebook,
     X,
-    ExternalLink
+    ExternalLink,
+    CalendarDays
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -51,6 +52,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
     const [liveStreamUrl, setLiveStreamUrl] = useState('');
     const [showLiveDialog, setShowLiveDialog] = useState(false);
     const [showSocialDialog, setShowSocialDialog] = useState(false);
+    const [showEventsDialog, setShowEventsDialog] = useState(false);
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
 
     useEffect(() => {
@@ -259,6 +261,23 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             <p className="text-xs text-slate-500 font-medium">YouTube, Facebook...</p>
                         </div>
                     </motion.div>
+
+                    {/* ÉVÉNEMENTS Button */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.45 }}
+                        className="col-span-2 glass-card p-4 bg-gradient-to-br from-amber-900/30 to-orange-900/20 border-amber-500/20 cursor-pointer hover:border-amber-500/40 transition-all flex items-center gap-4"
+                        onClick={() => setShowEventsDialog(true)}
+                    >
+                        <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center text-amber-400">
+                            <CalendarDays className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <p className="text-lg font-bold text-slate-100">ÉVÉNEMENTS</p>
+                            <p className="text-xs text-slate-500 font-medium">Prochains événements et activités</p>
+                        </div>
+                    </motion.div>
                 </div>
 
                 {/* Daily Verse */}
@@ -399,6 +418,32 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             </>
                         )}
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Events Dialog (Google Calendar) */}
+            <Dialog open={showEventsDialog} onOpenChange={setShowEventsDialog}>
+                <DialogContent className="max-w-3xl bg-slate-900 border-slate-800 max-h-[90vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <CalendarDays className="w-5 h-5 text-amber-400" />
+                            ÉVÉNEMENTS
+                        </DialogTitle>
+                        <DialogDescription>
+                            Retrouvez tous nos prochains événements et activités
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="mt-4 rounded-xl overflow-hidden border border-slate-700">
+                        <iframe
+                            src={`https://calendar.google.com/calendar/embed?src=${encodeURIComponent(appSettings?.['google_calendar_id'] || 'fr.french%23holiday%40group.v.calendar.google.com')}&ctz=Africa%2FDouala&mode=AGENDA&showTitle=0&showNav=1&showPrint=0&showCalendars=0&bgcolor=%230F172A&color=%236366F1`}
+                            className="w-full border-0"
+                            style={{ height: '500px' }}
+                            title="Calendrier des événements"
+                        />
+                    </div>
+                    <p className="text-xs text-slate-500 text-center mt-2">
+                        💡 Configurez l'ID du calendrier dans les paramètres admin (clé: <code className="text-indigo-400">google_calendar_id</code>)
+                    </p>
                 </DialogContent>
             </Dialog>
         </div>

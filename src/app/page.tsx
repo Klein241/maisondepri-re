@@ -42,8 +42,8 @@ function SplashScreen() {
         >
           🙏
         </motion.div>
-        <h1 className="text-3xl font-bold mb-2">Prayer Marathon</h1>
-        <p className="text-white/80">40 Jours de Jeûne et Prière</p>
+        <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>MAISON DE PRIERE</h1>
+        <p className="text-white/80">Priez les uns pour les autres</p>
         <motion.div
           initial={{ width: 0 }}
           animate={{ width: '100%' }}
@@ -125,7 +125,7 @@ export default function Home() {
       case 'community':
         return <CommunityView />;
       case 'profile':
-        return <ProfileView onBack={() => setActiveTab('home')} />;
+        return <ProfileView />;
       default:
         return (
           <HomeView

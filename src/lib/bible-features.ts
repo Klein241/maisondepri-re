@@ -250,7 +250,7 @@ export function useBibleHighlights(userId?: string) {
 
 // Share verse function
 export async function shareVerse(reference: string, text: string, translation: string) {
-    const shareText = `📖 ${reference} (${translation})\n\n"${text}"\n\n— Prayer Marathon App`;
+    const shareText = `📖 ${reference} (${translation})\n\n"${text}"\n\n— MAISON DE PRIERE`;
 
     try {
         if (navigator.share) {

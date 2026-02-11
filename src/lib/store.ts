@@ -114,9 +114,9 @@ interface AppState {
     setBibleViewTarget: (target: 'home' | 'read' | 'study' | 'search' | 'favorites' | 'games' | null) => void;
 
     // UI State
-    activeTab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile';
+    activeTab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games';
     selectedDay: number | null;
-    setActiveTab: (tab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile') => void;
+    setActiveTab: (tab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games') => void;
     setSelectedDay: (day: number | null) => void;
 
     // Bible Persistence
@@ -515,15 +515,14 @@ export const useAppStore = create<AppState>()(
                 if (!user) return;
 
                 try {
-                    // Start with minimal fields
+                    // Include all fields in the insert
                     const newRequest: any = {
                         user_id: user.id,
                         content,
                         is_anonymous: isAnonymous,
+                        category: category || 'other',
+                        photos: photos && photos.length > 0 ? photos : null,
                     };
-
-                    // Try adding optional fields (may not exist in schema)
-                    // These will be ignored if columns don't exist
 
                     // Save to Supabase
                     const { data, error } = await supabase.from('prayer_requests').insert([newRequest]).select();

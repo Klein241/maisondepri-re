@@ -137,7 +137,7 @@ export function PWAManager() {
             setShowInstallBanner(false);
             setDeferredPrompt(null);
             toast.success('🎉 Application installée !', {
-                description: 'Prayer Marathon est maintenant sur votre écran d\'accueil.',
+                description: 'MAISON DE PRIERE est maintenant sur votre écran d\'accueil.',
             });
         };
 
@@ -188,7 +188,7 @@ export function PWAManager() {
 
                 // Show a test notification
                 if (swRegistration) {
-                    swRegistration.showNotification('Prayer Marathon', {
+                    swRegistration.showNotification('MAISON DE PRIERE', {
                         body: 'Les notifications sont activées ! Vous recevrez des rappels quotidiens.',
                         icon: '/icon-192.png',
                         badge: '/icon-192.png',
@@ -338,7 +338,7 @@ export function PWAManager() {
                             <span className="text-2xl">🙏</span>
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-white font-bold text-sm">Installer Prayer Marathon</p>
+                            <p className="text-white font-bold text-sm">Installer MAISON DE PRIERE</p>
                             <p className="text-white/70 text-xs mt-0.5">Accédez rapidement depuis votre écran d'accueil</p>
                         </div>
                         <div className="flex flex-col gap-1.5 shrink-0">

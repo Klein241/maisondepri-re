@@ -136,6 +136,21 @@ export default function NotificationsPage() {
                 toast.success(`Notification envoyée à ${selectedUsers.length} utilisateur(s)!`)
             }
 
+            // Also send browser push notification via Service Worker
+            try {
+                if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'SHOW_NOTIFICATION',
+                        title: formData.title,
+                        body: formData.message,
+                        tag: `admin-notif-${Date.now()}`,
+                        url: '/',
+                    });
+                }
+            } catch (pushErr) {
+                console.warn('Push notification fallback:', pushErr);
+            }
+
             setFormData({ title: "", message: "", type: "info" })
             setSelectedUsers([])
             setTargetMode('all')

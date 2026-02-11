@@ -30,6 +30,7 @@ interface ChatUser {
 
 interface Conversation {
     id: string;
+    participantId: string;
     participant: ChatUser;
     lastMessage: string;
     lastMessageAt: string;
@@ -254,11 +255,10 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
             }, async (payload) => {
                 if (payload.eventType === 'INSERT') {
                     const msg = payload.new as any;
-                    // Use ref to get current conversation without causing re-subscription
                     const currentConv = selectedConversationRef.current;
-                    if (currentConv &&
-                        (msg.sender_id === currentConv.participant.id ||
-                            msg.receiver_id === currentConv.participant.id)) {
+                    // Check if this message belongs to the currently open conversation
+                    const isRelevant = currentConv && msg.conversation_id === currentConv.id;
+                    if (isRelevant) {
                         const { data: sender } = await supabase
                             .from('profiles')
                             .select('id, full_name, avatar_url')
@@ -270,15 +270,14 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                             return [...prev, { ...msg, sender }];
                         });
 
-                        if (msg.receiver_id === user.id) {
+                        // Mark as read if from other person
+                        if (msg.sender_id !== user.id) {
                             await supabase
                                 .from('direct_messages')
                                 .update({ is_read: true })
                                 .eq('id', msg.id);
                         }
                     }
-                    // NO automatic reload - user can manually refresh if needed
-                    // This was causing the constant refresh issue
                 } else if (payload.eventType === 'UPDATE') {
                     setMessages(prev => prev.map(m =>
                         m.id === payload.new.id ? { ...m, is_read: payload.new.is_read } : m
@@ -336,10 +335,35 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
             })
             .subscribe();
 
+        // Listen for group deletions (admin deletes a group)
+        const groupDeleteChannel = supabase
+            .channel(`group_delete_${user.id}_${sessionId}`)
+            .on('postgres_changes', {
+                event: 'DELETE',
+                schema: 'public',
+                table: 'prayer_groups',
+            }, (payload) => {
+                const deletedId = (payload.old as any)?.id;
+                if (deletedId) {
+                    // Remove from groups list
+                    setGroups(prev => prev.filter(g => g.id !== deletedId));
+                    setAdminGroups(prev => prev.filter(g => g.id !== deletedId));
+                    // If viewing this group, go back to list
+                    const currentGroup = selectedGroupRef.current;
+                    if (currentGroup && currentGroup.id === deletedId) {
+                        setSelectedGroup(null);
+                        setView('list');
+                        toast.info('Ce groupe a été supprimé par un administrateur');
+                    }
+                }
+            })
+            .subscribe();
+
         return () => {
             dmChannel.unsubscribe();
             groupChannel.unsubscribe();
             typingChannel.unsubscribe();
+            groupDeleteChannel.unsubscribe();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only user.id - refs are used for conversation/group
@@ -381,50 +405,55 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
     // Load functions
     const loadConversations = async () => {
         if (!user) return;
-        // setIsLoading(true); // Disable global loading to prevent flicker
         try {
-            // Get all messages where user is sender or receiver
-            const { data: messages, error } = await supabase
-                .from('direct_messages')
-                .select(`
-                    id, content, created_at, is_read, sender_id, receiver_id, type, voice_url,
-                    sender:sender_id (id, full_name, avatar_url),
-                    receiver:receiver_id (id, full_name, avatar_url)
-                `)
-                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-                .order('created_at', { ascending: false });
+            // Use the conversations table which has participant1_id and participant2_id
+            const { data: convData, error } = await supabase
+                .from('conversations')
+                .select('*')
+                .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+                .order('last_message_at', { ascending: false });
 
-            if (error) throw error;
+            if (error) {
+                console.log('Conversations table may not exist:', error.message);
+                setConversations([]);
+                return;
+            }
 
-            // Group by conversation partner
-            const conversationMap = new Map<string, Conversation>();
+            if (!convData || convData.length === 0) {
+                setConversations([]);
+                return;
+            }
 
-            (messages || []).forEach((msg: any) => {
-                const partnerId = msg.sender_id === user.id ? msg.receiver_id : msg.sender_id;
-                const partner = msg.sender_id === user.id ? msg.receiver : msg.sender;
+            // Fetch profile for each conversation partner
+            const formattedConversations = await Promise.all(
+                convData.map(async (conv: any) => {
+                    const partnerId = conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url, is_online, last_seen')
+                        .eq('id', partnerId)
+                        .single();
 
-                if (!conversationMap.has(partnerId)) {
-                    let displayMessage = msg.content;
-                    if (msg.type === 'voice') {
-                        displayMessage = '🎤 Message vocal';
-                    }
-                    conversationMap.set(partnerId, {
-                        id: partnerId,
-                        participant: partner,
-                        lastMessage: displayMessage,
-                        lastMessageAt: msg.created_at,
-                        unreadCount: 0
-                    });
-                }
+                    // Get unread count
+                    const { count } = await supabase
+                        .from('direct_messages')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('conversation_id', conv.id)
+                        .neq('sender_id', user.id)
+                        .eq('is_read', false);
 
-                // Count unread
-                if (msg.receiver_id === user.id && !msg.is_read) {
-                    const conv = conversationMap.get(partnerId)!;
-                    conv.unreadCount++;
-                }
-            });
+                    return {
+                        id: conv.id,
+                        participantId: partnerId,
+                        participant: profile || { id: partnerId, full_name: 'Utilisateur', avatar_url: null },
+                        lastMessage: conv.last_message || '',
+                        lastMessageAt: conv.last_message_at || conv.created_at,
+                        unreadCount: count || 0
+                    } as Conversation;
+                })
+            );
 
-            setConversations(Array.from(conversationMap.values()));
+            setConversations(formattedConversations);
         } catch (e) {
             console.error('Error loading conversations:', e);
         }
@@ -502,31 +531,42 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
     };
 
     const loadMessages = async (type: 'conversation' | 'group', id: string) => {
-        // setIsLoading(true); // Don't block UI
         setMessages([]); // Clear previous messages immediately
         try {
             if (type === 'conversation') {
+                // id here is the conversation_id (from conversations table)
                 const { data, error } = await supabase
                     .from('direct_messages')
-                    .select(`
-                        *,
-                        sender:sender_id (id, full_name, avatar_url)
-                    `)
-                    .or(`and(sender_id.eq.${user?.id},receiver_id.eq.${id}),and(sender_id.eq.${id},receiver_id.eq.${user?.id})`)
+                    .select('*')
+                    .eq('conversation_id', id)
                     .order('created_at', { ascending: true });
 
                 if (error) throw error;
-                setMessages((data || []).map((m: any) => ({
-                    ...m,
-                    is_read: m.is_read || m.sender_id === user?.id
-                })));
 
-                // Mark as read
+                // Fetch sender profiles
+                const messagesWithSenders = await Promise.all(
+                    (data || []).map(async (msg: any) => {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('id, full_name, avatar_url')
+                            .eq('id', msg.sender_id)
+                            .single();
+                        return {
+                            ...msg,
+                            sender: profile,
+                            is_read: msg.is_read || msg.sender_id === user?.id
+                        };
+                    })
+                );
+                setMessages(messagesWithSenders);
+
+                // Mark messages from others as read
                 await supabase
                     .from('direct_messages')
                     .update({ is_read: true })
-                    .eq('receiver_id', user?.id)
-                    .eq('sender_id', id);
+                    .eq('conversation_id', id)
+                    .neq('sender_id', user?.id)
+                    .eq('is_read', false);
             } else {
                 const { data, error } = await supabase
                     .from('prayer_group_messages')
@@ -554,38 +594,75 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
     const sendMessage = async () => {
         if (!newMessage.trim() || !user) return;
 
+        const msgContent = newMessage.trim();
+        setNewMessage('');
         setIsSending(true);
         try {
             if (view === 'conversation' && selectedConversation) {
-                const { error } = await supabase
+                const { data, error } = await supabase
                     .from('direct_messages')
                     .insert({
+                        conversation_id: selectedConversation.id,
                         sender_id: user.id,
-                        receiver_id: selectedConversation.participant.id,
-                        content: newMessage.trim(),
+                        content: msgContent,
                         type: 'text',
                         is_read: false
-                    });
+                    })
+                    .select('*')
+                    .single();
 
                 if (error) throw error;
+
+                // Update conversation's last message
+                await supabase
+                    .from('conversations')
+                    .update({ last_message: msgContent, last_message_at: new Date().toISOString() })
+                    .eq('id', selectedConversation.id);
+
+                // Optimistic local add
+                if (data) {
+                    setMessages(prev => {
+                        if (prev.find(m => m.id === data.id)) return prev;
+                        return [...prev, {
+                            ...data,
+                            sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null }
+                        }];
+                    });
+                }
             } else if (view === 'group' && selectedGroup) {
-                const { error } = await supabase
+                const { data, error } = await supabase
                     .from('prayer_group_messages')
                     .insert({
                         group_id: selectedGroup.id,
                         user_id: user.id,
-                        content: newMessage.trim(),
+                        content: msgContent,
                         type: 'text'
-                    });
+                    })
+                    .select('*')
+                    .single();
 
                 if (error) throw error;
+
+                // Optimistic local add
+                if (data) {
+                    setMessages(prev => {
+                        if (prev.find(m => m.id === data.id)) return prev;
+                        return [...prev, {
+                            ...data,
+                            sender_id: data.user_id,
+                            sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                            is_read: true
+                        }];
+                    });
+                }
             }
 
-            setNewMessage('');
             inputRef.current?.focus();
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
         } catch (e: any) {
             console.error('Error sending message:', e);
             toast.error('Erreur lors de l\'envoi');
+            setNewMessage(msgContent);
         }
         setIsSending(false);
     };
@@ -628,8 +705,8 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                 const { error } = await supabase
                     .from('direct_messages')
                     .insert({
+                        conversation_id: selectedConversation.id,
                         sender_id: user.id,
-                        receiver_id: selectedConversation.participant.id,
                         content: '🎤 Message vocal',
                         type: 'voice',
                         voice_url: publicUrl,
@@ -638,6 +715,12 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                     });
 
                 if (error) throw error;
+
+                // Update conversation's last message
+                await supabase
+                    .from('conversations')
+                    .update({ last_message: '🎤 Message vocal', last_message_at: new Date().toISOString() })
+                    .eq('id', selectedConversation.id);
             } else if (view === 'group' && selectedGroup) {
                 const { error } = await supabase
                     .from('prayer_group_messages')
@@ -765,7 +848,7 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
         setSelectedConversation(conv);
         setSelectedGroup(null);
         setView('conversation');
-        loadMessages('conversation', conv.participant.id);
+        loadMessages('conversation', conv.id);
     };
 
     // Open group
@@ -1137,6 +1220,38 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                                 )}
                             </p>
                         </div>
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                                onClick={() => {
+                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
+                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                    const link = `https://meet.google.com/${seg(3)}-${seg(4)}-${seg(3)}`;
+                                    window.open(link, '_blank');
+                                    toast.success('Appel vocal lancé via Google Meet');
+                                }}
+                                title="Appel vocal"
+                            >
+                                <Phone className="h-5 w-5" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
+                                onClick={() => {
+                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
+                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                    const link = `https://meet.google.com/${seg(3)}-${seg(4)}-${seg(3)}`;
+                                    window.open(link, '_blank');
+                                    toast.success('Appel vidéo lancé via Google Meet');
+                                }}
+                                title="Appel vidéo"
+                            >
+                                <Video className="h-5 w-5" />
+                            </Button>
+                        </div>
                     </>
                 )}
 
@@ -1160,6 +1275,23 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                             <p className="text-xs text-slate-400">
                                 {currentGroup.member_count} membres
                             </p>
+                        </div>
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                                onClick={() => {
+                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
+                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                    const link = `https://meet.google.com/${seg(3)}-${seg(4)}-${seg(3)}`;
+                                    window.open(link, '_blank');
+                                    toast.success(`Appel de groupe lancé pour ${currentGroup.name}`);
+                                }}
+                                title="Appel vidéo de groupe"
+                            >
+                                <Video className="h-5 w-5" />
+                            </Button>
                         </div>
                     </>
                 )}

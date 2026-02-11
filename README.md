@@ -1,36 +1,65 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🕊️ Maison de Prière - Prayer Marathon App
 
-## Getting Started
+**Maison de Prière** est une application web progressive (PWA) complète conçue pour connecter les croyants dans une expérience de prière, d'étude biblique et de communion en ligne.
 
-First, run the development server:
+![Aperçu de l'application](public/window.svg)
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+## 🚀 Fonctionnalités Principales
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 🙏 Groupes de Prière & Marathon
+- **Création de Groupes** : Créez des espaces dédiés pour des sujets de prière spécifiques.
+- **Marathons de Prière** : Organisez des sessions de prière continues (24/7) avec des créneaux horaires.
+- **Témoignages** : Partagez et célébrez les prières exaucées.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 💬 Communication & Communauté
+- **Chat Temps Réel** : Messagerie instantanée style WhatsApp avec support des émojis et réactions.
+- **Messages Vocaux** : Enregistrez et partagez des prières ou encouragements vocaux.
+- **Appels Vidéo** : Réunions de groupe et appels individuels intégrés.
+- **Système d'Amis** : Connectez-vous avec d'autres membres, envoyez des demandes d'amis.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 📖 Bible & Étude
+- **Lecteur Biblique** : Accès complet à la Bible (LSG, KJV) avec recherche rapide.
+- **Jeux Bibliques** : Testez vos connaissances avec des Quiz et Mots Mêlés générés dynamiquement.
+- **Notes & Surlignage** : Personnalisez votre étude biblique.
 
-## Learn More
+### 🛠️ Administration
+- **Dashboard Complet** : Gestion des utilisateurs, modération de contenu et analyses.
+- **Notifications** : Système d'annonces et de notifications push.
 
-To learn more about Next.js, take a look at the following resources:
+## 💻 Stack Technique
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Frontend** : [Next.js 14](https://nextjs.org) (App Router), React, TailwindCSS, Framer Motion.
+- **Backend** : [Supabase](https://supabase.com) (PostgreSQL, Auth, Realtime, Storage).
+- **Déploiement** : Optimisé pour [Netlify](https://netlify.com).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## 📦 Installation & Démarrage
 
-## Deploy on Vercel
+1. **Cloner le projet**
+   ```bash
+   git clone https://github.com/votre-username/maisondepriere.git
+   cd maisondepriere
+   ```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+2. **Installer les dépendances**
+   ```bash
+   npm install
+   ```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+3. **Configurer les variables d'environnement**
+   Créez un fichier `.env.local` et ajoutez vos clés Supabase :
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=votre_url_supabase
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=votre_cle_anon
+   SUPABASE_SERVICE_ROLE_KEY=votre_cle_service_role
+   ```
+
+4. **Lancer en développement**
+   ```bash
+   npm run dev
+   ```
+
+## 🌍 Déploiement
+
+Ce projet est configuré pour un déploiement facile sur **Netlify**.
+Voir le guide [NETLIFY_DEPLOYMENT.md](./NETLIFY_DEPLOYMENT.md) pour les détails.
+

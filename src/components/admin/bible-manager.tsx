@@ -194,17 +194,23 @@ function BookChapterManager({ book, onBack }: { book: BibleBook, onBack: () => v
 
         setUploadingChapter(chapterNum);
         try {
-            const text = await file.text();
+            let text = await file.text();
 
-            // Robust parsing
-            const lines = text.split('\n').filter(l => l.trim().length > 0);
+            // Remove UTF-8 BOM if present
+            if (text.charCodeAt(0) === 0xFEFF) {
+                text = text.substring(1);
+            }
+
+            // Robust parsing - handle \r\n and \n
+            const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
             const verses = [];
 
             for (const line of lines) {
+                const trimmed = line.trim();
                 // Match: Number + separator + Text
-                // Separators: space, tab, dot, dash, parenthesis
-                // Examples: "1 Au commencement", "1. Au commencement", "1 - Au commencement"
-                const match = line.match(/^(\d+)[\s\.\-\)\t]*(.+)$/);
+                // Separators: space, tab, dot, dash, parenthesis, colon
+                // Examples: "1 Au commencement", "1. Au commencement", "1 - Au commencement", "1:Au..."
+                const match = trimmed.match(/^(\d+)[\s\.\-\)\:\t]+(.+)$/);
                 if (match) {
                     verses.push({
                         verse: parseInt(match[1]),
@@ -229,7 +235,28 @@ function BookChapterManager({ book, onBack }: { book: BibleBook, onBack: () => v
                     content: jsonContent
                 }, { onConflict: 'book_id,chapter_number' });
 
-            if (error) throw error;
+            if (error) {
+                // Fallback: delete then insert if upsert fails (missing unique index)
+                if (error.message.includes('unique') || error.message.includes('constraint') || error.code === '42P10') {
+                    await supabase
+                        .from('bible_chapters')
+                        .delete()
+                        .eq('book_id', book.book_id)
+                        .eq('chapter_number', chapterNum);
+
+                    const { error: insertError } = await supabase
+                        .from('bible_chapters')
+                        .insert({
+                            book_id: book.book_id,
+                            chapter_number: chapterNum,
+                            content: jsonContent
+                        });
+
+                    if (insertError) throw insertError;
+                } else {
+                    throw error;
+                }
+            }
 
             toast.success(`Chapitre ${chapterNum} mis à jour avec ${verses.length} versets`);
             loadCustomChapters();

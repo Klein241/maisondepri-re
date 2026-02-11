@@ -6,7 +6,7 @@ import {
     MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search,
     Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
     Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings,
-    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video
+    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,12 +26,15 @@ import { WhatsAppChat } from "@/components/community/whatsapp-chat";
 import { PrayerGroupManager } from "@/components/community/prayer-group-manager";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { GroupCallManager } from "@/components/community/group-call-manager";
+import { FriendSystem } from "@/components/community/friend-system";
+import { IncomingCallOverlay, useCallListener, DMCallButtons } from "@/components/community/call-system";
+import { EventCalendarButton } from "@/components/community/event-calendar";
 import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 
-type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call';
+type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call' | 'friends';
 
 // Voice Message Player Component
 function VoiceMessagePlayer({ voiceUrl, duration, isOwn }: { voiceUrl: string; duration?: number; isOwn?: boolean }) {
@@ -405,7 +408,19 @@ export function CommunityView() {
                 data = simpleResult.data;
             }
 
-            setGroups(data?.map(g => ({ ...g, memberCount: 0 })) || []);
+            if (data) {
+                // Fetch real member counts for all groups
+                const groupsWithCounts = await Promise.all(data.map(async (g) => {
+                    const { count } = await supabase
+                        .from('prayer_group_members')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('group_id', g.id);
+                    return { ...g, memberCount: count || 0 };
+                }));
+                setGroups(groupsWithCounts);
+            } else {
+                setGroups([]);
+            }
         } catch (e) {
             console.error('Error loading groups:', e);
         }
@@ -940,12 +955,40 @@ export function CommunityView() {
         }
     }, [viewState, selectedGroup]);
 
-    // Load user groups on mount
+    // Load user groups on mount + Realtime group deletion sync
     useEffect(() => {
         if (user) {
             loadUserGroups();
+
+            // Listen for group deletions by admin
+            const groupDeleteSub = supabase
+                .channel('group_deletions_sync')
+                .on('postgres_changes', {
+                    event: 'DELETE',
+                    schema: 'public',
+                    table: 'prayer_groups'
+                }, (payload) => {
+                    const deletedGroupId = payload.old?.id;
+                    if (!deletedGroupId) return;
+
+                    // Remove from groups list
+                    setGroups((prev: PrayerGroup[]) => prev.filter(g => g.id !== deletedGroupId));
+                    // Remove from user's joined groups
+                    setUserGroups((prev: string[]) => prev.filter(id => id !== deletedGroupId));
+
+                    // If user is viewing this group, redirect back
+                    if (selectedGroup?.id === deletedGroupId) {
+                        setViewState('main');
+                        toast.info('Ce groupe a été supprimé par un administrateur');
+                    }
+                })
+                .subscribe();
+
+            return () => {
+                groupDeleteSub.unsubscribe();
+            };
         }
-    }, [user]);
+    }, [user, selectedGroup?.id]);
 
     // Load conversations and users when accessing messages view
     useEffect(() => {
@@ -975,18 +1018,21 @@ export function CommunityView() {
 
                     // Skip own messages (already handled by optimistic update)
                     if (newMessage.sender_id === user?.id) {
-                        // Just replace temp message with real one if needed
+                        // Replace only the OLDEST matching temp message with the real one
                         setDirectMessages(prev => {
-                            const hasTempVersion = prev.some(m => m.id?.startsWith('temp_') && m.sender_id === user?.id);
-                            if (hasTempVersion) {
-                                // Remove the temp version, real one is already here or will be handled
-                                return prev.filter(m => !m.id?.startsWith('temp_'));
+                            // Check if we already have this exact message by server ID
+                            if (prev.some(m => m.id === newMessage.id)) return prev;
+
+                            // Find the first temp message from this user to replace
+                            const tempIndex = prev.findIndex(m => m.id?.startsWith('temp_') && m.sender_id === user?.id);
+                            if (tempIndex !== -1) {
+                                // Replace only that one temp message with the real server message
+                                const updated = [...prev];
+                                updated[tempIndex] = { ...newMessage, sender: prev[tempIndex].sender };
+                                return updated;
                             }
-                            // If no temp version exists but we don't have this message yet
-                            if (!prev.some(m => m.id === newMessage.id)) {
-                                return [...prev, { ...newMessage, sender: { id: newMessage.sender_id } }];
-                            }
-                            return prev;
+                            // No temp message found, but we don't have this message yet - add it
+                            return [...prev, { ...newMessage, sender: { id: newMessage.sender_id } }];
                         });
                         return;
                     }
@@ -1083,10 +1129,24 @@ export function CommunityView() {
         return PRAYER_CATEGORIES.find(c => c.id === catId);
     };
 
+    // ========== CALL LISTENER ==========
+    const { incomingCall, acceptCall, rejectCall } = useCallListener(user?.id);
+
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] via-[#0F1219] to-[#0B0E14] text-slate-100 overflow-y-auto">
+        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white overflow-hidden">
+            {/* Incoming Call Overlay */}
+            <AnimatePresence>
+                {incomingCall && (
+                    <IncomingCallOverlay
+                        call={incomingCall}
+                        onAccept={acceptCall}
+                        onReject={rejectCall}
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Background Effects */}
-            <div className="fixed inset-0 pointer-events-none overflow-hidden">
+            <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-pink-600/5 blur-[150px] rounded-full" />
                 <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-purple-600/5 blur-[150px] rounded-full" />
             </div>
@@ -1111,10 +1171,20 @@ export function CommunityView() {
                                     <p className="text-slate-500 text-sm font-medium mt-1">Prions ensemble</p>
                                 </div>
                                 <div className="flex gap-2">
-                                    {/* Bouton Groupes de Prière - Plus visible */}
+                                    {/* Bouton Trouver un Ami */}
                                     <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                                         <Button
-                                            className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-600/30 border-0 gap-2 px-4"
+                                            className="rounded-2xl bg-gradient-to-r from-pink-600 to-rose-600 shadow-lg shadow-pink-600/30 border-0 gap-2 px-3"
+                                            onClick={() => setViewState('friends')}
+                                        >
+                                            <UserPlus className="h-4 w-4" />
+                                            <span className="text-xs font-bold">Amis</span>
+                                        </Button>
+                                    </motion.div>
+                                    {/* Bouton Groupes de Prière */}
+                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                        <Button
+                                            className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-600/30 border-0 gap-2 px-3"
                                             onClick={() => {
                                                 loadGroups();
                                                 setViewState('groups');
@@ -1124,16 +1194,18 @@ export function CommunityView() {
                                             <span className="text-xs font-bold">Groupes</span>
                                         </Button>
                                     </motion.div>
-                                    {/* Bouton Messages Privés - Plus visible */}
+                                    {/* Bouton Messages Privés */}
                                     <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                                         <Button
-                                            className="rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 border-0 gap-2 px-4"
+                                            className="rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 border-0 gap-2 px-3"
                                             onClick={() => setViewState('messages')}
                                         >
                                             <MessageCircle className="h-4 w-4" />
                                             <span className="text-xs font-bold">Messages</span>
                                         </Button>
                                     </motion.div>
+                                    {/* Bouton Événements */}
+                                    <EventCalendarButton />
                                 </div>
                             </div>
 
@@ -1259,12 +1331,12 @@ export function CommunityView() {
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
                                 <TabsContent value="chat" className="mt-0 flex flex-col flex-1 min-h-0 overflow-hidden -mx-6">
-                                    <div className="flex-1 relative" style={{ height: 'calc(100vh - 200px)' }}>
+                                    <div className="flex-1 relative" style={{ height: 'calc(100vh - 360px)' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
-                                                name: user.full_name || 'Utilisateur',
-                                                avatar: user.avatar_url
+                                                name: user.name || 'Utilisateur',
+                                                avatar: user.avatar
                                             } : null}
                                         />
                                     </div>
@@ -1423,7 +1495,9 @@ export function CommunityView() {
                                     </Button>
                                     <div>
                                         <h1 className="text-2xl font-bold">Groupes</h1>
-                                        <p className="text-xs text-slate-500">Communautés</p>
+                                        <p className="text-xs text-slate-500">
+                                            {groups.filter(g => userGroups.includes(g.id)).length} rejoint(s) • {groups.length} total
+                                        </p>
                                     </div>
                                 </div>
                                 <motion.div
@@ -1493,98 +1567,159 @@ export function CommunityView() {
                         </Dialog>
 
                         <ScrollArea className="flex-1 px-6">
-                            <div className="space-y-4 pb-32">
-                                {groups.map((group) => {
-                                    const isMember = userGroups.includes(group.id);
-                                    return (
-                                        <Card
-                                            key={group.id}
-                                            className="bg-white/5 border-white/5 rounded-3xl overflow-hidden hover:bg-white/10 transition-all"
-                                        >
-                                            <CardContent className="p-5">
-                                                <div
-                                                    className="flex items-start gap-4 cursor-pointer"
-                                                    onClick={() => {
-                                                        setSelectedGroup(group);
-                                                        loadGroupMessages(group.id);
-                                                        setViewState('group-detail');
-                                                    }}
+                            <div className="space-y-6 pb-32">
+                                {/* ===== MES GROUPES ===== */}
+                                {groups.filter(g => userGroups.includes(g.id)).length > 0 && (
+                                    <div>
+                                        <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <UserCheck className="h-3.5 w-3.5" />
+                                            Mes Groupes ({groups.filter(g => userGroups.includes(g.id)).length})
+                                        </h3>
+                                        <div className="space-y-3">
+                                            {groups.filter(g => userGroups.includes(g.id)).map((group) => (
+                                                <Card
+                                                    key={group.id}
+                                                    className="bg-emerald-500/5 border-emerald-500/10 rounded-3xl overflow-hidden hover:bg-emerald-500/10 transition-all"
                                                 >
-                                                    <div className={cn(
-                                                        "w-14 h-14 rounded-2xl flex items-center justify-center",
-                                                        isMember
-                                                            ? "bg-gradient-to-br from-emerald-600/30 to-teal-600/30"
-                                                            : "bg-gradient-to-br from-indigo-600/30 to-purple-600/30"
-                                                    )}>
-                                                        <Users className={cn("h-7 w-7", isMember ? "text-emerald-400" : "text-indigo-400")} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="flex items-center gap-2 mb-1">
-                                                            <h3 className="font-bold text-white truncate">{group.name}</h3>
-                                                            {isMember && (
-                                                                <Badge className="bg-emerald-500/20 text-emerald-400 border-none text-[10px]">
-                                                                    <Check className="h-3 w-3 mr-1" />
-                                                                    Membre
-                                                                </Badge>
-                                                            )}
-                                                            {group.isAnswered && (
-                                                                <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
-                                                                    <Sparkles className="h-3 w-3 mr-1" />
-                                                                    Exaucée
-                                                                </Badge>
-                                                            )}
+                                                    <CardContent className="p-5">
+                                                        <div
+                                                            className="flex items-start gap-4 cursor-pointer"
+                                                            onClick={() => {
+                                                                setSelectedGroup(group);
+                                                                loadGroupMessages(group.id);
+                                                                setViewState('group-detail');
+                                                            }}
+                                                        >
+                                                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-600/30 to-teal-600/30">
+                                                                <Users className="h-7 w-7 text-emerald-400" />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <h3 className="font-bold text-white truncate">{group.name}</h3>
+                                                                    <Badge className="bg-emerald-500/20 text-emerald-400 border-none text-[10px]">
+                                                                        <Check className="h-3 w-3 mr-1" />
+                                                                        Membre
+                                                                    </Badge>
+                                                                </div>
+                                                                <p className="text-sm text-slate-400 line-clamp-1">{group.description}</p>
+                                                                <div className="flex items-center gap-3 mt-2">
+                                                                    <span className="text-xs text-slate-500 flex items-center gap-1">
+                                                                        <Users className="h-3 w-3" />
+                                                                        {group.memberCount || 0} membres
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                            <ChevronRight className="h-5 w-5 text-emerald-400 shrink-0" />
                                                         </div>
-                                                        <p className="text-sm text-slate-400 line-clamp-2">{group.description}</p>
-                                                        <div className="flex items-center gap-3 mt-3">
-                                                            <span className="text-xs text-slate-500 flex items-center gap-1">
-                                                                <Users className="h-3 w-3" />
-                                                                {group.memberCount || 0} membres
-                                                            </span>
-                                                            {!group.isOpen && (
-                                                                <span className="text-xs text-amber-400 flex items-center gap-1">
-                                                                    <Lock className="h-3 w-3" />
-                                                                    Fermé
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                    <ChevronRight className="h-5 w-5 text-slate-500 shrink-0" />
-                                                </div>
-                                                {/* Join/Leave Button */}
-                                                {group.isOpen && (
-                                                    <div className="mt-4 pt-4 border-t border-white/5">
-                                                        {isMember ? (
+                                                        <div className="mt-3 pt-3 border-t border-white/5 flex gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                className="flex-1 h-9 rounded-xl bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
+                                                                onClick={() => {
+                                                                    setSelectedGroup(group);
+                                                                    loadGroupMessages(group.id);
+                                                                    setViewState('group-detail');
+                                                                }}
+                                                            >
+                                                                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
+                                                                Chat du groupe
+                                                            </Button>
                                                             <Button
                                                                 variant="ghost"
                                                                 size="sm"
-                                                                className="w-full h-10 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                                                                className="h-9 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3"
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     leaveGroup(group.id);
                                                                 }}
                                                             >
-                                                                <X className="h-4 w-4 mr-2" />
-                                                                Quitter le groupe
+                                                                <X className="h-3.5 w-3.5" />
                                                             </Button>
-                                                        ) : (
-                                                            <Button
-                                                                size="sm"
-                                                                className="w-full h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    joinGroup(group.id);
-                                                                }}
-                                                            >
-                                                                <UserPlus className="h-4 w-4 mr-2" />
-                                                                Rejoindre
-                                                            </Button>
+                                                        </div>
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ===== COMMUNAUTÉS (Groups not joined) ===== */}
+                                <div>
+                                    <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                        <Globe className="h-3.5 w-3.5" />
+                                        Communautés à découvrir ({groups.filter(g => !userGroups.includes(g.id)).length})
+                                    </h3>
+                                    {groups.filter(g => !userGroups.includes(g.id)).length === 0 ? (
+                                        <div className="text-center py-8 bg-white/5 rounded-2xl">
+                                            <Sparkles className="h-8 w-8 text-slate-600 mx-auto mb-2" />
+                                            <p className="text-slate-500 text-sm">Vous avez rejoint tous les groupes !</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            {groups.filter(g => !userGroups.includes(g.id)).map((group) => (
+                                                <Card
+                                                    key={group.id}
+                                                    className="bg-white/5 border-white/5 rounded-3xl overflow-hidden hover:bg-white/10 transition-all"
+                                                >
+                                                    <CardContent className="p-5">
+                                                        <div
+                                                            className="flex items-start gap-4 cursor-pointer"
+                                                            onClick={() => {
+                                                                setSelectedGroup(group);
+                                                                loadGroupMessages(group.id);
+                                                                setViewState('group-detail');
+                                                            }}
+                                                        >
+                                                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-600/30 to-purple-600/30">
+                                                                <Users className="h-7 w-7 text-indigo-400" />
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <h3 className="font-bold text-white truncate">{group.name}</h3>
+                                                                    {group.isAnswered && (
+                                                                        <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
+                                                                            <Sparkles className="h-3 w-3 mr-1" />
+                                                                            Exaucée
+                                                                        </Badge>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-sm text-slate-400 line-clamp-2">{group.description}</p>
+                                                                <div className="flex items-center gap-3 mt-3">
+                                                                    <span className="text-xs text-slate-500 flex items-center gap-1">
+                                                                        <Users className="h-3 w-3" />
+                                                                        {group.memberCount || 0} membres
+                                                                    </span>
+                                                                    {!group.isOpen && (
+                                                                        <span className="text-xs text-amber-400 flex items-center gap-1">
+                                                                            <Lock className="h-3 w-3" />
+                                                                            Fermé
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <ChevronRight className="h-5 w-5 text-slate-500 shrink-0" />
+                                                        </div>
+                                                        {group.isOpen && (
+                                                            <div className="mt-4 pt-4 border-t border-white/5">
+                                                                <Button
+                                                                    size="sm"
+                                                                    className="w-full h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        joinGroup(group.id);
+                                                                    }}
+                                                                >
+                                                                    <UserPlus className="h-4 w-4 mr-2" />
+                                                                    Rejoindre cette communauté
+                                                                </Button>
+                                                            </div>
                                                         )}
-                                                    </div>
-                                                )}
-                                            </CardContent>
-                                        </Card>
-                                    );
-                                })}
+                                                    </CardContent>
+                                                </Card>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
 
                                 {groups.length === 0 && (
                                     <div className="text-center py-12">
@@ -1803,7 +1938,7 @@ export function CommunityView() {
                         </header>
                         <div className="flex-1 overflow-hidden">
                             <GroupCallManager
-                                user={user ? { id: user.id, name: user.name || user.full_name || '', avatar: user.avatar_url || user.avatar } : null}
+                                user={user ? { id: user.id, name: user.name || '', avatar: user.avatar } : null}
                                 groupId={selectedGroup.id}
                                 groupName={selectedGroup.name}
                             />
@@ -2103,20 +2238,16 @@ export function CommunityView() {
                                     </div>
                                 </div>
                                 <div className="flex gap-1">
-                                    {/* Video Call Button */}
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-full h-10 w-10"
-                                        onClick={() => {
-                                            // Open Google Meet for 1-on-1 call
-                                            const meetUrl = `https://meet.google.com/new`;
-                                            window.open(meetUrl, '_blank');
-                                            toast.success('Appel vidéo lancé! Partagez le lien avec votre contact.');
-                                        }}
-                                    >
-                                        <Video className="h-5 w-5" />
-                                    </Button>
+                                    {/* Voice & Video Call Buttons */}
+                                    {user && selectedConversation.otherUser && (
+                                        <DMCallButtons
+                                            currentUserId={user.id}
+                                            currentUserName={user.name || 'Utilisateur'}
+                                            currentUserAvatar={user.avatar}
+                                            otherUserId={selectedConversation.otherUser.id}
+                                            otherUserName={selectedConversation.otherUser.full_name || 'Utilisateur'}
+                                        />
+                                    )}
                                     <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white rounded-full h-10 w-10">
                                         <MoreVertical className="h-5 w-5" />
                                     </Button>
@@ -2259,6 +2390,70 @@ export function CommunityView() {
                         </div>
                     </motion.div>
                 )}
+
+                {/* ========== FRIENDS VIEW ========== */}
+                {viewState === 'friends' && (
+                    <motion.div
+                        key="friends"
+                        initial={{ opacity: 0, x: 50 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -50 }}
+                    >
+                        <FriendSystem
+                            userId={user?.id || ''}
+                            userName={user?.name || ''}
+                            onClose={() => setViewState('main')}
+                            onStartChat={async (friendId: string, friendName: string) => {
+                                // Try to find or create a conversation with this friend
+                                if (!user) return;
+                                try {
+                                    // Check if conversation exists
+                                    const { data: existing } = await supabase
+                                        .from('conversations')
+                                        .select('*')
+                                        .or(`and(participant1_id.eq.${user.id},participant2_id.eq.${friendId}),and(participant1_id.eq.${friendId},participant2_id.eq.${user.id})`)
+                                        .single();
+
+                                    if (existing) {
+                                        const { data: profile } = await supabase
+                                            .from('profiles')
+                                            .select('id, full_name, avatar_url')
+                                            .eq('id', friendId)
+                                            .single();
+                                        setSelectedConversation({
+                                            ...existing,
+                                            otherUser: profile || { id: friendId, full_name: friendName, avatar_url: null }
+                                        });
+                                        setViewState('conversation');
+                                    } else {
+                                        // Create new conversation
+                                        const { data: newConv, error } = await supabase
+                                            .from('conversations')
+                                            .insert({
+                                                participant1_id: user.id,
+                                                participant2_id: friendId,
+                                                last_message_at: new Date().toISOString()
+                                            })
+                                            .select()
+                                            .single();
+
+                                        if (error) throw error;
+                                        if (newConv) {
+                                            setSelectedConversation({
+                                                ...newConv,
+                                                otherUser: { id: friendId, full_name: friendName, avatar_url: null }
+                                            });
+                                            setViewState('conversation');
+                                        }
+                                    }
+                                } catch (e) {
+                                    console.error('Error starting chat:', e);
+                                    toast.error("Erreur lors de l'ouverture du chat");
+                                }
+                            }}
+                        />
+                    </motion.div>
+                )}
             </AnimatePresence>
         </div>
     );
@@ -2311,7 +2506,7 @@ function PrayerCard({
 
         // Optimistic Update
         setHasPrayed(true);
-        setPrayerCount(prev => prev + 1);
+        setPrayerCount((prev: number) => prev + 1);
         setIsAnimating(true);
         setTimeout(() => setIsAnimating(false), 1000);
 

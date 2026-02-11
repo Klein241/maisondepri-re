@@ -143,7 +143,7 @@ self.addEventListener('fetch', (event) => {
 // ==================== PUSH NOTIFICATIONS ====================
 self.addEventListener('push', (event) => {
     let data = {
-        title: 'Prayer Marathon',
+        title: 'MAISON DE PRIERE',
         body: 'Vous avez une nouvelle notification',
         icon: '/icon-192.png',
         badge: '/icon-192.png',

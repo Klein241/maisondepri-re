@@ -26,7 +26,11 @@ import {
     X,
     Radio,
     Share2,
-    Book
+    Book,
+    Heart,
+    UsersRound,
+    FolderOpen,
+    Eye
 } from "lucide-react"
 
 const sidebarItems = [
@@ -51,6 +55,16 @@ const sidebarItems = [
         icon: Book,
     },
     {
+        title: "Groupes de Prière",
+        href: "/admin/groups",
+        icon: UsersRound,
+    },
+    {
+        title: "Prières",
+        href: "/admin/prayers",
+        icon: Heart,
+    },
+    {
         title: "Modération",
         href: "/admin/moderation",
         icon: MessageSquare,
@@ -64,6 +78,16 @@ const sidebarItems = [
         title: "Live & Réseaux",
         href: "/admin/social",
         icon: Share2,
+    },
+    {
+        title: "Ressources",
+        href: "/admin/resources",
+        icon: FolderOpen,
+    },
+    {
+        title: "Vues en temps réel",
+        href: "/admin/realtime",
+        icon: Eye,
     },
     {
         title: "Paramètres",
@@ -91,7 +115,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
                     Gestion
                 </h4>
                 <nav className="space-y-1">
-                    {sidebarItems.slice(0, 4).map((item) => {
+                    {sidebarItems.slice(0, 6).map((item) => {
                         const Icon = item.icon
                         const isActive = pathname === item.href
                         return (
@@ -119,7 +143,35 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
                     Communauté
                 </h4>
                 <nav className="space-y-1">
-                    {sidebarItems.slice(4).map((item) => {
+                    {sidebarItems.slice(6, 10).map((item) => {
+                        const Icon = item.icon
+                        const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
+                        return (
+                            <Link
+                                key={item.href}
+                                href={item.href}
+                                onClick={onLinkClick}
+                                className={cn(
+                                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 group",
+                                    isActive
+                                        ? "bg-primary text-primary-foreground shadow-lg shadow-primary/20"
+                                        : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                                )}
+                            >
+                                <Icon className={cn("h-4 w-4 transition-transform group-hover:scale-110", isActive && "text-primary-foreground")} />
+                                {item.title}
+                            </Link>
+                        )
+                    })}
+                </nav>
+            </div>
+
+            <div className="px-3 md:px-4 py-2">
+                <h4 className="mb-2 px-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    Système
+                </h4>
+                <nav className="space-y-1">
+                    {sidebarItems.slice(10).map((item) => {
                         const Icon = item.icon
                         const isActive = pathname === item.href || pathname?.startsWith(item.href)
                         return (

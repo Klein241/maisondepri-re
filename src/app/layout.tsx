@@ -24,13 +24,13 @@ const crimsonPro = Crimson_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "Prayer Marathon - 40 Jours",
-  description: "Marathon spirituel de 40 jours de jeûne et prière.",
+  title: "MAISON DE PRIERE - 40 Jours",
+  description: "MAISON DE PRIERE - Marathon spirituel de 40 jours de jeûne et prière.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Prayer Marathon",
+    title: "Maison de Prière",
   },
   other: {
     "apple-mobile-web-app-capable": "yes",
@@ -58,7 +58,7 @@ export default function RootLayout({
         <link rel="apple-touch-icon" href="/icon-192.png" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="apple-mobile-web-app-title" content="Prayer Marathon" />
+        <meta name="apple-mobile-web-app-title" content="Maison de Prière" />
         {/* Microsoft Tiles */}
         <meta name="msapplication-TileColor" content="#0F172A" />
         <meta name="msapplication-TileImage" content="/icon-192.png" />

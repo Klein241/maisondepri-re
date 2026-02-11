@@ -35,14 +35,27 @@ export function BibleSearch({ onClose }: { onClose: () => void }) {
                     id: v.reference
                 })));
             } else {
-                // Fallback: try to get the passage directly (if query is a reference like "Jean 3:16")
-                const passage = await bibleApi.getPassage(query, DEFAULT_BIBLE_ID);
-                if (passage && passage.text) {
-                    setResults([{
-                        reference: passage.reference,
-                        text: passage.text,
-                        id: passage.reference
-                    }]);
+                // Fallback: try to parse the query as a reference (e.g. "Jean 3:16")
+                const ref = bibleApi.parseReference(query);
+                if (ref) {
+                    const chapter = await bibleApi.getChapter(ref.bookId, ref.chapter, DEFAULT_BIBLE_ID);
+                    if (chapter && chapter.verses.length > 0) {
+                        // If specific verses requested, filter them
+                        const verses = ref.verseStart
+                            ? chapter.verses.filter((v: BibleVerse) => {
+                                const num = v.verse || 0;
+                                return num >= (ref.verseStart || 0) && num <= (ref.verseEnd || ref.verseStart || 0);
+                            })
+                            : chapter.verses;
+
+                        setResults(verses.map((v: BibleVerse) => ({
+                            reference: v.reference,
+                            text: v.text,
+                            id: v.reference
+                        })));
+                    } else {
+                        setResults([]);
+                    }
                 } else {
                     setResults([]);
                 }
