@@ -4,12 +4,11 @@ import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/lib/store';
 
-// Ensure the user has a row in the profiles table
+// Ensure the user has a row in the profiles table via API (bypasses RLS)
 async function ensureProfile(user: {
     id: string;
     email?: string;
     user_metadata: { full_name?: string; avatar_url?: string; first_name?: string };
-    created_at: string;
 }) {
     try {
         const fullName = user.user_metadata.full_name
@@ -17,23 +16,24 @@ async function ensureProfile(user: {
             || user.email?.split('@')[0]
             || 'Utilisateur';
 
-        const { error } = await supabase
-            .from('profiles')
-            .upsert({
+        const res = await fetch('/api/auth/ensure-profile', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
                 id: user.id,
                 email: user.email || '',
                 full_name: fullName,
                 avatar_url: user.user_metadata.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}`,
                 first_name: user.user_metadata.first_name || fullName.split(' ')[0] || null,
-            }, {
-                onConflict: 'id',
-                ignoreDuplicates: false, // update if exists
-            });
+            }),
+        });
 
-        if (error) {
-            console.warn('[Auth] Profile upsert failed:', error.message);
+        if (!res.ok) {
+            const data = await res.json();
+            console.warn('[Auth] Profile ensure failed:', data.error);
         }
     } catch (e) {
+        // Silently fail - profile might already exist
         console.warn('[Auth] ensureProfile error:', e);
     }
 }
@@ -46,9 +46,7 @@ export function AuthListener() {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
-                // Ensure profile exists in profiles table
-                await ensureProfile(session.user as any);
-
+                // Set user immediately (don't wait for profile)
                 setUser({
                     id: session.user.id,
                     email: session.user.email || '',
@@ -56,7 +54,10 @@ export function AuthListener() {
                     avatar: session.user.user_metadata.avatar_url,
                     joinedAt: session.user.created_at,
                 });
-                useAppStore.getState().loadInitialData(); // Load user data from Supabase
+                useAppStore.getState().loadInitialData();
+
+                // Ensure profile exists (async, non-blocking)
+                ensureProfile(session.user as any);
             } else {
                 setUser(null);
             }
@@ -68,9 +69,6 @@ export function AuthListener() {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (_event, session) => {
                 if (session?.user) {
-                    // Ensure profile exists in profiles table
-                    await ensureProfile(session.user as any);
-
                     setUser({
                         id: session.user.id,
                         email: session.user.email || '',
@@ -79,6 +77,9 @@ export function AuthListener() {
                         joinedAt: session.user.created_at,
                     });
                     useAppStore.getState().loadInitialData();
+
+                    // Ensure profile exists (async, non-blocking)
+                    ensureProfile(session.user as any);
                 } else {
                     setUser(null);
                 }
@@ -92,4 +93,3 @@ export function AuthListener() {
 
     return null;
 }
-

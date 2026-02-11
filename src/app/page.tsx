@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { BottomNav } from '@/components/bottom-nav';
 import { HomeView } from '@/components/views/home-view';
 import { ProgramView } from '@/components/views/program-view';
@@ -137,18 +137,10 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-background safe-area-padding-bottom">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={selectedDay !== null ? `day-${selectedDay}` : activeTab}
-          initial={{ opacity: 0, x: selectedDay !== null ? 20 : 0 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: selectedDay !== null ? -20 : 0 }}
-          transition={{ duration: 0.2 }}
-        >
-          {renderContent()}
-        </motion.div>
-      </AnimatePresence>
+    <main className="min-h-screen bg-background pb-safe overflow-y-auto overflow-x-hidden">
+      <div className="min-h-screen">
+        {renderContent()}
+      </div>
 
       {/* Only show bottom nav when not viewing day detail */}
       {selectedDay === null && (
