@@ -1,0 +1,2773 @@
+'use client';
+
+import { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+    MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search,
+    Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
+    Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings,
+    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video
+} from 'lucide-react';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { useAppStore } from "@/lib/store";
+import { supabase } from "@/lib/supabase";
+import { PRAYER_CATEGORIES, PrayerCategory, PrayerRequest, Testimonial, PrayerGroup } from "@/lib/types";
+import { PhotoUpload, PhotoGallery } from "@/components/ui/photo-upload";
+import { WhatsAppChat } from "@/components/community/whatsapp-chat";
+import { PrayerGroupManager } from "@/components/community/prayer-group-manager";
+import { EmojiPicker } from "@/components/ui/emoji-picker";
+import { GroupCallManager } from "@/components/community/group-call-manager";
+import { cn } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
+import { fr } from "date-fns/locale";
+import { toast } from "sonner";
+
+type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call';
+
+// Voice Message Player Component
+function VoiceMessagePlayer({ voiceUrl, duration, isOwn }: { voiceUrl: string; duration?: number; isOwn?: boolean }) {
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [progress, setProgress] = useState(0);
+    const [currentTime, setCurrentTime] = useState(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
+
+    useEffect(() => {
+        const audio = new Audio(voiceUrl);
+        audioRef.current = audio;
+
+        audio.addEventListener('timeupdate', () => {
+            if (audio.duration) {
+                setProgress((audio.currentTime / audio.duration) * 100);
+                setCurrentTime(audio.currentTime);
+            }
+        });
+
+        audio.addEventListener('ended', () => {
+            setIsPlaying(false);
+            setProgress(0);
+            setCurrentTime(0);
+        });
+
+        return () => {
+            audio.pause();
+            audio.src = '';
+        };
+    }, [voiceUrl]);
+
+    const togglePlay = () => {
+        if (!audioRef.current) return;
+        if (isPlaying) {
+            audioRef.current.pause();
+        } else {
+            audioRef.current.play();
+        }
+        setIsPlaying(!isPlaying);
+    };
+
+    const formatTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    return (
+        <div className="flex items-center gap-3 min-w-[180px]">
+            <button
+                onClick={togglePlay}
+                className={cn(
+                    "w-10 h-10 rounded-full flex items-center justify-center transition-colors",
+                    isOwn ? "bg-white/20 hover:bg-white/30" : "bg-indigo-500/30 hover:bg-indigo-500/40"
+                )}
+            >
+                {isPlaying ? (
+                    <Pause className="h-5 w-5 text-white" />
+                ) : (
+                    <Play className="h-5 w-5 text-white ml-0.5" />
+                )}
+            </button>
+            <div className="flex-1">
+                <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+                    <div
+                        className={cn(
+                            "h-full transition-all duration-100",
+                            isOwn ? "bg-white/60" : "bg-indigo-400"
+                        )}
+                        style={{ width: `${progress}%` }}
+                    />
+                </div>
+                <span className="text-[10px] opacity-70 mt-1 block">
+                    {formatTime(currentTime)} / {formatTime(duration || 0)}
+                </span>
+            </div>
+        </div>
+    );
+}
+
+export function CommunityView() {
+    const {
+        prayerRequests, addPrayerRequest, prayForRequest,
+        testimonials, addTestimonial, likeTestimonial,
+        user
+    } = useAppStore();
+
+    // UI State
+    const [viewState, setViewState] = useState<ViewState>('main');
+    const [activeTab, setActiveTab] = useState<'prayers' | 'testimonials' | 'chat'>('prayers');
+    const [selectedCategory, setSelectedCategory] = useState<PrayerCategory | 'all'>('all');
+    const [showAnsweredOnly, setShowAnsweredOnly] = useState(false);
+    const [isDialogOpen, setIsDialogOpen] = useState(false);
+    const [dialogType, setDialogType] = useState<'prayer' | 'testimonial'>('prayer');
+
+    // Form State
+    const [newContent, setNewContent] = useState('');
+    const [newCategory, setNewCategory] = useState<PrayerCategory>('other');
+    const [newPhotos, setNewPhotos] = useState<string[]>([]);
+    const [isAnonymous, setIsAnonymous] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    // Chat State
+    const [chatMessages, setChatMessages] = useState<any[]>([]);
+    const [newMessage, setNewMessage] = useState('');
+    const [loadingMessages, setLoadingMessages] = useState(false);
+    const chatScrollRef = useRef<HTMLDivElement>(null);
+
+    // Groups State
+    const [groups, setGroups] = useState<PrayerGroup[]>([]);
+    const [selectedGroup, setSelectedGroup] = useState<PrayerGroup | null>(null);
+    const [groupMessages, setGroupMessages] = useState<any[]>([]);
+    const [loadingGroupMessages, setLoadingGroupMessages] = useState(false);
+
+    // Private Messages State
+    const [conversations, setConversations] = useState<any[]>([]);
+    const [selectedConversation, setSelectedConversation] = useState<any | null>(null);
+    const [directMessages, setDirectMessages] = useState<any[]>([]);
+    const [loadingConversations, setLoadingConversations] = useState(false);
+    const [loadingDMs, setLoadingDMs] = useState(false);
+    const [allUsers, setAllUsers] = useState<any[]>([]); // For selecting new conversation partner
+    const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [newGroupDescription, setNewGroupDescription] = useState('');
+    const [creatingGroup, setCreatingGroup] = useState(false);
+    const [userGroups, setUserGroups] = useState<string[]>([]); // Groups user has joined
+    const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
+    const [userLastSeen, setUserLastSeen] = useState<Record<string, string>>({});
+
+    // Emoji picker states
+    const [showDMEmojiPicker, setShowDMEmojiPicker] = useState(false);
+    const [showGroupEmojiPicker, setShowGroupEmojiPicker] = useState(false);
+
+    // Voice recording states
+    const [isRecording, setIsRecording] = useState(false);
+    const [recordingTime, setRecordingTime] = useState(0);
+    const [isUploadingVoice, setIsUploadingVoice] = useState(false);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const audioChunksRef = useRef<Blob[]>([]);
+    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Track online presence with robust updates
+    useEffect(() => {
+        if (!user) return;
+
+        // Set user online when component mounts
+        const setOnline = async () => {
+            try {
+                await supabase
+                    .from('profiles')
+                    .update({ is_online: true, last_seen: new Date().toISOString() })
+                    .eq('id', user.id);
+            } catch (e) {
+                console.log('Online status columns may not exist yet');
+            }
+        };
+
+        const setOffline = async () => {
+            try {
+                await supabase
+                    .from('profiles')
+                    .update({ is_online: false, last_seen: new Date().toISOString() })
+                    .eq('id', user.id);
+            } catch (e) {
+                // Ignore
+            }
+        };
+
+        setOnline();
+
+        // Fetch ALL profiles with online status + auto-cleanup stale users
+        const fetchOnlineUsers = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('profiles')
+                    .select('id, is_online, last_seen');
+
+                if (!error && data) {
+                    const onlineMap: Record<string, boolean> = {};
+                    const lastSeenMap: Record<string, string> = {};
+                    const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+
+                    data.forEach(u => {
+                        // Auto-cleanup: if user hasn't been seen in 2 min, consider offline
+                        const lastSeenTime = u.last_seen ? new Date(u.last_seen).getTime() : 0;
+                        const isReallyOnline = u.is_online === true && lastSeenTime > twoMinutesAgo;
+                        onlineMap[u.id] = isReallyOnline;
+                        if (u.last_seen) lastSeenMap[u.id] = u.last_seen;
+                    });
+                    setOnlineUsers(onlineMap);
+                    setUserLastSeen(lastSeenMap);
+                }
+            } catch (e) {
+                console.log('Online status feature not available yet');
+            }
+        };
+        fetchOnlineUsers();
+
+        // Heartbeat: update last_seen every 30s to prove we're still online
+        const heartbeatInterval = setInterval(async () => {
+            try {
+                await supabase
+                    .from('profiles')
+                    .update({ is_online: true, last_seen: new Date().toISOString() })
+                    .eq('id', user.id);
+            } catch (e) {
+                // Ignore
+            }
+        }, 30000);
+
+        // Subscribe to presence changes via realtime
+        const presenceChannel = supabase.channel('online-users-presence')
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'profiles'
+            }, (payload) => {
+                const profile = payload.new as any;
+                if (profile.id) {
+                    // Check if last_seen is recent (within 2 min)
+                    const lastSeenTime = profile.last_seen ? new Date(profile.last_seen).getTime() : 0;
+                    const isReallyOnline = profile.is_online === true && lastSeenTime > (Date.now() - 2 * 60 * 1000);
+                    setOnlineUsers(prev => ({ ...prev, [profile.id]: isReallyOnline }));
+                    if (profile.last_seen) {
+                        setUserLastSeen(prev => ({ ...prev, [profile.id]: profile.last_seen }));
+                    }
+                }
+            })
+            .subscribe();
+
+        // Handle page visibility changes
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                setOnline();
+            } else {
+                // When tab is hidden, update last_seen but keep online
+                // (the heartbeat will stop if the tab is closed)
+                supabase.from('profiles')
+                    .update({ last_seen: new Date().toISOString() })
+                    .eq('id', user.id)
+                    .then(() => { });
+            }
+        };
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        // CRITICAL: Handle browser/tab close - set offline immediately
+        const handleBeforeUnload = () => {
+            // Use sendBeacon for reliable delivery on page close
+            const payload = JSON.stringify({
+                is_online: false,
+                last_seen: new Date().toISOString()
+            });
+
+            // Try sendBeacon first (most reliable for page unload)
+            if (navigator.sendBeacon) {
+                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+                const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+                if (supabaseUrl && supabaseKey) {
+                    const url = `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`;
+                    const blob = new Blob([payload], { type: 'application/json' });
+                    navigator.sendBeacon(url, blob); // May not work due to auth headers
+                }
+            }
+
+            // Also try synchronous fetch (backup)
+            try {
+                setOffline();
+            } catch (e) {
+                // Ignore
+            }
+        };
+        window.addEventListener('beforeunload', handleBeforeUnload);
+
+        // Set offline on unmount
+        return () => {
+            clearInterval(heartbeatInterval);
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            setOffline();
+            presenceChannel.unsubscribe();
+        };
+    }, [user]);
+
+    // Heartbeat to keep user online - every 5 minutes (much less frequent to avoid constant updates)
+    useEffect(() => {
+        if (!user) return;
+        const interval = setInterval(async () => {
+            try {
+                await supabase.from('profiles').update({
+                    is_online: true,
+                    last_seen: new Date().toISOString()
+                }).eq('id', user.id);
+            } catch (e) {
+                // Silently fail if columns don't exist
+            }
+        }, 300000); // Every 5 minutes - realtime subscription handles the rest
+
+        return () => clearInterval(interval);
+    }, [user]);
+
+    // Load chat messages
+    useEffect(() => {
+        if (activeTab === 'chat') {
+            loadChatMessages();
+            const subscription = supabase
+                .channel('community_messages_realtime')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_messages' }, async (payload) => {
+                    const newMessage = payload.new;
+                    // Fetch profile for the new message
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name, avatar_url')
+                        .eq('id', newMessage.user_id)
+                        .single();
+
+                    setChatMessages(prev => [...prev, { ...newMessage, profiles: profile }]);
+                })
+                .subscribe();
+
+            return () => {
+                subscription.unsubscribe();
+            };
+        }
+    }, [activeTab]);
+
+    // Scroll to bottom on new messages
+    useEffect(() => {
+        if (chatScrollRef.current) {
+            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        }
+    }, [chatMessages, directMessages, groupMessages]);
+
+    const loadChatMessages = async () => {
+        setLoadingMessages(true);
+        try {
+            const { data, error } = await supabase
+                .from('community_messages')
+                .select(`
+                    *,
+                    profiles:user_id (full_name, avatar_url)
+                `)
+                .order('created_at', { ascending: true })
+                .limit(50);
+
+            if (error) throw error;
+            setChatMessages(data || []);
+        } catch (e) {
+            console.error('Error loading messages:', e);
+        }
+        setLoadingMessages(false);
+    };
+
+    const loadGroups = async () => {
+        try {
+            // First try with full query
+            let { data, error } = await supabase
+                .from('prayer_groups')
+                .select(`
+                    *,
+                    profiles:created_by (full_name, avatar_url)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                console.log('Groups query error, trying simpler query:', error.message);
+                // Fallback to simpler query
+                const simpleResult = await supabase
+                    .from('prayer_groups')
+                    .select('*')
+                    .order('created_at', { ascending: false });
+                data = simpleResult.data;
+            }
+
+            setGroups(data?.map(g => ({ ...g, memberCount: 0 })) || []);
+        } catch (e) {
+            console.error('Error loading groups:', e);
+        }
+    };
+
+    // Load private conversations
+    const loadConversations = async () => {
+        if (!user) return;
+        setLoadingConversations(true);
+        try {
+            // Try with profiles join
+            let { data, error } = await supabase
+                .from('conversations')
+                .select('*')
+                .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
+                .order('last_message_at', { ascending: false });
+
+            if (!error && data) {
+                // Fetch profiles separately for each conversation
+                const formattedConversations = await Promise.all(data.map(async (conv) => {
+                    const otherUserId = conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url')
+                        .eq('id', otherUserId)
+                        .single();
+                    return {
+                        ...conv,
+                        otherUser: profile || { id: otherUserId, full_name: 'Utilisateur', avatar_url: null }
+                    };
+                }));
+                setConversations(formattedConversations);
+            } else if (error) {
+                console.log('Conversations table may not exist yet:', error.message);
+                setConversations([]);
+            }
+        } catch (e) {
+            console.error('Error loading conversations:', e);
+            setConversations([]);
+        }
+        setLoadingConversations(false);
+    };
+
+    // Load users for new conversation
+    const loadUsers = async () => {
+        if (!user) return;
+        try {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url')
+                .neq('id', user.id)
+                .limit(50);
+
+            if (!error && data) {
+                setAllUsers(data);
+            }
+        } catch (e) {
+            console.error('Error loading users:', e);
+        }
+    };
+
+    // Load direct messages for a conversation
+    const loadDirectMessages = async (conversationId: string) => {
+        setLoadingDMs(true);
+        try {
+            const { data, error } = await supabase
+                .from('direct_messages')
+                .select('*')
+                .eq('conversation_id', conversationId)
+                .order('created_at', { ascending: true })
+                .limit(100);
+
+            if (!error && data) {
+                // Fetch sender profiles separately
+                const messagesWithSenders = await Promise.all(data.map(async (msg) => {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url')
+                        .eq('id', msg.sender_id)
+                        .single();
+                    return { ...msg, sender: profile };
+                }));
+                setDirectMessages(messagesWithSenders);
+            } else {
+                console.log('Direct messages error:', error?.message);
+                setDirectMessages([]);
+            }
+        } catch (e) {
+            console.error('Error loading DMs:', e);
+            setDirectMessages([]);
+        }
+        setLoadingDMs(false);
+    };
+
+    // Send direct message with optimistic update
+    const sendDirectMessage = async () => {
+        if (!newMessage.trim() || !user || !selectedConversation) return;
+
+        const messageContent = newMessage.trim();
+        const tempId = `temp_${Date.now()}`;
+
+        // Optimistic update: add message to UI immediately
+        const optimisticMessage = {
+            id: tempId,
+            conversation_id: selectedConversation.id,
+            sender_id: user.id,
+            content: messageContent,
+            type: 'text',
+            created_at: new Date().toISOString(),
+            sender: { id: user.id, full_name: 'Moi', avatar_url: null }
+        };
+
+        setDirectMessages(prev => [...prev, optimisticMessage]);
+        setNewMessage('');
+
+        // Scroll to bottom
+        setTimeout(() => {
+            if (chatScrollRef.current) {
+                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+            }
+        }, 50);
+
+        try {
+            const { data, error } = await supabase
+                .from('direct_messages')
+                .insert({
+                    conversation_id: selectedConversation.id,
+                    sender_id: user.id,
+                    content: messageContent
+                })
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Replace temp message with real one from server
+            if (data) {
+                setDirectMessages(prev =>
+                    prev.map(m => m.id === tempId ? { ...m, id: data.id, created_at: data.created_at } : m)
+                );
+            }
+
+            // Update conversation's last_message timestamp
+            await supabase
+                .from('conversations')
+                .update({ last_message_at: new Date().toISOString(), last_message: messageContent })
+                .eq('id', selectedConversation.id);
+
+        } catch (e) {
+            console.error('Error sending DM:', e);
+            // Remove optimistic message on error
+            setDirectMessages(prev => prev.filter(m => m.id !== tempId));
+            setNewMessage(messageContent); // Restore the message
+            toast.error("Erreur lors de l'envoi du message");
+        }
+    };
+
+    // Load group messages
+    const loadGroupMessages = async (groupId: string) => {
+        setLoadingGroupMessages(true);
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .select(`
+                    *,
+                    profiles:user_id(full_name, avatar_url)
+                `)
+                .eq('group_id', groupId)
+                .order('created_at', { ascending: true })
+                .limit(100);
+
+            if (!error && data) {
+                setGroupMessages(data);
+            }
+        } catch (e) {
+            console.error('Error loading group messages:', e);
+        }
+        setLoadingGroupMessages(false);
+    };
+
+    // Send group message
+    const sendGroupMessage = async () => {
+        if (!newMessage.trim() || !user || !selectedGroup) return;
+
+        try {
+            const { error } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content: newMessage.trim()
+                });
+
+            if (error) throw error;
+            setNewMessage('');
+            // Refresh messages
+            loadGroupMessages(selectedGroup.id);
+        } catch (e) {
+            console.error('Error sending group message:', e);
+            toast.error("Erreur lors de l'envoi du message");
+        }
+    };
+
+    // ========== VOICE RECORDING FUNCTIONS ==========
+
+    // Start recording voice message
+    const startRecording = async () => {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+            mediaRecorderRef.current = mediaRecorder;
+            audioChunksRef.current = [];
+
+            mediaRecorder.ondataavailable = (event) => {
+                if (event.data.size > 0) {
+                    audioChunksRef.current.push(event.data);
+                }
+            };
+
+            mediaRecorder.start(100); // Collect data every 100ms
+            setIsRecording(true);
+            setRecordingTime(0);
+
+            // Start timer
+            recordingIntervalRef.current = setInterval(() => {
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
+
+            toast.info("🎤 Enregistrement en cours...");
+        } catch (error) {
+            console.error('Error starting recording:', error);
+            toast.error("Impossible d'accéder au microphone");
+        }
+    };
+
+    // Stop recording and send
+    const stopRecording = async (mode: 'dm' | 'group') => {
+        if (!mediaRecorderRef.current || !isRecording) return;
+
+        return new Promise<void>((resolve) => {
+            mediaRecorderRef.current!.onstop = async () => {
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                const duration = recordingTime;
+
+                // Stop all tracks
+                mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
+
+                // Clear interval
+                if (recordingIntervalRef.current) {
+                    clearInterval(recordingIntervalRef.current);
+                }
+
+                setIsRecording(false);
+                setRecordingTime(0);
+
+                // Send the voice message
+                if (mode === 'dm') {
+                    await sendVoiceMessageDM(audioBlob, duration);
+                } else {
+                    await sendVoiceMessageGroup(audioBlob, duration);
+                }
+
+                resolve();
+            };
+
+            mediaRecorderRef.current!.stop();
+        });
+    };
+
+    // Cancel recording
+    const cancelRecording = () => {
+        if (mediaRecorderRef.current && isRecording) {
+            mediaRecorderRef.current.stop();
+            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+        }
+
+        if (recordingIntervalRef.current) {
+            clearInterval(recordingIntervalRef.current);
+        }
+
+        setIsRecording(false);
+        setRecordingTime(0);
+        audioChunksRef.current = [];
+        toast.info("Enregistrement annulé");
+    };
+
+    // Send voice message for DM
+    const sendVoiceMessageDM = async (audioBlob: Blob, duration: number) => {
+        if (!user || !selectedConversation) return;
+
+        setIsUploadingVoice(true);
+        try {
+            // Generate unique filename
+            const filename = `voice-messages/${user.id}/${Date.now()}.webm`;
+
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('chat-media')
+                .upload(filename, audioBlob, {
+                    contentType: 'audio/webm',
+                    upsert: false
+                });
+
+            if (uploadError) throw uploadError;
+
+            // Get public URL
+            const { data: urlData } = supabase.storage
+                .from('chat-media')
+                .getPublicUrl(filename);
+
+            const voiceUrl = urlData.publicUrl;
+
+            // Insert message with voice data
+            const { error: insertError } = await supabase
+                .from('direct_messages')
+                .insert({
+                    conversation_id: selectedConversation.id,
+                    sender_id: user.id,
+                    content: '🎤 Message vocal',
+                    type: 'voice',
+                    voice_url: voiceUrl,
+                    voice_duration: duration
+                });
+
+            if (insertError) throw insertError;
+
+            toast.success("Message vocal envoyé! 🎤");
+            loadDirectMessages(selectedConversation.id);
+        } catch (error) {
+            console.error('Error sending voice message:', error);
+            toast.error("Erreur lors de l'envoi du message vocal");
+        }
+        setIsUploadingVoice(false);
+    };
+
+    // Send voice message for Group
+    const sendVoiceMessageGroup = async (audioBlob: Blob, duration: number) => {
+        if (!user || !selectedGroup) return;
+
+        setIsUploadingVoice(true);
+        try {
+            // Generate unique filename
+            const filename = `voice-messages/${user.id}/${Date.now()}.webm`;
+
+            // Upload to Supabase Storage
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('chat-media')
+                .upload(filename, audioBlob, {
+                    contentType: 'audio/webm',
+                    upsert: false
+                });
+
+            if (uploadError) throw uploadError;
+
+            // Get public URL
+            const { data: urlData } = supabase.storage
+                .from('chat-media')
+                .getPublicUrl(filename);
+
+            const voiceUrl = urlData.publicUrl;
+
+            // Insert message with voice data
+            const { error: insertError } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content: '🎤 Message vocal',
+                    type: 'voice',
+                    voice_url: voiceUrl,
+                    voice_duration: duration
+                });
+
+            if (insertError) throw insertError;
+
+            toast.success("Message vocal envoyé! 🎤");
+            loadGroupMessages(selectedGroup.id);
+        } catch (error) {
+            console.error('Error sending voice message:', error);
+            toast.error("Erreur lors de l'envoi du message vocal");
+        }
+        setIsUploadingVoice(false);
+    };
+
+    // Format recording time
+    const formatRecordingTime = (seconds: number) => {
+        const mins = Math.floor(seconds / 60);
+        const secs = seconds % 60;
+        return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    // Join prayer group
+    const joinGroup = async (groupId: string) => {
+        if (!user) return;
+        try {
+            const { error } = await supabase
+                .from('prayer_group_members')
+                .insert({
+                    group_id: groupId,
+                    user_id: user.id
+                });
+
+            if (error && !error.message.includes('duplicate')) throw error;
+            toast.success('Vous avez rejoint le groupe!');
+            setUserGroups(prev => [...prev, groupId]);
+            loadGroups(); // Refresh
+        } catch (e) {
+            console.error('Error joining group:', e);
+            toast.error("Erreur lors de l'adhésion au groupe");
+        }
+    };
+
+    // Leave prayer group
+    const leaveGroup = async (groupId: string) => {
+        if (!user) return;
+        try {
+            const { error } = await supabase
+                .from('prayer_group_members')
+                .delete()
+                .eq('group_id', groupId)
+                .eq('user_id', user.id);
+
+            if (error) throw error;
+            toast.success('Vous avez quitté le groupe');
+            setUserGroups(prev => prev.filter(id => id !== groupId));
+            loadGroups();
+        } catch (e) {
+            console.error('Error leaving group:', e);
+            toast.error("Erreur lors de la désinscription du groupe");
+        }
+    };
+
+    // Create prayer group - Fixed version with direct insert fallback
+    const createGroup = async () => {
+        if (!user || !newGroupName.trim()) return;
+        setCreatingGroup(true);
+        try {
+            // Try RPC first
+            let groupId: string | null = null;
+            const { data: rpcData, error: rpcError } = await supabase.rpc('create_prayer_group', {
+                group_name: newGroupName.trim(),
+                group_description: newGroupDescription.trim() || null,
+                is_public_group: true
+            });
+
+            if (rpcError) {
+                console.log('RPC failed, using direct insert:', rpcError.message);
+                // Fallback to direct insert without is_public
+                const { data: insertData, error: insertError } = await supabase
+                    .from('prayer_groups')
+                    .insert({
+                        name: newGroupName.trim(),
+                        description: newGroupDescription.trim() || null,
+                        created_by: user.id,
+                        is_open: true
+                    })
+                    .select()
+                    .single();
+
+                if (insertError) throw insertError;
+                groupId = insertData?.id;
+
+                // Add creator as admin
+                if (groupId) {
+                    await supabase.from('prayer_group_members').insert({
+                        group_id: groupId,
+                        user_id: user.id,
+                        role: 'admin'
+                    });
+                }
+            } else {
+                groupId = rpcData;
+            }
+
+            toast.success('🙏 Groupe de prière créé avec succès!');
+            setNewGroupName('');
+            setNewGroupDescription('');
+            setShowCreateGroupDialog(false);
+            if (groupId) {
+                setUserGroups(prev => [...prev, groupId!]);
+            }
+            loadGroups();
+        } catch (e) {
+            console.error('Error creating group:', e);
+            toast.error("Erreur lors de la création du groupe");
+        }
+        setCreatingGroup(false);
+    };
+
+    // Load user's joined groups
+    const loadUserGroups = async () => {
+        if (!user) return;
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_members')
+                .select('group_id')
+                .eq('user_id', user.id);
+
+            if (!error && data) {
+                setUserGroups(data.map(m => m.group_id));
+            }
+        } catch (e) {
+            console.error('Error loading user groups:', e);
+        }
+    };
+
+    // Setup real-time subscription for group messages
+    useEffect(() => {
+        if (viewState === 'group-detail' && selectedGroup) {
+            const subscription = supabase
+                .channel(`group_${selectedGroup.id}`)
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'prayer_group_messages',
+                    filter: `group_id=eq.${selectedGroup.id}`
+                }, async (payload) => {
+                    const newMessage = payload.new;
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name, avatar_url')
+                        .eq('id', newMessage.user_id)
+                        .single();
+
+                    setGroupMessages(prev => [...prev, { ...newMessage, profiles: profile }]);
+                })
+                .subscribe();
+
+            return () => {
+                subscription.unsubscribe();
+            };
+        }
+    }, [viewState, selectedGroup]);
+
+    // Load user groups on mount
+    useEffect(() => {
+        if (user) {
+            loadUserGroups();
+        }
+    }, [user]);
+
+    // Load conversations and users when accessing messages view
+    useEffect(() => {
+        if (viewState === 'messages' && user) {
+            loadConversations();
+            loadUsers();
+            loadGroups(); // Also load groups for the combined view
+        }
+    }, [viewState, user]);
+
+    // Real-time subscription for direct messages with polling fallback
+    useEffect(() => {
+        if (viewState === 'conversation' && selectedConversation) {
+            // Initial load
+            loadDirectMessages(selectedConversation.id);
+
+            // Setup realtime subscription
+            const subscription = supabase
+                .channel(`dm_realtime_${selectedConversation.id}_${Date.now()}`)
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'direct_messages',
+                    filter: `conversation_id=eq.${selectedConversation.id}`
+                }, async (payload) => {
+                    const newMessage = payload.new as any;
+
+                    // Skip own messages (already handled by optimistic update)
+                    if (newMessage.sender_id === user?.id) {
+                        // Just replace temp message with real one if needed
+                        setDirectMessages(prev => {
+                            const hasTempVersion = prev.some(m => m.id?.startsWith('temp_') && m.sender_id === user?.id);
+                            if (hasTempVersion) {
+                                // Remove the temp version, real one is already here or will be handled
+                                return prev.filter(m => !m.id?.startsWith('temp_'));
+                            }
+                            // If no temp version exists but we don't have this message yet
+                            if (!prev.some(m => m.id === newMessage.id)) {
+                                return [...prev, { ...newMessage, sender: { id: newMessage.sender_id } }];
+                            }
+                            return prev;
+                        });
+                        return;
+                    }
+
+                    // For messages from other users: add if not duplicate
+                    setDirectMessages(prev => {
+                        if (prev.some(m => m.id === newMessage.id)) return prev;
+                        return [...prev, { ...newMessage, sender: { id: newMessage.sender_id } }];
+                    });
+
+                    // Fetch profile for the new message
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url')
+                        .eq('id', newMessage.sender_id)
+                        .single();
+
+                    // Update with full profile
+                    setDirectMessages(prev =>
+                        prev.map(m => m.id === newMessage.id ? { ...m, sender: profile } : m)
+                    );
+
+                    // Scroll to bottom
+                    setTimeout(() => {
+                        if (chatScrollRef.current) {
+                            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                        }
+                    }, 100);
+                })
+                .subscribe();
+
+            // NO POLLING - Realtime subscription above handles new messages
+            // The 3-second poll was causing constant refresh/flicker making chat unreadable
+
+            return () => {
+                subscription.unsubscribe();
+            };
+        }
+    }, [viewState, selectedConversation?.id]);
+
+    const sendChatMessage = async () => {
+        if (!newMessage.trim() || !user) return;
+
+        try {
+            const { error } = await supabase
+                .from('community_messages')
+                .insert({
+                    user_id: user.id,
+                    content: newMessage.trim()
+                });
+
+            if (error) throw error;
+            setNewMessage('');
+        } catch (e) {
+            console.error('Error sending message:', e);
+            toast.error("Erreur lors de l'envoi du message");
+        }
+    };
+
+    const handlePublish = async () => {
+        if (!newContent.trim() || !user) return;
+
+        setIsSubmitting(true);
+        try {
+            if (dialogType === 'prayer') {
+                await addPrayerRequest(newContent, isAnonymous, newCategory, newPhotos);
+                toast.success('Demande de prière publiée!');
+            } else {
+                await addTestimonial(newContent, newPhotos);
+                toast.success('Témoignage publié!');
+            }
+
+            // Reset form
+            setNewContent('');
+            setNewPhotos([]);
+            setNewCategory('other');
+            setIsAnonymous(false);
+            setIsDialogOpen(false);
+        } catch (e) {
+            toast.error('Erreur lors de la publication');
+        }
+        setIsSubmitting(false);
+    };
+
+    // Filter prayer requests
+    const filteredRequests = prayerRequests.filter(req => {
+        if (selectedCategory !== 'all' && req.category !== selectedCategory) return false;
+        if (showAnsweredOnly && !req.isAnswered) return false;
+        return true;
+    });
+
+    // Get category info
+    const getCategoryInfo = (catId: PrayerCategory) => {
+        return PRAYER_CATEGORIES.find(c => c.id === catId);
+    };
+
+    return (
+        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] via-[#0F1219] to-[#0B0E14] text-slate-100 overflow-y-auto">
+            {/* Background Effects */}
+            <div className="fixed inset-0 pointer-events-none overflow-hidden">
+                <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-pink-600/5 blur-[150px] rounded-full" />
+                <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-purple-600/5 blur-[150px] rounded-full" />
+            </div>
+
+            <AnimatePresence mode="wait">
+                {/* ========== MAIN COMMUNITY VIEW ========== */}
+                {viewState === 'main' && (
+                    <motion.div
+                        key="main"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="relative z-10 flex flex-col h-[100dvh]"
+                    >
+                        {/* Header */}
+                        <header className="px-6 pt-12 pb-4">
+                            <div className="flex items-center justify-between mb-6">
+                                <div>
+                                    <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
+                                        Communauté
+                                    </h1>
+                                    <p className="text-slate-500 text-sm font-medium mt-1">Prions ensemble</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    {/* Bouton Groupes de Prière - Plus visible */}
+                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                        <Button
+                                            className="rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-600/30 border-0 gap-2 px-4"
+                                            onClick={() => {
+                                                loadGroups();
+                                                setViewState('groups');
+                                            }}
+                                        >
+                                            <Users className="h-4 w-4" />
+                                            <span className="text-xs font-bold">Groupes</span>
+                                        </Button>
+                                    </motion.div>
+                                    {/* Bouton Messages Privés - Plus visible */}
+                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                        <Button
+                                            className="rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 border-0 gap-2 px-4"
+                                            onClick={() => setViewState('messages')}
+                                        >
+                                            <MessageCircle className="h-4 w-4" />
+                                            <span className="text-xs font-bold">Messages</span>
+                                        </Button>
+                                    </motion.div>
+                                </div>
+                            </div>
+
+                            {/* Tab Navigation */}
+                            <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full flex flex-col flex-1 min-h-0">
+                                <TabsList className="w-full bg-white/5 p-1 rounded-2xl">
+                                    <TabsTrigger
+                                        value="prayers"
+                                        className="flex-1 data-[state=active]:bg-indigo-600 rounded-xl font-bold text-xs"
+                                    >
+                                        Prières
+                                    </TabsTrigger>
+                                    <TabsTrigger
+                                        value="testimonials"
+                                        className="flex-1 data-[state=active]:bg-indigo-600 rounded-xl font-bold text-xs"
+                                    >
+                                        Témoignages
+                                    </TabsTrigger>
+                                    <TabsTrigger
+                                        value="chat"
+                                        className="flex-1 data-[state=active]:bg-indigo-600 rounded-xl font-bold text-xs"
+                                    >
+                                        Chat
+                                    </TabsTrigger>
+                                </TabsList>
+
+                                {/* ===== PRAYERS TAB ===== */}
+                                <TabsContent value="prayers" className="mt-4 flex-1 overflow-hidden">
+                                    {/* Category Filter */}
+                                    <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-3">
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={cn(
+                                                "shrink-0 h-9 px-4 rounded-xl text-xs font-bold transition-all",
+                                                selectedCategory === 'all' ? "bg-indigo-600 text-white" : "bg-white/5 text-slate-400"
+                                            )}
+                                            onClick={() => setSelectedCategory('all')}
+                                        >
+                                            Toutes
+                                        </Button>
+                                        {PRAYER_CATEGORIES.slice(0, 6).map(cat => (
+                                            <Button
+                                                key={cat.id}
+                                                variant="ghost"
+                                                size="sm"
+                                                className={cn(
+                                                    "shrink-0 h-9 px-3 rounded-xl text-xs font-bold transition-all gap-1.5",
+                                                    selectedCategory === cat.id ? "text-white" : "bg-white/5 text-slate-400"
+                                                )}
+                                                style={{
+                                                    backgroundColor: selectedCategory === cat.id ? `${cat.color}cc` : undefined
+                                                }}
+                                                onClick={() => setSelectedCategory(cat.id)}
+                                            >
+                                                <span>{cat.icon}</span>
+                                                {cat.nameFr}
+                                            </Button>
+                                        ))}
+                                    </div>
+
+                                    {/* Answered Filter Toggle */}
+                                    <div className="flex items-center justify-between py-2">
+                                        <span className="text-xs text-slate-500">{filteredRequests.length} demandes</span>
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className={cn(
+                                                "h-8 px-3 rounded-xl text-xs font-bold gap-1.5",
+                                                showAnsweredOnly ? "bg-emerald-600/20 text-emerald-400" : "bg-white/5 text-slate-400"
+                                            )}
+                                            onClick={() => setShowAnsweredOnly(!showAnsweredOnly)}
+                                        >
+                                            <CheckCircle2 className="h-3.5 w-3.5" />
+                                            Exaucées
+                                        </Button>
+                                    </div>
+
+                                    {/* Prayer List */}
+                                    <ScrollArea className="flex-1">
+                                        <div className="space-y-4 pb-32">
+                                            {filteredRequests.map((prayer) => (
+                                                <PrayerCard
+                                                    key={prayer.id}
+                                                    prayer={prayer}
+                                                    onPray={() => prayForRequest(prayer.id)}
+                                                    getCategoryInfo={getCategoryInfo}
+                                                    userId={user?.id}
+                                                />
+                                            ))}
+
+                                            {filteredRequests.length === 0 && (
+                                                <div className="text-center py-12">
+                                                    <MessageSquare className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                                    <p className="text-slate-500">Aucune demande de prière</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </ScrollArea>
+                                </TabsContent>
+
+                                {/* ===== TESTIMONIALS TAB ===== */}
+                                <TabsContent value="testimonials" className="mt-4 flex-1 overflow-hidden">
+                                    <ScrollArea className="flex-1">
+                                        <div className="space-y-4 pb-32">
+                                            {testimonials.map((testimony) => (
+                                                <TestimonyCard
+                                                    key={testimony.id}
+                                                    testimony={testimony}
+                                                    onLike={() => likeTestimonial(testimony.id)}
+                                                />
+                                            ))}
+
+                                            {testimonials.length === 0 && (
+                                                <div className="text-center py-12">
+                                                    <Sparkles className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                                    <p className="text-slate-500">Aucun témoignage</p>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </ScrollArea>
+                                </TabsContent>
+
+                                {/* ===== CHAT TAB - WhatsApp Style ===== */}
+                                <TabsContent value="chat" className="mt-0 flex flex-col flex-1 min-h-0 overflow-hidden -mx-6">
+                                    <div className="flex-1 relative" style={{ height: 'calc(100vh - 200px)' }}>
+                                        <WhatsAppChat
+                                            user={user ? {
+                                                id: user.id,
+                                                name: user.full_name || 'Utilisateur',
+                                                avatar: user.avatar_url
+                                            } : null}
+                                        />
+                                    </div>
+                                </TabsContent>
+                            </Tabs>
+                        </header>
+
+                        {/* Floating Add Button */}
+                        <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                            <DialogTrigger asChild>
+                                <Button
+                                    className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                    onClick={() => setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer')}
+                                >
+                                    <Plus className="h-6 w-6" />
+                                </Button>
+                            </DialogTrigger>
+
+                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem] max-h-[85vh] overflow-y-auto">
+                                <DialogHeader>
+                                    <DialogTitle className="text-xl font-bold">
+                                        {dialogType === 'prayer' ? 'Nouvelle demande de prière' : 'Nouveau témoignage'}
+                                    </DialogTitle>
+                                    <DialogDescription className="text-slate-400">
+                                        Partagez avec la communauté pour recevoir du soutien.
+                                    </DialogDescription>
+                                </DialogHeader>
+
+                                <div className="space-y-6 pt-4">
+                                    {/* Category Selection (Prayer only) */}
+                                    {dialogType === 'prayer' && (
+                                        <div className="space-y-3">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                Catégorie
+                                            </label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {PRAYER_CATEGORIES.map(cat => (
+                                                    <Button
+                                                        key={cat.id}
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className={cn(
+                                                            "h-9 px-3 rounded-xl text-xs font-bold gap-1.5 transition-all",
+                                                            newCategory === cat.id ? "text-white ring-2 ring-white/20" : "bg-white/5"
+                                                        )}
+                                                        style={{
+                                                            backgroundColor: newCategory === cat.id ? `${cat.color}cc` : undefined
+                                                        }}
+                                                        onClick={() => setNewCategory(cat.id)}
+                                                    >
+                                                        <span>{cat.icon}</span>
+                                                        {cat.nameFr}
+                                                    </Button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Content */}
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            {dialogType === 'prayer' ? 'Votre demande' : 'Votre témoignage'}
+                                        </label>
+                                        <Textarea
+                                            placeholder={dialogType === 'prayer'
+                                                ? "Partagez votre sujet de prière..."
+                                                : "Racontez ce que Dieu a fait dans votre vie..."}
+                                            value={newContent}
+                                            onChange={(e) => setNewContent(e.target.value)}
+                                            className="min-h-[120px] bg-white/5 border-white/10 rounded-2xl resize-none"
+                                        />
+                                    </div>
+
+                                    {/* Photo Upload */}
+                                    <div className="space-y-3">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            Photos (optionnel)
+                                        </label>
+                                        <PhotoUpload
+                                            bucket={dialogType === 'prayer' ? 'prayer-photos' : 'testimony-photos'}
+                                            maxPhotos={3}
+                                            onPhotosChange={setNewPhotos}
+                                        />
+                                    </div>
+
+                                    {/* Anonymous Toggle (Prayer only) */}
+                                    {dialogType === 'prayer' && (
+                                        <div
+                                            className={cn(
+                                                "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border",
+                                                isAnonymous ? "bg-indigo-600/20 border-indigo-500/30" : "bg-white/5 border-white/10"
+                                            )}
+                                            onClick={() => setIsAnonymous(!isAnonymous)}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className={cn(
+                                                    "w-10 h-10 rounded-xl flex items-center justify-center",
+                                                    isAnonymous ? "bg-indigo-500/20" : "bg-white/10"
+                                                )}>
+                                                    <Lock className="h-5 w-5" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm">Publier anonymement</p>
+                                                    <p className="text-xs text-slate-500">Votre nom ne sera pas visible</p>
+                                                </div>
+                                            </div>
+                                            <div className={cn(
+                                                "w-6 h-6 rounded-lg flex items-center justify-center transition-all",
+                                                isAnonymous ? "bg-indigo-600" : "bg-white/10"
+                                            )}>
+                                                {isAnonymous && <Check className="h-4 w-4" />}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Submit Button */}
+                                    <Button
+                                        className="w-full h-14 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold text-lg"
+                                        onClick={handlePublish}
+                                        disabled={!newContent.trim() || isSubmitting}
+                                    >
+                                        {isSubmitting ? (
+                                            <Loader2 className="h-5 w-5 animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Send className="h-5 w-5 mr-2" />
+                                                Publier
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+                    </motion.div>
+                )}
+
+                {/* ========== GROUPS VIEW ========== */}
+                {viewState === 'groups' && (
+                    <motion.div
+                        key="groups"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="relative z-10 flex flex-col h-screen"
+                    >
+                        <header className="px-6 pt-12 pb-4">
+                            <div className="flex items-center justify-between mb-6">
+                                <div className="flex items-center gap-4">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => setViewState('main')}
+                                    >
+                                        <ArrowLeft className="h-5 w-5" />
+                                    </Button>
+                                    <div>
+                                        <h1 className="text-2xl font-bold">Groupes</h1>
+                                        <p className="text-xs text-slate-500">Communautés</p>
+                                    </div>
+                                </div>
+                                <motion.div
+                                    animate={{ scale: [1, 1.05, 1] }}
+                                    transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                                >
+                                    <Button
+                                        size="sm"
+                                        className="rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold px-5 h-10 shadow-lg shadow-emerald-600/30 transition-all border-2 border-emerald-400/30"
+                                        onClick={() => setShowCreateGroupDialog(true)}
+                                    >
+                                        <Plus className="h-5 w-5 mr-2" />
+                                        Créer un groupe de prière
+                                    </Button>
+                                </motion.div>
+                            </div>
+                        </header>
+
+                        {/* Create Group Dialog */}
+                        <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
+                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem]">
+                                <DialogHeader>
+                                    <DialogTitle className="text-xl font-bold">Créer un groupe de prière</DialogTitle>
+                                    <DialogDescription className="text-slate-400">
+                                        Créez un espace pour prier ensemble
+                                    </DialogDescription>
+                                </DialogHeader>
+                                <div className="space-y-4 pt-4">
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            Nom du groupe
+                                        </label>
+                                        <Input
+                                            placeholder="Ex: Prière pour les familles"
+                                            value={newGroupName}
+                                            onChange={(e) => setNewGroupName(e.target.value)}
+                                            className="h-12 rounded-2xl bg-white/5 border-white/10"
+                                        />
+                                    </div>
+                                    <div className="space-y-2">
+                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                            Description (optionnel)
+                                        </label>
+                                        <Textarea
+                                            placeholder="Décrivez l'objectif du groupe..."
+                                            value={newGroupDescription}
+                                            onChange={(e) => setNewGroupDescription(e.target.value)}
+                                            className="min-h-[100px] bg-white/5 border-white/10 rounded-2xl resize-none"
+                                        />
+                                    </div>
+                                    <Button
+                                        className="w-full h-12 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold"
+                                        onClick={createGroup}
+                                        disabled={!newGroupName.trim() || creatingGroup}
+                                    >
+                                        {creatingGroup ? (
+                                            <Loader2 className="h-5 w-5 animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Plus className="h-5 w-5 mr-2" />
+                                                Créer le groupe
+                                            </>
+                                        )}
+                                    </Button>
+                                </div>
+                            </DialogContent>
+                        </Dialog>
+
+                        <ScrollArea className="flex-1 px-6">
+                            <div className="space-y-4 pb-32">
+                                {groups.map((group) => {
+                                    const isMember = userGroups.includes(group.id);
+                                    return (
+                                        <Card
+                                            key={group.id}
+                                            className="bg-white/5 border-white/5 rounded-3xl overflow-hidden hover:bg-white/10 transition-all"
+                                        >
+                                            <CardContent className="p-5">
+                                                <div
+                                                    className="flex items-start gap-4 cursor-pointer"
+                                                    onClick={() => {
+                                                        setSelectedGroup(group);
+                                                        loadGroupMessages(group.id);
+                                                        setViewState('group-detail');
+                                                    }}
+                                                >
+                                                    <div className={cn(
+                                                        "w-14 h-14 rounded-2xl flex items-center justify-center",
+                                                        isMember
+                                                            ? "bg-gradient-to-br from-emerald-600/30 to-teal-600/30"
+                                                            : "bg-gradient-to-br from-indigo-600/30 to-purple-600/30"
+                                                    )}>
+                                                        <Users className={cn("h-7 w-7", isMember ? "text-emerald-400" : "text-indigo-400")} />
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2 mb-1">
+                                                            <h3 className="font-bold text-white truncate">{group.name}</h3>
+                                                            {isMember && (
+                                                                <Badge className="bg-emerald-500/20 text-emerald-400 border-none text-[10px]">
+                                                                    <Check className="h-3 w-3 mr-1" />
+                                                                    Membre
+                                                                </Badge>
+                                                            )}
+                                                            {group.isAnswered && (
+                                                                <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
+                                                                    <Sparkles className="h-3 w-3 mr-1" />
+                                                                    Exaucée
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-sm text-slate-400 line-clamp-2">{group.description}</p>
+                                                        <div className="flex items-center gap-3 mt-3">
+                                                            <span className="text-xs text-slate-500 flex items-center gap-1">
+                                                                <Users className="h-3 w-3" />
+                                                                {group.memberCount || 0} membres
+                                                            </span>
+                                                            {!group.isOpen && (
+                                                                <span className="text-xs text-amber-400 flex items-center gap-1">
+                                                                    <Lock className="h-3 w-3" />
+                                                                    Fermé
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <ChevronRight className="h-5 w-5 text-slate-500 shrink-0" />
+                                                </div>
+                                                {/* Join/Leave Button */}
+                                                {group.isOpen && (
+                                                    <div className="mt-4 pt-4 border-t border-white/5">
+                                                        {isMember ? (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="w-full h-10 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    leaveGroup(group.id);
+                                                                }}
+                                                            >
+                                                                <X className="h-4 w-4 mr-2" />
+                                                                Quitter le groupe
+                                                            </Button>
+                                                        ) : (
+                                                            <Button
+                                                                size="sm"
+                                                                className="w-full h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500"
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    joinGroup(group.id);
+                                                                }}
+                                                            >
+                                                                <UserPlus className="h-4 w-4 mr-2" />
+                                                                Rejoindre
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </CardContent>
+                                        </Card>
+                                    );
+                                })}
+
+                                {groups.length === 0 && (
+                                    <div className="text-center py-12">
+                                        <Users className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                        <p className="text-slate-500">Aucun groupe disponible</p>
+                                        <p className="text-sm text-slate-600 mt-2">Créez le premier groupe de prière!</p>
+                                        <Button
+                                            className="mt-4 rounded-xl bg-indigo-600"
+                                            onClick={() => setShowCreateGroupDialog(true)}
+                                        >
+                                            <Plus className="h-4 w-4 mr-2" />
+                                            Créer un groupe
+                                        </Button>
+                                    </div>
+                                )}
+                            </div>
+                        </ScrollArea>
+                    </motion.div>
+                )}
+
+                {/* ========== GROUP DETAIL VIEW ========== */}
+                {viewState === 'group-detail' && selectedGroup && (
+                    <motion.div
+                        key="group-detail"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="relative z-10 flex flex-col h-screen"
+                    >
+                        <header className="px-6 pt-12 pb-4 border-b border-white/5">
+                            <div className="flex items-center gap-4 mb-4">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                        setSelectedGroup(null);
+                                        setViewState('groups');
+                                    }}
+                                >
+                                    <ArrowLeft className="h-5 w-5" />
+                                </Button>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <h1 className="text-xl font-black truncate">{selectedGroup.name}</h1>
+                                        {selectedGroup.isAnswered && (
+                                            <Badge className="bg-emerald-500/20 text-emerald-400 border-none shrink-0">
+                                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                Exaucée
+                                            </Badge>
+                                        )}
+                                    </div>
+                                    <p className="text-xs text-slate-500">
+                                        {selectedGroup.memberCount || 0} membres
+                                        {!selectedGroup.isOpen && ' • Groupe fermé'}
+                                    </p>
+                                </div>
+                                {/* Video Call Button - Prominent */}
+                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                    <Button
+                                        className="rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 shadow-lg shadow-green-600/30 border-0 gap-2 px-4 h-10"
+                                        onClick={() => setViewState('group-call')}
+                                    >
+                                        <Video className="h-4 w-4" />
+                                        <span className="text-xs font-bold">Appel</span>
+                                    </Button>
+                                </motion.div>
+                            </div>
+                        </header>
+
+                        {/* Group Messages */}
+                        <div
+                            ref={chatScrollRef}
+                            className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+                        >
+                            {loadingGroupMessages ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+                                </div>
+                            ) : groupMessages.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <MessageSquare className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                    <p className="text-slate-500">Aucun message dans ce groupe</p>
+                                    <p className="text-sm text-slate-600 mt-2">Soyez le premier à encourager!</p>
+                                </div>
+                            ) : (
+                                groupMessages.map((msg) => (
+                                    <ChatMessage
+                                        key={msg.id}
+                                        message={{
+                                            ...msg,
+                                            profiles: msg.profiles
+                                        }}
+                                        isOwn={msg.user_id === user?.id}
+                                    />
+                                ))
+                            )}
+                        </div>
+
+                        {/* Message Input - Enhanced */}
+                        {selectedGroup.isOpen && (
+                            <div className="px-4 py-3 border-t border-white/10 bg-slate-900/80">
+                                {/* Emoji Picker */}
+                                <div className="relative">
+                                    <EmojiPicker
+                                        isOpen={showGroupEmojiPicker}
+                                        onClose={() => setShowGroupEmojiPicker(false)}
+                                        onEmojiSelect={(emoji) => {
+                                            setNewMessage(prev => prev + emoji);
+                                            setShowGroupEmojiPicker(false);
+                                        }}
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    {/* Emoji Button */}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => setShowGroupEmojiPicker(!showGroupEmojiPicker)}
+                                        className="h-10 w-10 rounded-full text-slate-400 hover:text-white hover:bg-white/10"
+                                        disabled={isRecording}
+                                    >
+                                        <Smile className="h-5 w-5" />
+                                    </Button>
+
+                                    {/* Recording UI or Text Input */}
+                                    {isRecording ? (
+                                        <div className="flex-1 flex items-center gap-3 bg-red-500/20 rounded-full px-4 py-2">
+                                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                                            <span className="text-red-400 font-mono flex-1">
+                                                {formatRecordingTime(recordingTime)}
+                                            </span>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={cancelRecording}
+                                                className="text-slate-400 hover:text-white h-8 w-8"
+                                            >
+                                                <Trash2 className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => stopRecording('group')}
+                                                className="text-green-400 hover:text-green-300 h-8 w-8"
+                                            >
+                                                <Send className="h-4 w-4" />
+                                            </Button>
+                                        </div>
+                                    ) : isUploadingVoice ? (
+                                        <div className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/20 rounded-full px-4 py-2">
+                                            <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+                                            <span className="text-indigo-400 text-sm">Envoi du message vocal...</span>
+                                        </div>
+                                    ) : (
+                                        <Input
+                                            placeholder="Écrire un message..."
+                                            value={newMessage}
+                                            onChange={(e) => setNewMessage(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && sendGroupMessage()}
+                                            className="flex-1 h-10 rounded-full bg-white/5 border-white/10 px-4"
+                                        />
+                                    )}
+
+                                    {/* Send or Mic Button */}
+                                    {!isRecording && !isUploadingVoice && (
+                                        newMessage.trim() ? (
+                                            <Button
+                                                size="icon"
+                                                className="h-10 w-10 rounded-full bg-indigo-600 hover:bg-indigo-500"
+                                                onClick={sendGroupMessage}
+                                            >
+                                                <Send className="h-5 w-5" />
+                                            </Button>
+                                        ) : (
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                className="h-10 w-10 rounded-full text-slate-400 hover:text-white hover:bg-white/10"
+                                                onClick={startRecording}
+                                            >
+                                                <Mic className="h-5 w-5" />
+                                            </Button>
+                                        )
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </motion.div>
+                )}
+
+                {/* ========== GROUP CALL VIEW ========== */}
+                {viewState === 'group-call' && selectedGroup && (
+                    <motion.div
+                        key="group-call"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="relative z-10 flex flex-col h-screen"
+                    >
+                        <header className="px-6 pt-12 pb-4 border-b border-white/5">
+                            <div className="flex items-center gap-4">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setViewState('group-detail')}
+                                    className="hover:bg-white/5 rounded-full"
+                                >
+                                    <ArrowLeft className="h-5 w-5" />
+                                </Button>
+                                <div className="flex-1 min-w-0">
+                                    <h1 className="text-xl font-black">📹 Appels de groupe</h1>
+                                    <p className="text-xs text-slate-500">{selectedGroup.name}</p>
+                                </div>
+                            </div>
+                        </header>
+                        <div className="flex-1 overflow-hidden">
+                            <GroupCallManager
+                                user={user ? { id: user.id, name: user.name || user.full_name || '', avatar: user.avatar_url || user.avatar } : null}
+                                groupId={selectedGroup.id}
+                                groupName={selectedGroup.name}
+                            />
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* ========== MESSAGES (DM) LIST VIEW (WhatsApp Style) ========== */}
+                {viewState === 'messages' && (
+                    <motion.div
+                        key="messages"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="relative z-10 flex flex-col h-screen bg-[#0F1219]"
+                    >
+                        <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        onClick={() => setViewState('main')}
+                                        className="hover:bg-white/5 rounded-full"
+                                    >
+                                        <ArrowLeft className="h-6 w-6" />
+                                    </Button>
+                                    <h1 className="text-xl font-bold">Discussions</h1>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white rounded-full">
+                                        <Search className="h-5 w-5" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white rounded-full">
+                                        <MoreVertical className="h-5 w-5" />
+                                    </Button>
+                                </div>
+                            </div>
+
+                            {/* Start New Chat Button - TRÈS Prominent avec animation */}
+                            <motion.div
+                                animate={{ scale: [1, 1.02, 1], boxShadow: ["0 0 0 0 rgba(99, 102, 241, 0.4)", "0 0 0 10px rgba(99, 102, 241, 0)", "0 0 0 0 rgba(99, 102, 241, 0)"] }}
+                                transition={{ repeat: Infinity, duration: 2 }}
+                                className="rounded-full"
+                            >
+                                <Button
+                                    className="w-full bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 hover:from-indigo-500 hover:via-purple-500 hover:to-pink-500 text-white rounded-full h-12 font-bold text-base shadow-xl shadow-indigo-600/40 mb-2 border-2 border-white/20"
+                                    onClick={() => {
+                                        const element = document.getElementById('start-new-chat');
+                                        element?.scrollIntoView({ behavior: 'smooth' });
+                                    }}
+                                >
+                                    <Plus className="h-5 w-5 mr-2" />
+                                    Démarrer une conversation privée
+                                </Button>
+                            </motion.div>
+                        </header>
+
+                        <ScrollArea className="flex-1 h-[calc(100vh-200px)]">
+                            <div className="pb-32">
+                                {/* User's Joined Groups Section */}
+                                {userGroups.length > 0 && (
+                                    <div className="mb-4">
+                                        <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 pt-4">
+                                            Mes Groupes de Prière
+                                        </h3>
+                                        {groups.filter(g => userGroups.includes(g.id)).map((group) => (
+                                            <div
+                                                key={group.id}
+                                                className="flex items-center gap-4 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5"
+                                                onClick={() => {
+                                                    setSelectedGroup(group);
+                                                    loadGroupMessages(group.id);
+                                                    setViewState('group-detail');
+                                                }}
+                                            >
+                                                <div className="relative">
+                                                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
+                                                        <Users className="h-6 w-6 text-white" />
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="font-semibold text-base truncate pr-2 text-white/90">
+                                                        {group.name}
+                                                    </h3>
+                                                    <p className="text-sm text-slate-400 truncate">
+                                                        {group.memberCount || 0} membres • Groupe
+                                                    </p>
+                                                </div>
+                                                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                                                    Groupe
+                                                </Badge>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {/* Existing Conversations */}
+                                {conversations.length > 0 && (
+                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 pt-2">
+                                        Mes Conversations
+                                    </h3>
+                                )}
+                                {conversations.map((conv) => {
+                                    const user = conv.otherUser;
+                                    const isOnline = user && onlineUsers[user.id];
+                                    const lastSeen = user && userLastSeen[user.id];
+
+                                    return (
+                                        <div
+                                            key={conv.id}
+                                            className="flex items-center gap-4 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5"
+                                            onClick={() => {
+                                                setSelectedConversation(conv);
+                                                loadDirectMessages(conv.id);
+                                                setViewState('conversation');
+                                            }}
+                                        >
+                                            <div className="relative">
+                                                <Avatar className="h-12 w-12 border border-white/10">
+                                                    <AvatarImage src={user?.avatar_url} />
+                                                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold">
+                                                        {user?.full_name?.[0]}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                {isOnline && (
+                                                    <div className="absolute bottom-0 right-0 h-3 w-3 bg-green-500 rounded-full border-2 border-[#0F1219]" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex justify-between items-baseline mb-0.5">
+                                                    <h3 className="font-semibold text-base truncate pr-2 text-white/90">
+                                                        {user?.full_name || 'Utilisateur'}
+                                                    </h3>
+                                                    <span className="text-[11px] text-slate-500 shrink-0">
+                                                        {conv.last_message_at ? formatDistanceToNow(new Date(conv.last_message_at), { addSuffix: false, locale: fr }) : ''}
+                                                    </span>
+                                                </div>
+                                                <p className="text-sm text-slate-400 truncate flex items-center gap-1">
+                                                    {isOnline ? (
+                                                        <span className="text-green-400 text-xs">● En ligne</span>
+                                                    ) : lastSeen ? (
+                                                        <span className="text-xs">Vu {formatDistanceToNow(new Date(lastSeen), { addSuffix: true, locale: fr })}</span>
+                                                    ) : (
+                                                        conv.last_message_preview || 'Nouvelle discussion'
+                                                    )}
+                                                </p>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+
+                                {conversations.length === 0 && userGroups.length === 0 && (
+                                    <div className="text-center py-12 px-6">
+                                        <div className="bg-white/5 rounded-full h-20 w-20 flex items-center justify-center mx-auto mb-4">
+                                            <MessageSquare className="h-10 w-10 text-slate-500" />
+                                        </div>
+                                        <h3 className="text-lg font-bold text-white mb-2">Pas encore de messages</h3>
+                                        <p className="text-slate-400 text-sm">
+                                            Commencez à discuter avec d'autres participants du marathon de prière.
+                                        </p>
+                                    </div>
+                                )}
+
+                                {/* Users List to Start New Chat */}
+                                <div id="start-new-chat" className="px-4 py-6 mt-4">
+                                    <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-4 px-2">
+                                        Démarrer une conversation avec
+                                    </h3>
+                                    <div className="space-y-1">
+                                        {allUsers.map((profile) => {
+                                            const isOnline = onlineUsers[profile.id];
+                                            const lastSeen = userLastSeen[profile.id];
+                                            return (
+                                                <div
+                                                    key={profile.id}
+                                                    className="flex items-center gap-4 px-3 py-2 hover:bg-white/5 cursor-pointer rounded-xl transition-colors"
+                                                    onClick={async () => {
+                                                        try {
+                                                            // Try RPC first, then fallback
+                                                            let convId = null;
+                                                            const { data, error } = await supabase
+                                                                .rpc('get_or_create_conversation', { other_user_id: profile.id });
+
+                                                            if (error) {
+                                                                console.log('RPC error, trying direct insert:', error.message);
+                                                                // Fallback: direct insert
+                                                                const { data: newConv, error: insertError } = await supabase
+                                                                    .from('conversations')
+                                                                    .insert({
+                                                                        participant1_id: user?.id,
+                                                                        participant2_id: profile.id
+                                                                    })
+                                                                    .select()
+                                                                    .single();
+
+                                                                if (!insertError && newConv) {
+                                                                    convId = newConv.id;
+                                                                }
+                                                            } else {
+                                                                convId = data;
+                                                            }
+
+                                                            if (convId) {
+                                                                setSelectedConversation({
+                                                                    id: convId,
+                                                                    otherUser: profile
+                                                                });
+                                                                loadDirectMessages(convId);
+                                                                setViewState('conversation');
+                                                            }
+                                                        } catch (e) {
+                                                            console.error('Error creating conversation:', e);
+                                                            toast.error("Impossible de démarrer la conversation");
+                                                        }
+                                                    }}
+                                                >
+                                                    <div className="relative">
+                                                        <Avatar className="h-10 w-10 border border-white/10">
+                                                            <AvatarImage src={profile.avatar_url} />
+                                                            <AvatarFallback className="bg-white/10 text-slate-400">
+                                                                {profile.full_name?.[0]}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                        {isOnline && (
+                                                            <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-[#0F1219]" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1">
+                                                        <p className="font-medium text-white">{profile.full_name}</p>
+                                                        <p className="text-xs text-slate-500">
+                                                            {isOnline ? (
+                                                                <span className="text-green-400">● En ligne</span>
+                                                            ) : lastSeen ? (
+                                                                <span>Vu {formatDistanceToNow(new Date(lastSeen), { addSuffix: true, locale: fr })}</span>
+                                                            ) : (
+                                                                'Hors ligne'
+                                                            )}
+                                                        </p>
+                                                    </div>
+                                                    <UserPlus className="h-5 w-5 text-indigo-500/50" />
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        </ScrollArea>
+                    </motion.div>
+                )}
+
+                {/* ========== CONVERSATION (DM) VIEW ========== */}
+                {viewState === 'conversation' && selectedConversation && (
+                    <motion.div
+                        key="conversation"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="relative z-10 flex flex-col h-screen"
+                    >
+                        <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
+                            <div className="flex items-center gap-3">
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                        setSelectedConversation(null);
+                                        setViewState('messages');
+                                    }}
+                                    className="hover:bg-white/5 rounded-full"
+                                >
+                                    <ArrowLeft className="h-6 w-6" />
+                                </Button>
+                                <div className="flex items-center gap-3 flex-1 cursor-pointer hover:bg-white/5 p-1 rounded-lg transition-colors">
+                                    <div className="relative">
+                                        <Avatar className="h-10 w-10 border border-white/10">
+                                            <AvatarImage src={selectedConversation.otherUser?.avatar_url} />
+                                            <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold">
+                                                {selectedConversation.otherUser?.full_name?.[0] || 'U'}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        {selectedConversation.otherUser && onlineUsers[selectedConversation.otherUser.id] && (
+                                            <div className="absolute bottom-0 right-0 h-2.5 w-2.5 bg-green-500 rounded-full border-2 border-[#0F1219]" />
+                                        )}
+                                    </div>
+                                    <div className="flex flex-col">
+                                        <h1 className="text-base font-bold leading-tight text-white">
+                                            {selectedConversation.otherUser?.full_name || 'Utilisateur'}
+                                        </h1>
+                                        <p className="text-xs text-slate-400">
+                                            {selectedConversation.otherUser && onlineUsers[selectedConversation.otherUser.id]
+                                                ? <span className="text-green-500 font-medium">En ligne</span>
+                                                : selectedConversation.otherUser && userLastSeen[selectedConversation.otherUser.id]
+                                                    ? `Vu ${formatDistanceToNow(new Date(userLastSeen[selectedConversation.otherUser.id]), { addSuffix: true, locale: fr })}`
+                                                    : 'Hors ligne'}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-1">
+                                    {/* Video Call Button */}
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-full h-10 w-10"
+                                        onClick={() => {
+                                            // Open Google Meet for 1-on-1 call
+                                            const meetUrl = `https://meet.google.com/new`;
+                                            window.open(meetUrl, '_blank');
+                                            toast.success('Appel vidéo lancé! Partagez le lien avec votre contact.');
+                                        }}
+                                    >
+                                        <Video className="h-5 w-5" />
+                                    </Button>
+                                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white rounded-full h-10 w-10">
+                                        <MoreVertical className="h-5 w-5" />
+                                    </Button>
+                                </div>
+                            </div>
+                        </header>
+
+                        {/* Messages */}
+                        <div
+                            ref={chatScrollRef}
+                            className="flex-1 overflow-y-auto px-6 py-4 space-y-4"
+                        >
+                            {loadingDMs ? (
+                                <div className="flex justify-center py-12">
+                                    <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+                                </div>
+                            ) : directMessages.length === 0 ? (
+                                <div className="text-center py-12">
+                                    <MessageSquare className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                    <p className="text-slate-500">Démarrez la conversation!</p>
+                                </div>
+                            ) : (
+                                directMessages.map((msg) => (
+                                    <div
+                                        key={msg.id}
+                                        className={cn("flex gap-3", msg.sender_id === user?.id && "flex-row-reverse")}
+                                    >
+                                        <div className={cn(
+                                            "max-w-[75%] rounded-2xl px-4 py-2.5",
+                                            msg.sender_id === user?.id
+                                                ? "bg-indigo-600 rounded-br-sm"
+                                                : "bg-white/10 rounded-bl-sm"
+                                        )}>
+                                            {/* Check if it's a voice message */}
+                                            {msg.type === 'voice' && msg.voice_url ? (
+                                                <VoiceMessagePlayer
+                                                    voiceUrl={msg.voice_url}
+                                                    duration={msg.voice_duration}
+                                                    isOwn={msg.sender_id === user?.id}
+                                                />
+                                            ) : (
+                                                <p className="text-sm text-white leading-relaxed">{msg.content}</p>
+                                            )}
+                                            <p className="text-[10px] text-white/50 mt-1">
+                                                {formatDistanceToNow(new Date(msg.created_at), { addSuffix: true, locale: fr })}
+                                            </p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        {/* Message Input - Enhanced */}
+                        <div className="px-4 py-3 border-t border-white/10 bg-slate-900/80">
+                            {/* Emoji Picker */}
+                            <div className="relative">
+                                <EmojiPicker
+                                    isOpen={showDMEmojiPicker}
+                                    onClose={() => setShowDMEmojiPicker(false)}
+                                    onEmojiSelect={(emoji) => {
+                                        setNewMessage(prev => prev + emoji);
+                                        setShowDMEmojiPicker(false);
+                                    }}
+                                />
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                                {/* Emoji Button */}
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setShowDMEmojiPicker(!showDMEmojiPicker)}
+                                    className="h-10 w-10 rounded-full text-slate-400 hover:text-white hover:bg-white/10"
+                                    disabled={isRecording}
+                                >
+                                    <Smile className="h-5 w-5" />
+                                </Button>
+
+                                {/* Recording UI or Text Input */}
+                                {isRecording ? (
+                                    <div className="flex-1 flex items-center gap-3 bg-red-500/20 rounded-full px-4 py-2">
+                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                                        <span className="text-red-400 font-mono flex-1">
+                                            {formatRecordingTime(recordingTime)}
+                                        </span>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={cancelRecording}
+                                            className="text-slate-400 hover:text-white h-8 w-8"
+                                        >
+                                            <Trash2 className="h-4 w-4" />
+                                        </Button>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => stopRecording('dm')}
+                                            className="text-green-400 hover:text-green-300 h-8 w-8"
+                                        >
+                                            <Send className="h-4 w-4" />
+                                        </Button>
+                                    </div>
+                                ) : isUploadingVoice ? (
+                                    <div className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/20 rounded-full px-4 py-2">
+                                        <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
+                                        <span className="text-indigo-400 text-sm">Envoi du message vocal...</span>
+                                    </div>
+                                ) : (
+                                    <Input
+                                        placeholder="Écrire un message..."
+                                        value={newMessage}
+                                        onChange={(e) => setNewMessage(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && sendDirectMessage()}
+                                        className="flex-1 h-10 rounded-full bg-white/5 border-white/10 px-4"
+                                    />
+                                )}
+
+                                {/* Send or Mic Button */}
+                                {!isRecording && !isUploadingVoice && (
+                                    newMessage.trim() ? (
+                                        <Button
+                                            size="icon"
+                                            className="h-10 w-10 rounded-full bg-indigo-600 hover:bg-indigo-500"
+                                            onClick={sendDirectMessage}
+                                        >
+                                            <Send className="h-5 w-5" />
+                                        </Button>
+                                    ) : (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-10 w-10 rounded-full text-slate-400 hover:text-white hover:bg-white/10"
+                                            onClick={startRecording}
+                                        >
+                                            <Mic className="h-5 w-5" />
+                                        </Button>
+                                    )
+                                )}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </div>
+    );
+}
+
+// Prayer Card Component - Enhanced with answered/not answered functionality
+function PrayerCard({
+    prayer,
+    onPray,
+    getCategoryInfo,
+    userId
+}: {
+    prayer: PrayerRequest;
+    onPray: () => void;
+    getCategoryInfo: (cat: PrayerCategory) => any;
+    userId?: string;
+}) {
+    // Gestion robuste des propriétés avec valeurs par défaut
+    const category = getCategoryInfo(prayer.category || 'other');
+    const prayerId = prayer.id;
+    const prayerUserId = prayer.userId || (prayer as any).user_id;
+
+    // Initialisation des états locaux pour l'Optimistic UI
+    const initialPrayedBy = prayer.prayedBy || (prayer as any).prayed_by || [];
+    const initialHasPrayed = userId && initialPrayedBy ? initialPrayedBy.includes(userId) : false;
+    const initialCount = prayer.prayerCount || (prayer as any).prayer_count || 0;
+
+    const [hasPrayed, setHasPrayed] = useState(initialHasPrayed);
+    const [prayerCount, setPrayerCount] = useState(initialCount);
+    const [isAnimating, setIsAnimating] = useState(false);
+    const [isAnswered, setIsAnswered] = useState(prayer.isAnswered || (prayer as any).is_answered || false);
+    const [isLocked, setIsLocked] = useState((prayer as any).is_locked || false);
+    const [showTestimonyDialog, setShowTestimonyDialog] = useState(false);
+    const [testimonyContent, setTestimonyContent] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showGroupDialog, setShowGroupDialog] = useState(false);
+
+    const isOwner = userId === prayerUserId;
+
+    // Mettre à jour l'état si les props changent (sync avec le serveur)
+    useEffect(() => {
+        setHasPrayed(initialHasPrayed);
+        setPrayerCount(initialCount);
+        setIsAnswered(prayer.isAnswered || (prayer as any).is_answered || false);
+    }, [initialHasPrayed, initialCount, prayer]);
+
+    const handlePray = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (hasPrayed || isLocked) return;
+
+        // Optimistic Update
+        setHasPrayed(true);
+        setPrayerCount(prev => prev + 1);
+        setIsAnimating(true);
+        setTimeout(() => setIsAnimating(false), 1000);
+
+        onPray();
+        toast.success("Votre prière a été comptabilisée 🙏");
+    };
+
+    const handleToggleAnswered = async () => {
+        if (!isOwner) return;
+
+        // If already answered and locked, don't allow toggle (only admin can reopen)
+        if (isAnswered && isLocked) {
+            toast.error("Cette prière est verrouillée. Seul un admin peut modifier le statut.");
+            return;
+        }
+
+        const newStatus = !isAnswered;
+        setIsAnswered(newStatus);
+
+        try {
+            // Update prayer request - when marked as answered, also lock it
+            const { error } = await supabase
+                .from('prayer_requests')
+                .update({
+                    is_answered: newStatus,
+                    answered_at: newStatus ? new Date().toISOString() : null,
+                    is_locked: newStatus // Lock when answered
+                })
+                .eq('id', prayerId);
+
+            if (error) throw error;
+
+            // If prayer is answered, also close the associated group
+            if (newStatus) {
+                // Find and close any associated prayer group
+                const { data: groupData } = await supabase
+                    .from('prayer_groups')
+                    .select('id')
+                    .eq('prayer_request_id', prayerId)
+                    .single();
+
+                if (groupData) {
+                    await supabase
+                        .from('prayer_groups')
+                        .update({
+                            is_open: false,
+                            is_closed: true,
+                            closed_reason: 'prayer_answered',
+                            closed_at: new Date().toISOString()
+                        })
+                        .eq('id', groupData.id);
+                }
+
+                setIsLocked(true);
+                toast.success("🙌 Prière marquée comme exaucée! Le groupe a été fermé.");
+                setShowTestimonyDialog(true);
+            } else {
+                toast.info("Statut mis à jour");
+            }
+        } catch (e: any) {
+            console.error('Error updating prayer:', e);
+            setIsAnswered(!newStatus);
+            toast.error("Erreur lors de la mise à jour");
+        }
+    };
+
+    const handleSubmitTestimony = async () => {
+        if (!testimonyContent.trim()) {
+            toast.error("Veuillez écrire votre témoignage");
+            return;
+        }
+
+        setIsSubmitting(true);
+        try {
+            const { error } = await supabase
+                .from('testimonials')
+                .insert({
+                    user_id: userId,
+                    content: testimonyContent.trim(),
+                    prayer_request_id: prayerId,
+                    is_approved: false
+                });
+
+            if (error) throw error;
+
+            toast.success("Témoignage envoyé! Il sera publié après approbation.");
+            setShowTestimonyDialog(false);
+            setTestimonyContent('');
+        } catch (e: any) {
+            console.error('Error creating testimony:', e);
+            toast.error("Erreur lors de l'envoi du témoignage");
+        }
+        setIsSubmitting(false);
+    };
+
+    const handleShare = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        const shareData = {
+            title: 'Demande de prière',
+            text: `Rejoignez-moi pour prier pour cette intention : "${prayer.content}"`,
+            url: window.location.href,
+        };
+
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
+                toast.success('Lien copié dans le presse-papier');
+            }
+        } catch (err) {
+            console.error('Error sharing:', err);
+        }
+    };
+
+    return (
+        <>
+            <Card className={cn(
+                "bg-white/5 border-white/5 rounded-3xl overflow-hidden transition-all",
+                isAnswered && "border-emerald-500/30 bg-emerald-500/5",
+                isLocked && "opacity-60"
+            )}>
+                <CardContent className="p-5">
+                    {/* Header */}
+                    <div className="flex items-start justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                            <Avatar className="h-10 w-10 border border-white/10">
+                                <AvatarImage src={prayer.userAvatar || (prayer as any).profiles?.avatar_url} />
+                                <AvatarFallback className="bg-indigo-600/30 text-indigo-300">
+                                    {prayer.isAnonymous ? '?' : (prayer.userName?.[0] || (prayer as any).profiles?.full_name?.[0] || 'U')}
+                                </AvatarFallback>
+                            </Avatar>
+                            <div>
+                                <p className="font-bold text-sm text-white">
+                                    {prayer.isAnonymous ? 'Anonyme' : (prayer.userName || (prayer as any).profiles?.full_name || 'Utilisateur')}
+                                </p>
+                                <p className="text-[10px] text-slate-500">
+                                    {prayer.createdAt ? formatDistanceToNow(new Date(prayer.createdAt), { addSuffix: true, locale: fr }) : ''}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            {/* Category Badge */}
+                            {category && (
+                                <Badge
+                                    variant="outline"
+                                    className="border-none text-[10px] font-bold"
+                                    style={{ backgroundColor: `${category.color}30`, color: category.color }}
+                                >
+                                    {category.icon} {category.nameFr}
+                                </Badge>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Status Badges */}
+                    {(isAnswered || isLocked) && (
+                        <div className="flex gap-2 mb-3">
+                            {isAnswered && (
+                                <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30">
+                                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                                    Prière Exaucée
+                                </Badge>
+                            )}
+                            {isLocked && (
+                                <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30">
+                                    <Lock className="h-3 w-3 mr-1" />
+                                    Fermée
+                                </Badge>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Content */}
+                    <p className="text-slate-200 leading-relaxed mb-4">{prayer.content}</p>
+
+                    {/* Photos */}
+                    {prayer.photos && prayer.photos.length > 0 && (
+                        <PhotoGallery photos={prayer.photos} size="md" />
+                    )}
+
+                    {/* Owner Controls - Exaucée/Non Exaucée Buttons */}
+                    {isOwner && !isLocked && (
+                        <div className="flex gap-2 mb-4 p-3 rounded-2xl bg-white/5 border border-white/10">
+                            <Button
+                                variant={isAnswered ? "default" : "outline"}
+                                size="sm"
+                                onClick={handleToggleAnswered}
+                                className={cn(
+                                    "flex-1 rounded-xl",
+                                    isAnswered
+                                        ? "bg-emerald-600 hover:bg-emerald-500 text-white"
+                                        : "border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10"
+                                )}
+                            >
+                                <CheckCircle2 className="h-4 w-4 mr-2" />
+                                {isAnswered ? "Exaucée ✓" : "Prière exaucée"}
+                            </Button>
+                            {!isAnswered && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="flex-1 rounded-xl border-slate-500/30 text-slate-400"
+                                    disabled
+                                >
+                                    <MessageSquare className="h-4 w-4 mr-2" />
+                                    Pas encore exaucée
+                                </Button>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                        <div className="flex items-center gap-2">
+                            {/* Pray Button */}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "rounded-xl gap-2 h-10 px-4 transition-all relative overflow-hidden",
+                                    hasPrayed ? "bg-indigo-600/20 text-indigo-400" : "text-slate-400 hover:text-indigo-400"
+                                )}
+                                onClick={handlePray}
+                                disabled={hasPrayed || isLocked}
+                            >
+                                {isAnimating && (
+                                    <span className="absolute inset-0 bg-indigo-500/20 animate-ping rounded-xl" />
+                                )}
+                                <Heart className={cn("h-4 w-4 transition-transform", hasPrayed && "fill-current scale-110", isAnimating && "scale-125")} />
+                                <span className="font-bold">{prayerCount}</span>
+                                <span className="text-[10px] uppercase tracking-wider">
+                                    {hasPrayed ? "Prié" : "J'ai prié"}
+                                </span>
+                            </Button>
+
+                            {/* Group Button */}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="rounded-xl text-slate-400 hover:text-emerald-400"
+                                onClick={() => setShowGroupDialog(true)}
+                            >
+                                <Users className="h-4 w-4 mr-1" />
+                                <span className="text-xs">Groupe</span>
+                            </Button>
+                        </div>
+
+                        <div className="flex gap-2">
+                            {/* Testimony Button (if answered and owner) */}
+                            {isOwner && isAnswered && (
+                                <Button
+                                    size="sm"
+                                    onClick={() => setShowTestimonyDialog(true)}
+                                    className="bg-amber-600 hover:bg-amber-500 text-white rounded-xl"
+                                >
+                                    <Sparkles className="h-4 w-4 mr-2" />
+                                    Témoigner
+                                </Button>
+                            )}
+
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-9 w-9 rounded-xl text-slate-500 hover:text-white hover:bg-white/10"
+                                onClick={handleShare}
+                            >
+                                <Share2 className="h-4 w-4" />
+                            </Button>
+
+                            <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                    <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-500 hover:text-white hover:bg-white/10">
+                                        <MoreVertical className="h-4 w-4" />
+                                    </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end" className="bg-[#1A1D24] border-white/10 text-slate-200">
+                                    <DropdownMenuItem className="focus:bg-white/5 focus:text-white cursor-pointer gap-2">
+                                        <Flag className="h-4 w-4" /> Signaler
+                                    </DropdownMenuItem>
+                                    {isOwner && (
+                                        <DropdownMenuItem className="focus:bg-red-500/10 focus:text-red-400 text-red-400 cursor-pointer gap-2">
+                                            <Trash2 className="h-4 w-4" /> Supprimer
+                                        </DropdownMenuItem>
+                                    )}
+                                </DropdownMenuContent>
+                            </DropdownMenu>
+                        </div>
+                    </div>
+                </CardContent>
+            </Card>
+
+            {/* Testimony Dialog */}
+            <Dialog open={showTestimonyDialog} onOpenChange={setShowTestimonyDialog}>
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem]">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Sparkles className="h-5 w-5 text-amber-500" />
+                            Partager votre témoignage
+                        </DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            Votre prière a été exaucée ! Partagez ce que Dieu a fait dans votre vie.
+                        </DialogDescription>
+                    </DialogHeader>
+
+                    <div className="space-y-4 py-4">
+                        <div className="p-3 rounded-2xl bg-indigo-500/10 border border-indigo-500/20">
+                            <p className="text-xs text-indigo-400 mb-1">Demande de prière originale :</p>
+                            <p className="text-sm text-slate-300 line-clamp-3">{prayer.content}</p>
+                        </div>
+
+                        <Textarea
+                            placeholder="Racontez comment Dieu a répondu à votre prière..."
+                            value={testimonyContent}
+                            onChange={(e) => setTestimonyContent(e.target.value)}
+                            rows={5}
+                            className="bg-white/5 border-white/10 rounded-2xl resize-none"
+                        />
+
+                        <p className="text-xs text-slate-500">
+                            Votre témoignage sera soumis à approbation avant publication.
+                        </p>
+                    </div>
+
+                    <div className="flex gap-3">
+                        <Button variant="outline" onClick={() => setShowTestimonyDialog(false)} className="flex-1 rounded-xl">
+                            Plus tard
+                        </Button>
+                        <Button
+                            onClick={handleSubmitTestimony}
+                            disabled={isSubmitting || !testimonyContent.trim()}
+                            className="flex-1 bg-amber-600 hover:bg-amber-500 rounded-xl"
+                        >
+                            {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Publier"}
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Group Dialog */}
+            <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem]">
+                    <PrayerGroupManager
+                        prayerId={prayerId}
+                        prayerContent={prayer.content}
+                        prayerOwnerId={prayerUserId}
+                        currentUserId={userId}
+                        onClose={() => setShowGroupDialog(false)}
+                    />
+                </DialogContent>
+            </Dialog>
+        </>
+    );
+}
+
+// Testimony Card Component
+function TestimonyCard({
+    testimony,
+    onLike
+}: {
+    testimony: Testimonial;
+    onLike: () => void;
+}) {
+    const hasLiked = testimony.likedBy?.includes('current-user'); // TODO: Use actual user ID
+
+    return (
+        <Card className="bg-gradient-to-br from-amber-600/10 to-orange-600/5 border-amber-500/10 rounded-3xl overflow-hidden">
+            <CardContent className="p-5">
+                {/* Header */}
+                <div className="flex items-center gap-3 mb-4">
+                    <Avatar className="h-10 w-10 border border-amber-500/20">
+                        <AvatarImage src={testimony.userAvatar} />
+                        <AvatarFallback className="bg-amber-600/30 text-amber-300">
+                            {testimony.userName?.[0] || 'U'}
+                        </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1">
+                        <p className="font-bold text-sm text-white">{testimony.userName}</p>
+                        <p className="text-[10px] text-slate-500">
+                            {formatDistanceToNow(new Date(testimony.createdAt), { addSuffix: true, locale: fr })}
+                        </p>
+                    </div>
+                    <Badge className="bg-amber-500/20 text-amber-400 border-none gap-1">
+                        <Sparkles className="h-3 w-3" />
+                        Témoignage
+                    </Badge>
+                </div>
+
+                {/* Content */}
+                <p className="text-slate-200 leading-relaxed mb-4">{testimony.content}</p>
+
+                {/* Photos */}
+                {testimony.photos && testimony.photos.length > 0 && (
+                    <PhotoGallery photos={testimony.photos} size="md" />
+                )}
+
+                {/* Actions */}
+                <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className={cn(
+                            "rounded-xl gap-2 h-10 px-4 transition-all",
+                            hasLiked ? "bg-red-600/20 text-red-400" : "text-slate-400 hover:text-red-400"
+                        )}
+                        onClick={onLike}
+                    >
+                        <Heart className={cn("h-4 w-4", hasLiked && "fill-current")} />
+                        <span className="font-bold">{testimony.likes}</span>
+                    </Button>
+
+                    <div className="flex gap-2">
+                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-500">
+                            <Share2 className="h-4 w-4" />
+                        </Button>
+                    </div>
+                </div>
+            </CardContent>
+        </Card>
+    );
+}
+
+// Chat Message Component
+function ChatMessage({ message, isOwn }: { message: any; isOwn: boolean }) {
+    return (
+        <div className={cn("flex gap-3", isOwn && "flex-row-reverse")}>
+            <Avatar className="h-8 w-8 shrink-0">
+                <AvatarImage src={message.profiles?.avatar_url} />
+                <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-xs">
+                    {message.profiles?.full_name?.[0] || 'U'}
+                </AvatarFallback>
+            </Avatar>
+            <div className={cn(
+                "max-w-[75%] rounded-2xl px-4 py-2.5",
+                isOwn ? "bg-indigo-600 rounded-br-sm" : "bg-white/10 rounded-bl-sm"
+            )}>
+                {!isOwn && (
+                    <p className="text-[10px] font-bold text-indigo-400 mb-1">
+                        {message.profiles?.full_name || 'Utilisateur'}
+                    </p>
+                )}
+                {/* Check if it's a voice message */}
+                {message.type === 'voice' && message.voice_url ? (
+                    <VoiceMessagePlayer
+                        voiceUrl={message.voice_url}
+                        duration={message.voice_duration}
+                        isOwn={isOwn}
+                    />
+                ) : (
+                    <p className="text-sm text-white leading-relaxed">{message.content}</p>
+                )}
+                <p className="text-[10px] text-white/50 mt-1">
+                    {formatDistanceToNow(new Date(message.created_at), { addSuffix: true, locale: fr })}
+                </p>
+            </div>
+        </div>
+    );
+}

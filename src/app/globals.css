@@ -1,0 +1,144 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* @plugin 'tailwindcss-animate'; */
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  /* Slate-based dark theme (Mobile-First approach) */
+  --font-inter: var(--font-inter);
+  --font-crimson: var(--font-crimson);
+
+  /* Prayer Marathon Palette */
+  --deep-purple: #6B46C1;
+  --vibrant-blue: #3B82F6;
+  --cyan-accent: #06B6D4;
+  --gold-accent: #F59E0B;
+  /* Warm gold */
+
+  /* Default vars mapped to Slate dark mode */
+  --background: 222.2 47.4% 11.2%;
+  /* #0F172A */
+  --foreground: 210 40% 98%;
+  /* #F8FAFC */
+
+  --card: 222.2 47.4% 11.2%;
+  --card-foreground: 210 40% 98%;
+
+  --popover: 222.2 47.4% 11.2%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 263.4 70% 50.4%;
+  /* Close to Deep Purple */
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  /* #CBD5E1 */
+
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 263.4 70% 50.4%;
+
+  --radius: 1rem;
+  /* Rounded corners */
+}
+
+.dark {
+  --background: 222.2 47.4% 11.2%;
+  --foreground: 210 40% 98%;
+  /* ... same as root since we default to dark ... */
+}
+
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--chart-1));
+  --color-chart-2: hsl(var(--chart-2));
+  --color-chart-3: hsl(var(--chart-3));
+  --color-chart-4: hsl(var(--chart-4));
+  --color-chart-5: hsl(var(--chart-5));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --font-inter: var(--font-inter);
+  --font-crimson: var(--font-crimson);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans;
+    background-color: #0F172A;
+    /* Force dark background */
+  }
+}
+
+/* Custom Glassmorphism Setup */
+.glass-card {
+  @apply bg-slate-900/40 backdrop-blur-xl border border-white/10 rounded-2xl shadow-xl;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.glass-panel {
+  @apply bg-slate-900/60 backdrop-blur-2xl border-t border-white/10;
+}
+
+/* Typography Utilities */
+.font-heading {
+  font-family: var(--font-inter), sans-serif;
+}
+
+.font-scripture {
+  font-family: var(--font-crimson), serif;
+}
+
+/* Gradients */
+.gradient-primary {
+  background: linear-gradient(to right, #8B5CF6, #3B82F6);
+}
+
+.gradient-success {
+  background: linear-gradient(to right, #10B981, #14B8A6);
+}
+
+.gradient-fire {
+  background: linear-gradient(to right, #F97316, #EF4444);
+}
+
+.text-gradient-primary {
+  @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400;
+}

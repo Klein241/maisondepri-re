@@ -1,0 +1,26 @@
+-- ============================================
+-- HOW TO RUN THIS SCRIPT IN SUPABASE
+-- ============================================
+-- 
+-- 1. Go to: https://supabase.com/dashboard
+-- 2. Select your project: "prayer-marathon-app"
+-- 3. Click on "SQL Editor" in the left sidebar
+-- 4. Click "New Query" button
+-- 5. Copy EVERYTHING below this comment
+-- 6. Paste into the editor
+-- 7. Click "RUN" button (bottom right)
+-- 8. Wait for "Success" message
+-- 9. Done! All storage buckets are now configured
+--
+-- ============================================
+
+-- After running, you should be able to:
+-- ✅ Upload photos to prayer requests
+-- ✅ Upload photos to testimonials
+-- ✅ Upload avatars
+-- ✅ No more "row-level security policy" errors
+--
+-- ============================================
+-- SCRIPT STARTS BELOW
+-- ============================================
+
