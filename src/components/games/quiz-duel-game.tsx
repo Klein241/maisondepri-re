@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, CheckCircle2, XCircle, Trophy, Clock, Zap, Shield, Star, Crown, Target, Flame } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, Trophy, Clock, Zap, Shield, Star, Crown, Target, Flame, RotateCcw, Sparkles } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
+import { getRandomQuestions } from '@/lib/game-data';
 
 interface Question {
     id: string;
@@ -54,6 +55,56 @@ export function QuizDuelGame({
     const [maxStreak, setMaxStreak] = useState(0);
     const [questionTimer, setQuestionTimer] = useState(15); // 15s per question
     const [shakeWrong, setShakeWrong] = useState(false);
+    const [gameQuestions, setGameQuestions] = useState<Question[]>(questions);
+    const [selectedDifficulty, setSelectedDifficulty] = useState<'all' | 'easy' | 'medium' | 'hard'>('all');
+
+    // Auto-load questions if none provided
+    useEffect(() => {
+        if (questions.length === 0) {
+            const randomQs = getRandomQuestions(15).map((q, i) => ({
+                id: `q-${i}`,
+                question: q.question,
+                options: q.options,
+                correct: q.answer,
+                difficulty: q.difficulty
+            }));
+            setGameQuestions(randomQs as any);
+        } else {
+            setGameQuestions(questions);
+        }
+    }, [questions]);
+
+    const handleReplay = () => {
+        const diff = selectedDifficulty === 'all' ? undefined : selectedDifficulty;
+        const newQs = getRandomQuestions(15, diff as any).map((q, i) => ({
+            id: `q-${i}-${Date.now()}`,
+            question: q.question,
+            options: q.options,
+            correct: q.answer,
+            difficulty: q.difficulty
+        }));
+        setGameQuestions(newQs as any);
+        setCurrentIndex(0);
+        setGameState('countdown');
+        setScore(0);
+        setCorrectCount(0);
+        setSelectedOption(null);
+        setFeedback(null);
+        setCountdown(3);
+        setStreak(0);
+        setMaxStreak(0);
+        setQuestionTimer(15);
+        setElapsedTime(0);
+    };
+
+    const getDifficultyBadge = (diff?: string) => {
+        switch (diff) {
+            case 'easy': return <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-[10px]">Facile</Badge>;
+            case 'medium': return <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30 text-[10px]">Moyen</Badge>;
+            case 'hard': return <Badge className="bg-red-500/20 text-red-400 border-red-500/30 text-[10px]">Difficile</Badge>;
+            default: return null;
+        }
+    };
 
     // Countdown before start
     useEffect(() => {
@@ -96,7 +147,7 @@ export function QuizDuelGame({
         if (selectedOption !== null || gameState !== 'playing') return;
 
         setSelectedOption(optionIndex);
-        const isCorrect = optionIndex === questions[currentIndex]?.correct;
+        const isCorrect = optionIndex === gameQuestions[currentIndex]?.correct;
 
         // Score: bonus for speed + correctness
         const timeBonus = Math.max(0, questionTimer * 10);
@@ -120,18 +171,18 @@ export function QuizDuelGame({
         setGameState('feedback');
 
         // Progress calc
-        const newProgress = Math.round(((currentIndex + 1) / questions.length) * 100);
+        const newProgress = Math.round(((currentIndex + 1) / gameQuestions.length) * 100);
         if (onProgress) onProgress(newProgress);
 
         setTimeout(() => {
-            if (currentIndex < questions.length - 1) {
+            if (currentIndex < gameQuestions.length - 1) {
                 setCurrentIndex(prev => prev + 1);
                 setSelectedOption(null);
                 setFeedback(null);
                 setGameState('playing');
             } else {
                 setGameState('finished');
-                if (correctCount + (isCorrect ? 1 : 0) >= questions.length * 0.7) {
+                if (correctCount + (isCorrect ? 1 : 0) >= gameQuestions.length * 0.7) {
                     confetti({
                         particleCount: 100,
                         spread: 140,
@@ -142,7 +193,7 @@ export function QuizDuelGame({
                 if (onComplete) onComplete(timeTaken);
             }
         }, 1200);
-    }, [selectedOption, gameState, currentIndex, questions, questionTimer, streak, onProgress, onComplete, startTime, correctCount]);
+    }, [selectedOption, gameState, currentIndex, gameQuestions, questionTimer, streak, onProgress, onComplete, startTime, correctCount]);
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -156,7 +207,7 @@ export function QuizDuelGame({
         return 'text-red-400';
     };
 
-    const progressPercent = questions.length > 0 ? ((currentIndex) / questions.length) * 100 : 0;
+    const progressPercent = gameQuestions.length > 0 ? ((currentIndex) / gameQuestions.length) * 100 : 0;
 
     // Option labels
     const optLabels = ['A', 'B', 'C', 'D'];
@@ -204,7 +255,7 @@ export function QuizDuelGame({
                                 </div>
                             )}
                             <p className="text-slate-400 mt-4 text-lg font-medium">
-                                {questions.length} questions • {mode === 'multiplayer' ? `${players.length} joueurs` : 'Mode solo'}
+                                {gameQuestions.length} questions • {mode === 'multiplayer' ? `${players.length} joueurs` : 'Mode solo'}
                             </p>
                         </motion.div>
                     </motion.div>
@@ -244,7 +295,7 @@ export function QuizDuelGame({
                         />
                     </div>
                     <div className="flex justify-between mt-1.5 text-[10px] text-slate-600 font-medium">
-                        <span>Question {currentIndex + 1}/{questions.length}</span>
+                        <span>Question {currentIndex + 1}/{gameQuestions.length}</span>
                         {roundInfo && (
                             <span>Manche {roundInfo.current}/{roundInfo.total}</span>
                         )}
@@ -253,30 +304,32 @@ export function QuizDuelGame({
             </header>
 
             {/* Multiplayer Progress Bar */}
-            {mode === 'multiplayer' && players.length > 0 && gameState !== 'finished' && gameState !== 'countdown' && (
-                <div className="relative z-10 px-4 max-w-2xl mx-auto w-full mt-2">
-                    <div className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2">
-                        {players.filter(p => p.id !== currentUserId).map(p => (
-                            <div key={p.id} className="flex items-center gap-2 text-xs">
-                                <div className="w-16 truncate text-slate-400 font-medium">{p.display_name}</div>
-                                <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
-                                    <motion.div
-                                        className="h-full bg-indigo-500/60 rounded-full"
-                                        animate={{ width: `${p.progress}%` }}
-                                        transition={{ duration: 0.5 }}
-                                    />
+            {
+                mode === 'multiplayer' && players.length > 0 && gameState !== 'finished' && gameState !== 'countdown' && (
+                    <div className="relative z-10 px-4 max-w-2xl mx-auto w-full mt-2">
+                        <div className="bg-black/30 border border-white/5 rounded-xl p-3 space-y-2">
+                            {players.filter(p => p.id !== currentUserId).map(p => (
+                                <div key={p.id} className="flex items-center gap-2 text-xs">
+                                    <div className="w-16 truncate text-slate-400 font-medium">{p.display_name}</div>
+                                    <div className="flex-1 h-1.5 bg-white/5 rounded-full overflow-hidden">
+                                        <motion.div
+                                            className="h-full bg-indigo-500/60 rounded-full"
+                                            animate={{ width: `${p.progress}%` }}
+                                            transition={{ duration: 0.5 }}
+                                        />
+                                    </div>
+                                    <span className="text-[10px] text-slate-600 w-8 text-right font-mono">{p.progress}%</span>
                                 </div>
-                                <span className="text-[10px] text-slate-600 w-8 text-right font-mono">{p.progress}%</span>
-                            </div>
-                        ))}
+                            ))}
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Main Game Area */}
             <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-4 py-6 max-w-2xl mx-auto w-full">
                 <AnimatePresence mode="wait">
-                    {(gameState === 'playing' || gameState === 'feedback') && questions[currentIndex] && (
+                    {(gameState === 'playing' || gameState === 'feedback') && gameQuestions[currentIndex] && (
                         <motion.div
                             key={currentIndex}
                             initial={{ opacity: 0, y: 30 }}
@@ -321,16 +374,19 @@ export function QuizDuelGame({
 
                             {/* Question Card */}
                             <div className="bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 rounded-3xl p-8 backdrop-blur-sm shadow-2xl">
+                                <div className="flex justify-center mb-3">
+                                    {getDifficultyBadge((gameQuestions[currentIndex] as any)?.difficulty)}
+                                </div>
                                 <h3 className="text-xl md:text-2xl font-bold text-center leading-relaxed text-white/95">
-                                    {questions[currentIndex].question}
+                                    {gameQuestions[currentIndex].question}
                                 </h3>
                             </div>
 
                             {/* Options Grid */}
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                {questions[currentIndex].options.map((opt, i) => {
+                                {gameQuestions[currentIndex].options.map((opt, i) => {
                                     const isSelected = selectedOption === i;
-                                    const isCorrectOption = i === questions[currentIndex].correct;
+                                    const isCorrectOption = i === gameQuestions[currentIndex].correct;
                                     const showResult = selectedOption !== null;
 
                                     return (
@@ -410,8 +466,9 @@ export function QuizDuelGame({
                                     Partie terminée !
                                 </h2>
                                 <p className="text-slate-500 mt-2">
-                                    {correctCount >= questions.length * 0.8 ? 'Excellent travail ! 🎉' :
-                                        correctCount >= questions.length * 0.5 ? 'Bien joué ! 👏' : 'Continue à apprendre ! 📖'}
+                                    {correctCount >= gameQuestions.length * 0.8 ? '🏆 Excellent travail ! Tu es un expert biblique !' :
+                                        correctCount >= gameQuestions.length * 0.6 ? '👏 Bien joué ! Continue comme ça !' :
+                                            correctCount >= gameQuestions.length * 0.4 ? '📖 Pas mal ! Révise encore un peu !' : '💪 Ne lâche rien, tu vas progresser !'}
                                 </p>
                             </div>
 
@@ -419,7 +476,7 @@ export function QuizDuelGame({
                             <div className="grid grid-cols-3 gap-3">
                                 <div className="bg-white/[0.04] border border-white/10 rounded-2xl p-4">
                                     <Target className="w-5 h-5 text-green-400 mx-auto mb-2" />
-                                    <div className="text-2xl font-black text-green-400">{correctCount}/{questions.length}</div>
+                                    <div className="text-2xl font-black text-green-400">{correctCount}/{gameQuestions.length}</div>
                                     <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">Correctes</div>
                                 </div>
                                 <div className="bg-white/[0.04] border border-white/10 rounded-2xl p-4">
@@ -510,6 +567,37 @@ export function QuizDuelGame({
 
                             {/* Action Buttons */}
                             <div className="flex flex-col gap-3 max-w-xs mx-auto w-full">
+                                {/* Replay Button */}
+                                <Button
+                                    onClick={handleReplay}
+                                    size="lg"
+                                    className="w-full h-14 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold rounded-2xl shadow-lg shadow-emerald-600/20 text-base"
+                                >
+                                    <RotateCcw className="w-5 h-5 mr-2" />
+                                    Rejouer ({gameQuestions.length}+ questions)
+                                </Button>
+
+                                {/* Difficulty selector */}
+                                <div className="flex gap-2 justify-center">
+                                    {(['all', 'easy', 'medium', 'hard'] as const).map(d => (
+                                        <Button
+                                            key={d}
+                                            size="sm"
+                                            variant={selectedDifficulty === d ? 'default' : 'ghost'}
+                                            onClick={() => setSelectedDifficulty(d)}
+                                            className={cn(
+                                                "rounded-full text-xs px-3 h-8",
+                                                selectedDifficulty === d && d === 'easy' && 'bg-green-600 hover:bg-green-500',
+                                                selectedDifficulty === d && d === 'medium' && 'bg-amber-600 hover:bg-amber-500',
+                                                selectedDifficulty === d && d === 'hard' && 'bg-red-600 hover:bg-red-500',
+                                                selectedDifficulty === d && d === 'all' && 'bg-indigo-600 hover:bg-indigo-500',
+                                            )}
+                                        >
+                                            {d === 'all' ? 'Tout' : d === 'easy' ? 'Facile' : d === 'medium' ? 'Moyen' : 'Difficile'}
+                                        </Button>
+                                    ))}
+                                </div>
+
                                 {mode === 'multiplayer' ? (
                                     <>
                                         {isHost && roundInfo && onNextRound && roundInfo.current < roundInfo.total ? (
@@ -526,24 +614,24 @@ export function QuizDuelGame({
                                         </Button>
                                     </>
                                 ) : (
-                                    <Button onClick={onBack} size="lg" className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-bold rounded-2xl shadow-lg shadow-indigo-600/20 text-base">
-                                        Retour
+                                    <Button onClick={onBack} variant="ghost" size="lg" className="w-full text-slate-500 hover:text-white rounded-xl">
+                                        Retour au menu
                                     </Button>
                                 )}
                             </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
-            </main>
+            </main >
 
             {/* Shake animation */}
-            <style jsx global>{`
+            < style jsx global > {`
                 @keyframes shake {
                     0%, 100% { transform: translateX(0); }
                     10%, 30%, 50%, 70%, 90% { transform: translateX(-4px); }
                     20%, 40%, 60%, 80% { transform: translateX(4px); }
                 }
-            `}</style>
-        </div>
+            `}</style >
+        </div >
     );
 }

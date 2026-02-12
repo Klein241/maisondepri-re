@@ -89,6 +89,7 @@ interface AppState {
     prayerRequests: PrayerRequest[];
     addPrayerRequest: (content: string, isAnonymous?: boolean, category?: PrayerCategory, photos?: string[]) => void;
     prayForRequest: (requestId: string) => void;
+    removePrayerRequest: (requestId: string) => void;
 
     // Testimonials
     testimonials: Testimonial[];
@@ -609,6 +610,12 @@ export const useAppStore = create<AppState>()(
                 } catch (e) {
                     console.error('Error in prayForRequest:', e);
                 }
+            },
+
+            removePrayerRequest: (requestId) => {
+                set((state) => ({
+                    prayerRequests: state.prayerRequests.filter(p => p.id !== requestId)
+                }));
             },
 
             // Testimonials

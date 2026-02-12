@@ -1693,6 +1693,10 @@ export function CommunityView() {
                                                 key={prayer.id}
                                                 prayer={prayer}
                                                 onPray={() => prayForRequest(prayer.id)}
+                                                onDelete={(id) => {
+                                                    // Optimistic removal from store
+                                                    useAppStore.getState().removePrayerRequest(id);
+                                                }}
                                                 getCategoryInfo={getCategoryInfo}
                                                 userId={user?.id}
                                             />
@@ -1910,36 +1914,32 @@ export function CommunityView() {
                         exit={{ opacity: 0, x: -20 }}
                         className="relative z-10 flex flex-col min-h-screen pb-24 max-w-4xl mx-auto w-full"
                     >
-                        <header className="px-6 pt-12 pb-4">
-                            <div className="flex items-center justify-between mb-6">
-                                <div className="flex items-center gap-4">
+                        <header className="px-4 sm:px-6 pt-12 pb-4">
+                            <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
+                                <div className="flex items-center gap-3 flex-1 min-w-0">
                                     <Button
                                         variant="ghost"
                                         size="icon"
+                                        className="shrink-0"
                                         onClick={() => setViewState('main')}
                                     >
                                         <ArrowLeft className="h-5 w-5" />
                                     </Button>
-                                    <div>
-                                        <h1 className="text-2xl font-bold">Groupes</h1>
+                                    <div className="min-w-0">
+                                        <h1 className="text-xl sm:text-2xl font-bold truncate">Groupes</h1>
                                         <p className="text-xs text-slate-500">
                                             {groups.filter(g => userGroups.includes(g.id)).length} rejoint(s) • {groups.length} total
                                         </p>
                                     </div>
                                 </div>
-                                <motion.div
-                                    animate={{ scale: [1, 1.05, 1] }}
-                                    transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
+                                <Button
+                                    size="sm"
+                                    className="rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold px-4 h-9 shadow-lg shadow-emerald-600/30 transition-all border-2 border-emerald-400/30 text-xs sm:text-sm w-full sm:w-auto"
+                                    onClick={() => setShowCreateGroupDialog(true)}
                                 >
-                                    <Button
-                                        size="sm"
-                                        className="rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold px-5 h-10 shadow-lg shadow-emerald-600/30 transition-all border-2 border-emerald-400/30"
-                                        onClick={() => setShowCreateGroupDialog(true)}
-                                    >
-                                        <Plus className="h-5 w-5 mr-2" />
-                                        Créer un groupe de prière
-                                    </Button>
-                                </motion.div>
+                                    <Plus className="h-4 w-4 mr-1.5" />
+                                    Créer un groupe
+                                </Button>
                             </div>
                         </header>
 
@@ -2876,7 +2876,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh]"
+                        className="relative z-10 flex flex-col h-[100dvh] pb-0"
                     >
                         <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
                             <div className="flex items-center gap-3">
@@ -2998,7 +2998,7 @@ export function CommunityView() {
                         </div>
 
                         {/* Message Input - Enhanced */}
-                        <div className="px-4 py-3 border-t border-white/10 bg-slate-900/80">
+                        <div className="px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] border-t border-white/10 bg-slate-900/95 backdrop-blur-md sticky bottom-0 z-30">
                             {/* Emoji Picker */}
                             <div className="relative">
                                 <EmojiPicker
@@ -3190,11 +3190,13 @@ export function CommunityView() {
 function PrayerCard({
     prayer,
     onPray,
+    onDelete,
     getCategoryInfo,
     userId
 }: {
     prayer: PrayerRequest;
     onPray: () => void;
+    onDelete?: (id: string) => void;
     getCategoryInfo: (cat: PrayerCategory) => any;
     userId?: string;
 }) {
@@ -3354,6 +3356,9 @@ function PrayerCard({
         const confirmed = window.confirm('Voulez-vous vraiment supprimer cette demande de prière ?');
         if (!confirmed) return;
 
+        // Optimistic removal - immediately hide the card
+        if (onDelete) onDelete(prayerId);
+
         try {
             const { error } = await supabase
                 .from('prayer_requests')
@@ -3362,7 +3367,6 @@ function PrayerCard({
 
             if (error) throw error;
             toast.success('Demande de prière supprimée');
-            // The parent component should refresh the list via realtime subscription
         } catch (e: any) {
             console.error('Error deleting prayer:', e);
             toast.error('Impossible de supprimer cette demande');
