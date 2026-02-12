@@ -166,7 +166,7 @@ export function DayDetailView({ dayNumber: initialDay, onBack }: DayDetailViewPr
     if (!dayData) return null;
 
     return (
-        <div className="min-h-screen bg-[#0F172A] text-slate-50 pb-12 overflow-x-hidden">
+        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-12 overflow-x-hidden">
             {/* Dynamic Background Glows */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-600/20 blur-[120px] rounded-full" />

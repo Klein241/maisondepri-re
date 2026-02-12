@@ -66,6 +66,11 @@ export default function Home() {
   const { user, isHydrated, activeTab, setActiveTab, selectedDay, setSelectedDay } = useAppStore();
   const [showSplash, setShowSplash] = useState(true);
 
+  // Force community view on load (Feed first)
+  useEffect(() => {
+    setActiveTab('community');
+  }, []);
+
   // Handle splash screen duration
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -80,9 +85,8 @@ export default function Home() {
   }
 
   // If not authenticated, show Auth View
-  if (!user) {
-    return <AuthView />;
-  }
+  // Guest mode allowed
+  // if (!user) { return <AuthView />; }
 
   const handleNavigateToDay = (day: number) => {
     setSelectedDay(day);
@@ -137,7 +141,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-background pb-safe overflow-y-auto overflow-x-hidden">
+    <main className="min-h-screen bg-[#0B0E14] pb-safe overflow-y-auto overflow-x-hidden">
       <div className="min-h-screen">
         {renderContent()}
       </div>

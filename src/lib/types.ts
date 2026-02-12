@@ -166,18 +166,34 @@ export interface DayView {
 export interface PrayerGroup {
     id: string;
     prayerRequestId?: string;
+    prayer_request_id?: string;
     name: string;
     description?: string;
     createdBy: string;
+    created_by?: string;
     isOpen: boolean;
+    is_open?: boolean;
     isAnswered: boolean;
+    is_answered?: boolean;
     answeredAt?: string;
     maxMembers: number;
     memberCount?: number;
     createdAt: string;
+    created_at?: string;
+    requiresApproval?: boolean;
+    requires_approval?: boolean;
+    isClosed?: boolean;
+    is_closed?: boolean;
+    closedReason?: string;
+    closedAt?: string;
+    pendingRequests?: number;
     creator?: {
         fullName: string;
         avatarUrl?: string;
+    };
+    profiles?: {
+        full_name: string;
+        avatar_url?: string;
     };
 }
 
@@ -190,6 +206,20 @@ export interface PrayerGroupMember {
     user?: {
         fullName: string;
         avatarUrl?: string;
+    };
+}
+
+export interface PrayerGroupJoinRequest {
+    id: string;
+    group_id: string;
+    user_id: string;
+    status: 'pending' | 'approved' | 'rejected';
+    created_at: string;
+    reviewed_at?: string;
+    reviewed_by?: string;
+    profiles?: {
+        full_name: string;
+        avatar_url?: string;
     };
 }
 

@@ -16,13 +16,10 @@
 import {
     BIBLE_BOOKS,
     getBookById,
-    formatReference,
     BibleVerse
 } from './local-bible-data';
 import {
-    getRandomPopularVerse,
-    getRandomVerses,
-    loadVerse
+    getRandomVerses
 } from './local-bible-service';
 import type { GameLanguage } from './bible-store';
 
@@ -52,8 +49,9 @@ const BIBLE_CHARACTERS = [
     { name: 'Marie', nameEn: 'Mary', aliases: ['Marie', 'la Vierge Marie'] },
 ];
 
-// Static questions - always available, no API needed
+// Static questions - EXPANDED TO ~100+
 const STATIC_QUESTIONS_FR: QuizQuestion[] = [
+    // --- EASY ---
     {
         id: 'static_1',
         type: 'multiple_choice',
@@ -145,7 +143,98 @@ const STATIC_QUESTIONS_FR: QuizQuestion[] = [
         reference: "Bible",
         difficulty: 'easy'
     },
-    // Medium difficulty
+    {
+        id: 'static_easy_11',
+        type: 'multiple_choice',
+        question: "Qui a trahi Jésus ?",
+        options: ["Pierre", "Jean", "Judas", "Thomas"],
+        correctIndex: 2,
+        reference: "Matthieu 26:14",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_12',
+        type: 'multiple_choice',
+        question: "Sur quel mont Moïse a-t-il reçu les 10 commandements ?",
+        options: ["Sinaï", "Nébo", "Sion", "Carmel"],
+        correctIndex: 0,
+        reference: "Exode 19",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_13',
+        type: 'multiple_choice',
+        question: "Qui était le premier homme ?",
+        options: ["Noé", "Adam", "Abraham", "Moïse"],
+        correctIndex: 1,
+        reference: "Genèse 2",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_14',
+        type: 'multiple_choice',
+        question: "Quel animal a parlé à Ève ?",
+        options: ["Un lion", "Un serpent", "Un aigle", "Un bouc"],
+        correctIndex: 1,
+        reference: "Genèse 3",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_15',
+        type: 'multiple_choice',
+        question: "Combien de jours Jésus a-t-il passé dans la tombe ?",
+        options: ["1 jour", "2 jours", "3 jours", "7 jours"],
+        correctIndex: 2,
+        reference: "Matthieu 12:40",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_16',
+        type: 'multiple_choice',
+        question: "Qui a été jeté dans la fosse aux lions ?",
+        options: ["Daniel", "David", "Joseph", "Jérémie"],
+        correctIndex: 0,
+        reference: "Daniel 6",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_17',
+        type: 'multiple_choice',
+        question: "Qui a tué son frère Abel ?",
+        options: ["Seth", "Caïn", "Énoch", "Lémec"],
+        correctIndex: 1,
+        reference: "Genèse 4",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_18',
+        type: 'multiple_choice',
+        question: "Qui est la mère de Jésus ?",
+        options: ["Élisabeth", "Marie", "Marthe", "Anne"],
+        correctIndex: 1,
+        reference: "Luc 1",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_19',
+        type: 'multiple_choice',
+        question: "Quelle ville a été détruite par des trompettes ?",
+        options: ["Jérusalem", "Jéricho", "Babylone", "Ninive"],
+        correctIndex: 1,
+        reference: "Josué 6",
+        difficulty: 'easy'
+    },
+    {
+        id: 'static_easy_20',
+        type: 'multiple_choice',
+        question: "Qui a baptisé Jésus ?",
+        options: ["Pierre", "Paul", "Jean-Baptiste", "Jacques"],
+        correctIndex: 2,
+        reference: "Matthieu 3",
+        difficulty: 'easy'
+    },
+
+    // --- MEDIUM ---
     {
         id: 'static_11',
         type: 'multiple_choice',
@@ -210,7 +299,98 @@ const STATIC_QUESTIONS_FR: QuizQuestion[] = [
         reference: "Matthieu 26:14-16",
         difficulty: 'medium'
     },
-    // Hard difficulty
+    {
+        id: 'static_med_18',
+        type: 'multiple_choice',
+        question: "Qui a vu l'échelle céleste dans un rêve ?",
+        options: ["Abraham", "Isaac", "Jacob", "Joseph"],
+        correctIndex: 2,
+        reference: "Genèse 28:12",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_19',
+        type: 'multiple_choice',
+        question: "Qui a succédé à Moïse ?",
+        options: ["Aaron", "Caleb", "Josué", "Gédéon"],
+        correctIndex: 2,
+        reference: "Josué 1",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_20',
+        type: 'multiple_choice',
+        question: "Quel prophète a confronté les 450 prophètes de Baal ?",
+        options: ["Élisée", "Élie", "Samuel", "Nathan"],
+        correctIndex: 1,
+        reference: "1 Rois 18",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_21',
+        type: 'multiple_choice',
+        question: "Qui était le père de David ?",
+        options: ["Saül", "Jessé (Isaï)", "Obed", "Boaz"],
+        correctIndex: 1,
+        reference: "1 Samuel 16",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_22',
+        type: 'multiple_choice',
+        question: "Quelle femme juge a mené Israël à la victoire ?",
+        options: ["Ruth", "Esther", "Débora", "Miriam"],
+        correctIndex: 2,
+        reference: "Juges 4",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_23',
+        type: 'multiple_choice',
+        question: "Qui a été transformée en statue de sel ?",
+        options: ["La femme de Noé", "La femme de Lot", "Sarah", "Hagar"],
+        correctIndex: 1,
+        reference: "Genèse 19",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_24',
+        type: 'multiple_choice',
+        question: "Quel apôtre était collecteur d'impôts ?",
+        options: ["Pierre", "Matthieu", "Luc", "Jean"],
+        correctIndex: 1,
+        reference: "Matthieu 9:9",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_25',
+        type: 'multiple_choice',
+        question: "Qui a écrit la plupart des psaumes ?",
+        options: ["Moïse", "Salomon", "David", "Asaph"],
+        correctIndex: 2,
+        reference: "Psaumes",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_26',
+        type: 'multiple_choice',
+        question: "Qui a ressuscité d'entre les morts quatre jours après son décès ?",
+        options: ["Jésus", "Lazare", "La fille de Jaïrus", "Eutychus"],
+        correctIndex: 1,
+        reference: "Jean 11",
+        difficulty: 'medium'
+    },
+    {
+        id: 'static_med_27',
+        type: 'multiple_choice',
+        question: "Combien de fois Pierre a-t-il renié Jésus ?",
+        options: ["Une fois", "Deux fois", "Trois fois", "Sept fois"],
+        correctIndex: 2,
+        reference: "Matthieu 26",
+        difficulty: 'medium'
+    },
+
+    // --- HARD ---
     {
         id: 'static_18',
         type: 'multiple_choice',
@@ -275,10 +455,73 @@ const STATIC_QUESTIONS_FR: QuizQuestion[] = [
         correctIndex: 1,
         reference: "2 Rois 2:11",
         difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_25',
+        type: 'multiple_choice',
+        question: "Qui était le père de Samuel ?",
+        options: ["Éli", "Elkana", "Hophni", "Phinées"],
+        correctIndex: 1,
+        reference: "1 Samuel 1",
+        difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_26',
+        type: 'multiple_choice',
+        question: "Dans quelle ville Paul a-t-il été lapidé et laissé pour mort ?",
+        options: ["Lystre", "Derbe", "Iconium", "Antioche"],
+        correctIndex: 0,
+        reference: "Actes 14:19",
+        difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_27',
+        type: 'multiple_choice',
+        question: "Quel roi a brûlé le rouleau du prophète Jérémie ?",
+        options: ["Jojakim", "Sédécias", "Josias", "Manassé"],
+        correctIndex: 0,
+        reference: "Jérémie 36",
+        difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_28',
+        type: 'multiple_choice',
+        question: "Quel est le plus long chapitre de la Bible ?",
+        options: ["Psaume 119", "Psaume 1", "Matthieu 26", "Apocalypse 21"],
+        correctIndex: 0,
+        reference: "Psaume 119",
+        difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_29',
+        type: 'multiple_choice',
+        question: "Qui a dit : « Si je péris, je péris » ?",
+        options: ["Esther", "Ruth", "Débora", "Marie"],
+        correctIndex: 0,
+        reference: "Esther 4:16",
+        difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_30',
+        type: 'multiple_choice',
+        question: "Combien d'années Israël est-il resté captif à Babylone ?",
+        options: ["40 ans", "50 ans", "70 ans", "100 ans"],
+        correctIndex: 2,
+        reference: "Jérémie 25:11",
+        difficulty: 'hard'
+    },
+    {
+        id: 'static_hard_31',
+        type: 'multiple_choice',
+        question: "Qui a oint Saül comme premier roi d'Israël ?",
+        options: ["Nathan", "Élie", "Samuel", "David"],
+        correctIndex: 2,
+        reference: "1 Samuel 10",
+        difficulty: 'hard'
     }
 ];
 
-// English static questions
+// English static questions - also expanded lightly
 const STATIC_QUESTIONS_EN: QuizQuestion[] = [
     {
         id: 'static_en_1',

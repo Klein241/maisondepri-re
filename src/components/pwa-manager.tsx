@@ -338,7 +338,7 @@ export function PWAManager() {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.8, y: 20 }}
                         transition={{ delay: 2, duration: 0.4 }}
-                        className="fixed bottom-24 right-4 z-[9998] flex flex-col items-end gap-2"
+                        className="fixed bottom-40 left-4 z-[9998] flex flex-col items-start gap-2"
                     >
                         {/* Dismiss button */}
                         <button

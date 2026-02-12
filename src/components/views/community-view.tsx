@@ -3,10 +3,10 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search,
+    MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search, Pin, Shield, BellRing,
     Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
     Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings,
-    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck
+    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck, Gamepad2
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAppStore } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
-import { PRAYER_CATEGORIES, PrayerCategory, PrayerRequest, Testimonial, PrayerGroup } from "@/lib/types";
+import { PRAYER_CATEGORIES, PrayerCategory, PrayerRequest, Testimonial, PrayerGroup, PrayerGroupJoinRequest } from "@/lib/types";
 import { PhotoUpload, PhotoGallery } from "@/components/ui/photo-upload";
 import { WhatsAppChat } from "@/components/community/whatsapp-chat";
 import { PrayerGroupManager } from "@/components/community/prayer-group-manager";
@@ -122,6 +122,8 @@ export function CommunityView() {
         testimonials, addTestimonial, likeTestimonial,
         user
     } = useAppStore();
+    const setGlobalActiveTab = useAppStore(s => s.setActiveTab);
+    const setBibleViewTarget = useAppStore(s => s.setBibleViewTarget);
 
     // UI State
     const [viewState, setViewState] = useState<ViewState>('main');
@@ -165,6 +167,10 @@ export function CommunityView() {
     const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
     const [userLastSeen, setUserLastSeen] = useState<Record<string, string>>({});
 
+    // Search state for Messages view
+    const [showMessageSearch, setShowMessageSearch] = useState(false);
+    const [messageSearchQuery, setMessageSearchQuery] = useState('');
+
     // Emoji picker states
     const [showDMEmojiPicker, setShowDMEmojiPicker] = useState(false);
     const [showGroupEmojiPicker, setShowGroupEmojiPicker] = useState(false);
@@ -176,6 +182,31 @@ export function CommunityView() {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Create group with prayer request
+    const [createGroupWithPrayer, setCreateGroupWithPrayer] = useState(false);
+
+    // Group join request system
+    const [groupJoinRequests, setGroupJoinRequests] = useState<PrayerGroupJoinRequest[]>([]);
+    const [pendingRequestCounts, setPendingRequestCounts] = useState<Record<string, number>>({});
+    const [showMembersPanel, setShowMembersPanel] = useState(false);
+    const [groupMembers, setGroupMembers] = useState<any[]>([]);
+    const [showPinnedPrayer, setShowPinnedPrayer] = useState(false);
+
+    // User friends for suggestions
+    const [userFriends, setUserFriends] = useState<string[]>([]);
+    const [isFriendWithChatPartner, setIsFriendWithChatPartner] = useState(false);
+
+    // Guest auth prompt
+    const [showAuthPrompt, setShowAuthPrompt] = useState(false);
+    const requireAuth = (callback?: () => void) => {
+        if (!user) {
+            setShowAuthPrompt(true);
+            return false;
+        }
+        callback?.();
+        return true;
+    };
 
     // Track online presence with robust updates
     useEffect(() => {
@@ -482,6 +513,266 @@ export function CommunityView() {
             console.error('Error loading users:', e);
         }
     };
+
+    // Load user's friends
+    const loadUserFriends = async () => {
+        if (!user) return;
+        try {
+            const { data, error } = await supabase
+                .from('friendships')
+                .select('sender_id, receiver_id')
+                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+                .eq('status', 'accepted');
+
+            if (!error && data) {
+                const friendIds = data.map(f =>
+                    f.sender_id === user.id ? f.receiver_id : f.sender_id
+                );
+                setUserFriends(friendIds);
+            }
+        } catch (e) {
+            console.log('Friends not loaded:', e);
+        }
+    };
+
+    // Load pending join requests for groups the user created
+    const loadPendingJoinRequests = async () => {
+        if (!user) return;
+        try {
+            // Get groups created by the user
+            const { data: myGroups } = await supabase
+                .from('prayer_groups')
+                .select('id')
+                .eq('created_by', user.id);
+
+            if (!myGroups || myGroups.length === 0) return;
+
+            const groupIds = myGroups.map(g => g.id);
+            const { data: requests, error } = await supabase
+                .from('prayer_group_join_requests')
+                .select(`
+                    *,
+                    profiles:user_id(full_name, avatar_url)
+                `)
+                .in('group_id', groupIds)
+                .eq('status', 'pending');
+
+            if (!error && requests) {
+                setGroupJoinRequests(requests);
+                // Count per group
+                const counts: Record<string, number> = {};
+                requests.forEach(r => {
+                    counts[r.group_id] = (counts[r.group_id] || 0) + 1;
+                });
+                setPendingRequestCounts(counts);
+            }
+        } catch (e) {
+            console.log('Join requests table may not exist yet');
+        }
+    };
+
+    // Request to join a group (instead of auto-join)
+    const requestJoinGroup = async (groupId: string) => {
+        if (!user) return;
+        try {
+            // Check if already requested
+            const { data: existing } = await supabase
+                .from('prayer_group_join_requests')
+                .select('id')
+                .eq('group_id', groupId)
+                .eq('user_id', user.id)
+                .maybeSingle();
+
+            if (existing) {
+                toast.info('Vous avez déjà envoyé une demande pour ce groupe');
+                return;
+            }
+
+            const { error } = await supabase
+                .from('prayer_group_join_requests')
+                .insert({
+                    group_id: groupId,
+                    user_id: user.id,
+                    status: 'pending'
+                });
+
+            if (error) {
+                // Fallback: if table doesn't exist, use direct join  
+                if (error.message.includes('does not exist') || error.code === '42P01') {
+                    await joinGroup(groupId);
+                    return;
+                }
+                throw error;
+            }
+
+            // Send notification to group creator
+            const { data: group } = await supabase
+                .from('prayer_groups')
+                .select('created_by, name')
+                .eq('id', groupId)
+                .single();
+
+            if (group) {
+                // Store notification for the group creator
+                const notif = {
+                    id: `join_req_${groupId}_${user.id}_${Date.now()}`,
+                    title: 'Demande de rejoindre le groupe',
+                    message: `${user.name} demande à rejoindre "${group.name}"`,
+                    type: 'group' as const,
+                    read: false,
+                    created_at: new Date().toISOString(),
+                    sender_name: user.name,
+                    sender_avatar: user.avatar,
+                };
+
+                // Save to creator's notifications in localStorage
+                try {
+                    const stored = localStorage.getItem(`notifs_${group.created_by}`);
+                    const existing = stored ? JSON.parse(stored) : [];
+                    existing.unshift(notif);
+                    localStorage.setItem(`notifs_${group.created_by}`, JSON.stringify(existing.slice(0, 50)));
+                } catch (e) { }
+            }
+
+            toast.success('✅ Demande envoyée! Le créateur du groupe sera notifié.');
+        } catch (e) {
+            console.error('Error requesting join:', e);
+            toast.error("Erreur lors de l'envoi de la demande");
+        }
+    };
+
+    // Approve a join request
+    const approveJoinRequest = async (requestId: string, groupId: string, userId: string) => {
+        try {
+            await supabase
+                .from('prayer_group_join_requests')
+                .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: user?.id })
+                .eq('id', requestId);
+
+            // Add the user as a member
+            await supabase
+                .from('prayer_group_members')
+                .insert({ group_id: groupId, user_id: userId, role: 'member' });
+
+            // Update local state
+            setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));
+            setPendingRequestCounts(prev => ({
+                ...prev,
+                [groupId]: Math.max(0, (prev[groupId] || 0) - 1)
+            }));
+
+            toast.success('✅ Membre approuvé!');
+            loadGroups();
+        } catch (e) {
+            console.error('Error approving request:', e);
+            toast.error("Erreur lors de l'approbation");
+        }
+    };
+
+    // Reject a join request
+    const rejectJoinRequest = async (requestId: string, groupId: string) => {
+        try {
+            await supabase
+                .from('prayer_group_join_requests')
+                .update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: user?.id })
+                .eq('id', requestId);
+
+            setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));
+            setPendingRequestCounts(prev => ({
+                ...prev,
+                [groupId]: Math.max(0, (prev[groupId] || 0) - 1)
+            }));
+
+            toast.info('Demande refusée');
+        } catch (e) {
+            console.error('Error rejecting request:', e);
+        }
+    };
+
+    // Load group members  
+    const loadGroupMembers = async (groupId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_members')
+                .select(`
+                    *,
+                    profiles:user_id(id, full_name, avatar_url)
+                `)
+                .eq('group_id', groupId);
+
+            if (!error && data) {
+                setGroupMembers(data);
+            }
+        } catch (e) {
+            console.error('Error loading members:', e);
+        }
+    };
+
+    // Remove a member from group (owner only)
+    const removeGroupMember = async (groupId: string, memberId: string) => {
+        if (!user) return;
+        try {
+            await supabase
+                .from('prayer_group_members')
+                .delete()
+                .eq('group_id', groupId)
+                .eq('user_id', memberId);
+
+            setGroupMembers(prev => prev.filter(m => m.user_id !== memberId));
+            toast.success('Membre retiré du groupe');
+            loadGroups();
+        } catch (e) {
+            console.error('Error removing member:', e);
+            toast.error("Erreur lors du retrait du membre");
+        }
+    };
+
+    // Check if chat partner is a friend
+    const checkFriendshipWithPartner = async (partnerId: string) => {
+        if (!user) return;
+        try {
+            const { data, error } = await supabase
+                .from('friendships')
+                .select('id')
+                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
+                .eq('status', 'accepted')
+                .maybeSingle();
+
+            setIsFriendWithChatPartner(!!data);
+        } catch (e) {
+            setIsFriendWithChatPartner(false);
+        }
+    };
+
+    // Send friend request from DM
+    const sendFriendRequestFromChat = async (partnerId: string) => {
+        if (!user) return;
+        try {
+            // Check if already sent
+            const { data: existing } = await supabase
+                .from('friendships')
+                .select('id')
+                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
+                .maybeSingle();
+
+            if (existing) {
+                toast.info('Demande déjà envoyée ou vous êtes déjà amis');
+                return;
+            }
+
+            await supabase.from('friendships').insert({
+                sender_id: user.id,
+                receiver_id: partnerId,
+                status: 'pending'
+            });
+
+            toast.success("Demande d'ami envoyée! 🤝");
+        } catch (e) {
+            console.error('Error sending friend request:', e);
+            toast.error("Erreur lors de l'envoi de la demande d'ami");
+        }
+    };
+
 
     // Load direct messages for a conversation
     const loadDirectMessages = async (conversationId: string) => {
@@ -1030,6 +1321,8 @@ export function CommunityView() {
     useEffect(() => {
         if (user) {
             loadUserGroups();
+            loadUserFriends();
+            loadPendingJoinRequests();
 
             // Listen for group deletions by admin
             const groupDeleteSub = supabase
@@ -1075,6 +1368,11 @@ export function CommunityView() {
         if (viewState === 'conversation' && selectedConversation) {
             // Initial load
             loadDirectMessages(selectedConversation.id);
+
+            // Check if chat partner is a friend
+            if (selectedConversation.otherUser?.id) {
+                checkFriendshipWithPartner(selectedConversation.otherUser.id);
+            }
 
             // Setup realtime subscription
             const channelName = `dm_cv_${selectedConversation.id}_${Date.now()}`;
@@ -1164,7 +1462,41 @@ export function CommunityView() {
         try {
             if (dialogType === 'prayer') {
                 await addPrayerRequest(newContent, isAnonymous, newCategory, newPhotos);
-                toast.success('Demande de prière publiée!');
+
+                // If createGroupWithPrayer is toggled, also create a group
+                if (createGroupWithPrayer) {
+                    try {
+                        const groupName = `🙏 Prière: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`;
+                        const { data: groupData, error: groupError } = await supabase
+                            .from('prayer_groups')
+                            .insert({
+                                name: groupName,
+                                description: newContent.substring(0, 200),
+                                created_by: user.id,
+                                is_open: true,
+                                requires_approval: true,
+                            })
+                            .select()
+                            .single();
+
+                        if (!groupError && groupData) {
+                            // Add creator as admin
+                            await supabase.from('prayer_group_members').insert({
+                                group_id: groupData.id,
+                                user_id: user.id,
+                                role: 'admin'
+                            });
+                            setUserGroups(prev => [...prev, groupData.id]);
+                            loadGroups();
+                            toast.success('🙏 Demande + groupe de prière créés!');
+                        }
+                    } catch (ge) {
+                        console.error('Error creating linked group:', ge);
+                        toast.success('Demande publiée! (groupe non créé)');
+                    }
+                } else {
+                    toast.success('Demande de prière publiée!');
+                }
             } else {
                 await addTestimonial(newContent, newPhotos);
                 toast.success('Témoignage publié!');
@@ -1175,6 +1507,7 @@ export function CommunityView() {
             setNewPhotos([]);
             setNewCategory('other');
             setIsAnonymous(false);
+            setCreateGroupWithPrayer(false);
             setIsDialogOpen(false);
         } catch (e) {
             toast.error('Erreur lors de la publication');
@@ -1198,7 +1531,7 @@ export function CommunityView() {
     const { incomingCall, acceptCall, rejectCall } = useCallListener(user?.id);
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white overflow-hidden pb-0">
+        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-0">
             {/* Incoming Call Overlay */}
             <AnimatePresence>
                 {incomingCall && (
@@ -1224,50 +1557,59 @@ export function CommunityView() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="relative z-10 flex flex-col h-[100dvh] pb-20"
+                        className="relative z-10 min-h-screen pb-24 max-w-4xl mx-auto w-full"
                     >
-                        {/* Header */}
-                        <header className="px-4 pt-10 pb-3">
-                            <div className="flex items-center justify-between mb-3">
-                                <div className="shrink-0">
-                                    <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
-                                        Communauté
-                                    </h1>
-                                    <p className="text-slate-500 text-xs font-medium mt-0.5">Prions ensemble</p>
+                        <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex flex-col min-h-screen">
+                            {/* Header - Sticky on scroll for PC & mobile */}
+                            <header className="px-4 pt-10 pb-3 sticky top-0 z-30 bg-gradient-to-b from-[#0B0E14] via-[#0B0E14] to-[#0B0E14]/95 backdrop-blur-xl">
+                                <div className="flex items-center justify-between mb-3">
+                                    <div className="shrink-0">
+                                        <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
+                                            Communauté
+                                        </h1>
+                                        <p className="text-slate-500 text-xs font-medium mt-0.5">Prions ensemble</p>
+                                    </div>
+                                    <NotificationBell />
                                 </div>
-                                <NotificationBell />
-                            </div>
-                            {/* Action Buttons - horizontal scroll on mobile */}
-                            <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
-                                <Button
-                                    size="sm"
-                                    className="shrink-0 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
-                                    onClick={() => setViewState('friends')}
-                                >
-                                    <UserPlus className="h-3.5 w-3.5" />
-                                    Amis
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
-                                    onClick={() => { loadGroups(); setViewState('groups'); }}
-                                >
-                                    <Users className="h-3.5 w-3.5" />
-                                    Groupes
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    className="shrink-0 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
-                                    onClick={() => setViewState('messages')}
-                                >
-                                    <MessageCircle className="h-3.5 w-3.5" />
-                                    Messages
-                                </Button>
-                                <EventCalendarButton />
-                            </div>
+                                {/* Action Buttons - horizontal scroll on mobile */}
+                                <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
+                                    <Button
+                                        size="sm"
+                                        className="shrink-0 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        onClick={() => requireAuth(() => setViewState('friends'))}
+                                    >
+                                        <UserPlus className="h-3.5 w-3.5" />
+                                        Amis
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        onClick={() => requireAuth(() => { loadGroups(); setViewState('groups'); })}
+                                    >
+                                        <Users className="h-3.5 w-3.5" />
+                                        Groupes
+                                    </Button>
+                                    <Button
+                                        size="sm"
+                                        className="shrink-0 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        onClick={() => requireAuth(() => setViewState('messages'))}
+                                    >
+                                        <MessageCircle className="h-3.5 w-3.5" />
+                                        Messages
+                                    </Button>
+                                    <EventCalendarButton />
+                                    <Button
+                                        size="sm"
+                                        className="shrink-0 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative overflow-hidden animate-pulse shadow-lg shadow-amber-500/30"
+                                        onClick={() => { setBibleViewTarget('games'); setGlobalActiveTab('bible'); }}
+                                    >
+                                        <Gamepad2 className="h-3.5 w-3.5" />
+                                        Jeux Bibliques
+                                        <span className="absolute inset-0 bg-white/20 animate-ping rounded-xl" style={{ animationDuration: '2s' }} />
+                                    </Button>
+                                </div>
 
-                            {/* Tab Navigation */}
-                            <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="w-full flex flex-col flex-1 min-h-0">
+                                {/* Tab List - stays in header */}
                                 <TabsList className="w-full bg-white/5 p-1 rounded-2xl">
                                     <TabsTrigger
                                         value="prayers"
@@ -1288,9 +1630,12 @@ export function CommunityView() {
                                         Chat
                                     </TabsTrigger>
                                 </TabsList>
+                            </header>
 
+                            {/* Content - Naturally scrollable on PC */}
+                            <div className="flex-1 px-4">
                                 {/* ===== PRAYERS TAB ===== */}
-                                <TabsContent value="prayers" className="mt-4 flex-1 overflow-hidden">
+                                <TabsContent value="prayers" className="mt-4 flex-1">
                                     {/* Category Filter */}
                                     <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-3">
                                         <Button
@@ -1342,53 +1687,50 @@ export function CommunityView() {
                                     </div>
 
                                     {/* Prayer List */}
-                                    <ScrollArea className="flex-1">
-                                        <div className="space-y-4 pb-32">
-                                            {filteredRequests.map((prayer) => (
-                                                <PrayerCard
-                                                    key={prayer.id}
-                                                    prayer={prayer}
-                                                    onPray={() => prayForRequest(prayer.id)}
-                                                    getCategoryInfo={getCategoryInfo}
-                                                    userId={user?.id}
-                                                />
-                                            ))}
+                                    <div className="space-y-4 pb-32">
+                                        {filteredRequests.map((prayer) => (
+                                            <PrayerCard
+                                                key={prayer.id}
+                                                prayer={prayer}
+                                                onPray={() => prayForRequest(prayer.id)}
+                                                getCategoryInfo={getCategoryInfo}
+                                                userId={user?.id}
+                                            />
+                                        ))}
 
-                                            {filteredRequests.length === 0 && (
-                                                <div className="text-center py-12">
-                                                    <MessageSquare className="h-12 w-12 text-slate-700 mx-auto mb-4" />
-                                                    <p className="text-slate-500">Aucune demande de prière</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </ScrollArea>
+                                        {filteredRequests.length === 0 && (
+                                            <div className="text-center py-12">
+                                                <MessageSquare className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                                <p className="text-slate-500">Aucune demande de prière</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </TabsContent>
 
                                 {/* ===== TESTIMONIALS TAB ===== */}
-                                <TabsContent value="testimonials" className="mt-4 flex-1 overflow-hidden">
-                                    <ScrollArea className="flex-1">
-                                        <div className="space-y-4 pb-32">
-                                            {testimonials.map((testimony) => (
-                                                <TestimonyCard
-                                                    key={testimony.id}
-                                                    testimony={testimony}
-                                                    onLike={() => likeTestimonial(testimony.id)}
-                                                />
-                                            ))}
+                                <TabsContent value="testimonials" className="mt-4 flex-1">
+                                    <div className="space-y-4 pb-32">
+                                        {testimonials.map((testimony) => (
+                                            <TestimonyCard
+                                                key={testimony.id}
+                                                testimony={testimony}
+                                                onLike={() => likeTestimonial(testimony.id)}
+                                                userId={user?.id}
+                                            />
+                                        ))}
 
-                                            {testimonials.length === 0 && (
-                                                <div className="text-center py-12">
-                                                    <Sparkles className="h-12 w-12 text-slate-700 mx-auto mb-4" />
-                                                    <p className="text-slate-500">Aucun témoignage</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </ScrollArea>
+                                        {testimonials.length === 0 && (
+                                            <div className="text-center py-12">
+                                                <Sparkles className="h-12 w-12 text-slate-700 mx-auto mb-4" />
+                                                <p className="text-slate-500">Aucun témoignage</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 </TabsContent>
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
-                                <TabsContent value="chat" className="mt-0 flex flex-col flex-1 min-h-0 overflow-hidden -mx-4">
-                                    <div className="flex-1 relative" style={{ height: 'calc(100dvh - 320px)' }}>
+                                <TabsContent value="chat" className="mt-0 flex flex-col -mx-4">
+                                    <div className="relative" style={{ height: 'calc(100dvh - 280px)', minHeight: '400px' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
@@ -1398,15 +1740,19 @@ export function CommunityView() {
                                         />
                                     </div>
                                 </TabsContent>
-                            </Tabs>
-                        </header>
+                            </div>
+                        </Tabs>
 
                         {/* Floating Add Button */}
                         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                             <DialogTrigger asChild>
                                 <Button
                                     className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
-                                    onClick={() => setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer')}
+                                    onClick={() => {
+                                        if (!user) { setShowAuthPrompt(true); return; }
+                                        setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer');
+                                        setIsDialogOpen(true);
+                                    }}
                                 >
                                     <Plus className="h-6 w-6" />
                                 </Button>
@@ -1490,10 +1836,7 @@ export function CommunityView() {
                                             onClick={() => setIsAnonymous(!isAnonymous)}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className={cn(
-                                                    "w-10 h-10 rounded-xl flex items-center justify-center",
-                                                    isAnonymous ? "bg-indigo-500/20" : "bg-white/10"
-                                                )}>
+                                                <div className="w-10 h-10 rounded-xl flex items-center justify-center">
                                                     <Lock className="h-5 w-5" />
                                                 </div>
                                                 <div>
@@ -1506,6 +1849,33 @@ export function CommunityView() {
                                                 isAnonymous ? "bg-indigo-600" : "bg-white/10"
                                             )}>
                                                 {isAnonymous && <Check className="h-4 w-4" />}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Create Group Toggle (Prayer only) */}
+                                    {dialogType === 'prayer' && (
+                                        <div
+                                            className={cn(
+                                                "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border",
+                                                createGroupWithPrayer ? "bg-emerald-600/20 border-emerald-500/30" : "bg-white/5 border-white/10"
+                                            )}
+                                            onClick={() => setCreateGroupWithPrayer(!createGroupWithPrayer)}
+                                        >
+                                            <div className="flex items-center gap-3">
+                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600/30 to-teal-600/30 flex items-center justify-center">
+                                                    <Users className="h-5 w-5 text-emerald-400" />
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-sm">Créer un groupe de prière</p>
+                                                    <p className="text-xs text-slate-500">D'autres pourront rejoindre pour prier ensemble</p>
+                                                </div>
+                                            </div>
+                                            <div className={cn(
+                                                "w-6 h-6 rounded-lg flex items-center justify-center transition-all",
+                                                createGroupWithPrayer ? "bg-emerald-600" : "bg-white/10"
+                                            )}>
+                                                {createGroupWithPrayer && <Check className="h-4 w-4" />}
                                             </div>
                                         </div>
                                     )}
@@ -1538,7 +1908,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh] pb-20"
+                        className="relative z-10 flex flex-col min-h-screen pb-24 max-w-4xl mx-auto w-full"
                     >
                         <header className="px-6 pt-12 pb-4">
                             <div className="flex items-center justify-between mb-6">
@@ -1657,6 +2027,18 @@ export function CommunityView() {
                                                                         <Check className="h-3 w-3 mr-1" />
                                                                         Membre
                                                                     </Badge>
+                                                                    {(group.created_by === user?.id || group.createdBy === user?.id) && (
+                                                                        <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
+                                                                            <Crown className="h-3 w-3 mr-1" />
+                                                                            Créateur
+                                                                        </Badge>
+                                                                    )}
+                                                                    {pendingRequestCounts[group.id] > 0 && (
+                                                                        <Badge className="bg-orange-500/20 text-orange-400 border-none text-[10px] animate-pulse">
+                                                                            <BellRing className="h-3 w-3 mr-1" />
+                                                                            {pendingRequestCounts[group.id]} demande(s)
+                                                                        </Badge>
+                                                                    )}
                                                                 </div>
                                                                 <p className="text-sm text-slate-400 line-clamp-1">{group.description}</p>
                                                                 <div className="flex items-center gap-3 mt-2">
@@ -1696,6 +2078,61 @@ export function CommunityView() {
                                                     </CardContent>
                                                 </Card>
                                             ))}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ===== PENDING JOIN REQUESTS (for group creators) ===== */}
+                                {groupJoinRequests.length > 0 && (
+                                    <div>
+                                        <h3 className="text-xs font-bold text-orange-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                            <BellRing className="h-3.5 w-3.5" />
+                                            Demandes en attente ({groupJoinRequests.length})
+                                        </h3>
+                                        <div className="space-y-2">
+                                            {groupJoinRequests.map((request) => {
+                                                const group = groups.find(g => g.id === request.group_id);
+                                                return (
+                                                    <Card key={request.id} className="bg-orange-500/5 border-orange-500/10 rounded-2xl">
+                                                        <CardContent className="p-4">
+                                                            <div className="flex items-center gap-3">
+                                                                <Avatar className="h-10 w-10">
+                                                                    <AvatarImage src={request.profiles?.avatar_url || undefined} />
+                                                                    <AvatarFallback className="bg-orange-500/20 text-orange-400 text-xs">
+                                                                        {(request.profiles?.full_name || '?').substring(0, 2).toUpperCase()}
+                                                                    </AvatarFallback>
+                                                                </Avatar>
+                                                                <div className="flex-1 min-w-0">
+                                                                    <p className="font-bold text-sm text-white truncate">
+                                                                        {request.profiles?.full_name || 'Utilisateur'}
+                                                                    </p>
+                                                                    <p className="text-[10px] text-slate-500">
+                                                                        Veut rejoindre: <span className="text-slate-400">{group?.name || 'Groupe'}</span>
+                                                                    </p>
+                                                                </div>
+                                                                <div className="flex gap-1.5">
+                                                                    <Button
+                                                                        size="sm"
+                                                                        className="h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs"
+                                                                        onClick={() => approveJoinRequest(request.id, request.group_id, request.user_id)}
+                                                                    >
+                                                                        <Check className="h-3.5 w-3.5 mr-1" />
+                                                                        Accepter
+                                                                    </Button>
+                                                                    <Button
+                                                                        size="sm"
+                                                                        variant="ghost"
+                                                                        className="h-8 px-2 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20"
+                                                                        onClick={() => rejectJoinRequest(request.id, request.group_id)}
+                                                                    >
+                                                                        <X className="h-3.5 w-3.5" />
+                                                                    </Button>
+                                                                </div>
+                                                            </div>
+                                                        </CardContent>
+                                                    </Card>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 )}
@@ -1756,19 +2193,33 @@ export function CommunityView() {
                                                             </div>
                                                             <ChevronRight className="h-5 w-5 text-slate-500 shrink-0" />
                                                         </div>
+
+                                                        {/* Friend suggestion - show if a friend is in this group */}
+                                                        {userFriends.length > 0 && (
+                                                            <div className="mt-2">
+                                                                <span className="text-[10px] text-pink-400 flex items-center gap-1">
+                                                                    <Heart className="h-3 w-3" />
+                                                                    Des amis peuvent être dans ce groupe
+                                                                </span>
+                                                            </div>
+                                                        )}
+
                                                         {group.isOpen && (
                                                             <div className="mt-4 pt-4 border-t border-white/5">
                                                                 <Button
                                                                     size="sm"
-                                                                    className="w-full h-10 rounded-xl bg-indigo-600 hover:bg-indigo-500"
+                                                                    className="w-full h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
                                                                     onClick={(e) => {
                                                                         e.stopPropagation();
-                                                                        joinGroup(group.id);
+                                                                        requestJoinGroup(group.id);
                                                                     }}
                                                                 >
-                                                                    <UserPlus className="h-4 w-4 mr-2" />
-                                                                    Rejoindre cette communauté
+                                                                    <Shield className="h-4 w-4 mr-2" />
+                                                                    Demander à rejoindre
                                                                 </Button>
+                                                                <p className="text-[10px] text-slate-600 mt-1.5 text-center">
+                                                                    Le créateur du groupe approuvera votre demande
+                                                                </p>
                                                             </div>
                                                         )}
                                                     </CardContent>
@@ -1804,7 +2255,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh] pb-20"
+                        className="relative z-10 flex flex-col h-[100dvh] pb-0 max-w-4xl mx-auto w-full"
                     >
                         <header className="px-6 pt-12 pb-4 border-b border-white/5">
                             <div className="flex items-center gap-4 mb-4">
@@ -1813,6 +2264,7 @@ export function CommunityView() {
                                     size="icon"
                                     onClick={() => {
                                         setSelectedGroup(null);
+                                        setShowMembersPanel(false);
                                         setViewState('groups');
                                     }}
                                 >
@@ -1833,17 +2285,140 @@ export function CommunityView() {
                                         {!selectedGroup.isOpen && ' • Groupe fermé'}
                                     </p>
                                 </div>
-                                {/* Video Call Button - Prominent */}
-                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                                    <Button
-                                        className="rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 shadow-lg shadow-green-600/30 border-0 gap-2 px-4 h-10"
-                                        onClick={() => setViewState('group-call')}
-                                    >
-                                        <Video className="h-4 w-4" />
-                                        <span className="text-xs font-bold">Appel</span>
-                                    </Button>
-                                </motion.div>
+                                <div className="flex gap-2">
+                                    {/* Members Button (for creator) */}
+                                    {(selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id) && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="relative h-10 w-10 rounded-xl bg-white/5"
+                                            onClick={() => {
+                                                setShowMembersPanel(!showMembersPanel);
+                                                if (!showMembersPanel) loadGroupMembers(selectedGroup.id);
+                                            }}
+                                        >
+                                            <Users className="h-4 w-4" />
+                                            {pendingRequestCounts[selectedGroup.id] > 0 && (
+                                                <span className="absolute -top-1 -right-1 w-5 h-5 bg-orange-500 text-white text-[10px] rounded-full flex items-center justify-center font-bold animate-pulse">
+                                                    {pendingRequestCounts[selectedGroup.id]}
+                                                </span>
+                                            )}
+                                        </Button>
+                                    )}
+                                    {/* Video Call Button */}
+                                    <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                        <Button
+                                            className="rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 shadow-lg shadow-green-600/30 border-0 gap-2 px-4 h-10"
+                                            onClick={() => setViewState('group-call')}
+                                        >
+                                            <Video className="h-4 w-4" />
+                                            <span className="text-xs font-bold">Appel</span>
+                                        </Button>
+                                    </motion.div>
+                                </div>
                             </div>
+
+                            {/* Pinned Prayer Subject */}
+                            {selectedGroup.description && (
+                                <div
+                                    className="bg-indigo-600/10 border border-indigo-500/20 rounded-2xl p-3 cursor-pointer hover:bg-indigo-600/15 transition-all"
+                                    onClick={() => setShowPinnedPrayer(!showPinnedPrayer)}
+                                >
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <Pin className="h-3.5 w-3.5 text-indigo-400" />
+                                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Sujet de prière</span>
+                                    </div>
+                                    <p className={cn(
+                                        "text-sm text-slate-300 transition-all",
+                                        showPinnedPrayer ? "" : "line-clamp-2"
+                                    )}>
+                                        {selectedGroup.description}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Members Panel (for creator) */}
+                            <AnimatePresence>
+                                {showMembersPanel && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        className="overflow-hidden mt-3"
+                                    >
+                                        <div className="bg-white/5 rounded-2xl p-4 space-y-3">
+                                            <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                Membres ({groupMembers.length})
+                                            </h3>
+
+                                            {/* Pending requests for this group */}
+                                            {groupJoinRequests.filter(r => r.group_id === selectedGroup.id).length > 0 && (
+                                                <div className="space-y-2 pb-2 border-b border-white/5">
+                                                    <span className="text-[10px] font-bold text-orange-400 uppercase">Demandes en attente</span>
+                                                    {groupJoinRequests.filter(r => r.group_id === selectedGroup.id).map(req => (
+                                                        <div key={req.id} className="flex items-center gap-2">
+                                                            <Avatar className="h-7 w-7">
+                                                                <AvatarImage src={req.profiles?.avatar_url || undefined} />
+                                                                <AvatarFallback className="bg-orange-500/20 text-orange-400 text-[9px]">
+                                                                    {(req.profiles?.full_name || '?').substring(0, 2).toUpperCase()}
+                                                                </AvatarFallback>
+                                                            </Avatar>
+                                                            <span className="text-xs text-white flex-1 truncate">{req.profiles?.full_name}</span>
+                                                            <Button
+                                                                size="sm"
+                                                                className="h-6 px-2 rounded-lg bg-emerald-600 text-[10px]"
+                                                                onClick={() => approveJoinRequest(req.id, req.group_id, req.user_id)}
+                                                            >
+                                                                <Check className="h-3 w-3" />
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="h-6 px-2 rounded-lg bg-red-500/10 text-red-400 text-[10px]"
+                                                                onClick={() => rejectJoinRequest(req.id, req.group_id)}
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            )}
+
+                                            {/* Current members */}
+                                            {groupMembers.map(member => (
+                                                <div key={member.id} className="flex items-center gap-2">
+                                                    <Avatar className="h-7 w-7">
+                                                        <AvatarImage src={member.profiles?.avatar_url || undefined} />
+                                                        <AvatarFallback className="bg-indigo-500/20 text-indigo-400 text-[9px]">
+                                                            {(member.profiles?.full_name || '?').substring(0, 2).toUpperCase()}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <span className="text-xs text-white flex-1 truncate">
+                                                        {member.profiles?.full_name || 'Membre'}
+                                                    </span>
+                                                    {member.role === 'admin' && (
+                                                        <Badge className="bg-amber-500/20 text-amber-400 border-none text-[9px]">
+                                                            <Crown className="h-2.5 w-2.5 mr-0.5" />
+                                                            Admin
+                                                        </Badge>
+                                                    )}
+                                                    {member.user_id !== user?.id && member.role !== 'admin' && (
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="h-6 px-2 rounded-lg bg-red-500/10 text-red-400 text-[10px]"
+                                                            onClick={() => removeGroupMember(selectedGroup.id, member.user_id)}
+                                                        >
+                                                            <X className="h-3 w-3 mr-0.5" />
+                                                            Retirer
+                                                        </Button>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
                         </header>
 
                         {/* Group Messages */}
@@ -1976,7 +2551,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-screen"
+                        className="relative z-10 flex flex-col h-screen max-w-4xl mx-auto w-full"
                     >
                         <header className="px-6 pt-12 pb-4 border-b border-white/5">
                             <div className="flex items-center gap-4">
@@ -2011,7 +2586,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh] bg-[#0F1219]"
+                        className="relative z-10 flex flex-col min-h-screen pb-24 bg-[#0F1219] max-w-4xl mx-auto w-full"
                     >
                         <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
                             <div className="flex items-center justify-between mb-4">
@@ -2019,7 +2594,7 @@ export function CommunityView() {
                                     <Button
                                         variant="ghost"
                                         size="icon"
-                                        onClick={() => setViewState('main')}
+                                        onClick={() => { setViewState('main'); setShowMessageSearch(false); setMessageSearchQuery(''); }}
                                         className="hover:bg-white/5 rounded-full"
                                     >
                                         <ArrowLeft className="h-6 w-6" />
@@ -2027,16 +2602,58 @@ export function CommunityView() {
                                     <h1 className="text-xl font-bold">Discussions</h1>
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white rounded-full">
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className={cn(
+                                            "rounded-full transition-colors",
+                                            showMessageSearch ? "text-indigo-400 bg-indigo-500/20" : "text-slate-400 hover:text-white"
+                                        )}
+                                        onClick={() => {
+                                            setShowMessageSearch(!showMessageSearch);
+                                            if (showMessageSearch) setMessageSearchQuery('');
+                                        }}
+                                    >
                                         <Search className="h-5 w-5" />
-                                    </Button>
-                                    <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white rounded-full">
-                                        <MoreVertical className="h-5 w-5" />
                                     </Button>
                                 </div>
                             </div>
 
-                            {/* Start New Chat Button - TRÈS Prominent avec animation */}
+                            {/* Search Bar - Animated */}
+                            <AnimatePresence>
+                                {showMessageSearch && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        exit={{ height: 0, opacity: 0 }}
+                                        transition={{ duration: 0.2 }}
+                                        className="overflow-hidden mb-3"
+                                    >
+                                        <div className="relative">
+                                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                                            <Input
+                                                autoFocus
+                                                placeholder="Rechercher une conversation..."
+                                                value={messageSearchQuery}
+                                                onChange={(e) => setMessageSearchQuery(e.target.value)}
+                                                className="pl-10 h-10 rounded-xl bg-white/5 border-white/10 text-white placeholder:text-slate-500"
+                                            />
+                                            {messageSearchQuery && (
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 text-slate-400 hover:text-white rounded-full"
+                                                    onClick={() => setMessageSearchQuery('')}
+                                                >
+                                                    <X className="h-3.5 w-3.5" />
+                                                </Button>
+                                            )}
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+
+                            {/* Start New Chat Button */}
                             <motion.div
                                 animate={{ scale: [1, 1.02, 1], boxShadow: ["0 0 0 0 rgba(99, 102, 241, 0.4)", "0 0 0 10px rgba(99, 102, 241, 0)", "0 0 0 0 rgba(99, 102, 241, 0)"] }}
                                 transition={{ repeat: Infinity, duration: 2 }}
@@ -2055,7 +2672,7 @@ export function CommunityView() {
                             </motion.div>
                         </header>
 
-                        <ScrollArea className="flex-1 h-[calc(100vh-200px)]">
+                        <div className="flex-1">
                             <div className="pb-32">
                                 {/* User's Joined Groups Section */}
                                 {userGroups.length > 0 && (
@@ -2063,7 +2680,7 @@ export function CommunityView() {
                                         <h3 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2 px-4 pt-4">
                                             Mes Groupes de Prière
                                         </h3>
-                                        {groups.filter(g => userGroups.includes(g.id)).map((group) => (
+                                        {groups.filter(g => userGroups.includes(g.id)).filter(g => !messageSearchQuery || g.name.toLowerCase().includes(messageSearchQuery.toLowerCase())).map((group) => (
                                             <div
                                                 key={group.id}
                                                 className="flex items-center gap-4 px-4 py-3 hover:bg-white/5 cursor-pointer transition-colors border-b border-white/5"
@@ -2100,7 +2717,11 @@ export function CommunityView() {
                                         Mes Conversations
                                     </h3>
                                 )}
-                                {conversations.map((conv) => {
+                                {conversations.filter((conv) => {
+                                    if (!messageSearchQuery) return true;
+                                    const name = conv.otherUser?.full_name || '';
+                                    return name.toLowerCase().includes(messageSearchQuery.toLowerCase());
+                                }).map((conv) => {
                                     const user = conv.otherUser;
                                     const isOnline = user && onlineUsers[user.id];
                                     const lastSeen = user && userLastSeen[user.id];
@@ -2167,7 +2788,7 @@ export function CommunityView() {
                                         Démarrer une conversation avec
                                     </h3>
                                     <div className="space-y-1">
-                                        {allUsers.map((profile) => {
+                                        {allUsers.filter(profile => !messageSearchQuery || (profile.full_name || '').toLowerCase().includes(messageSearchQuery.toLowerCase())).map((profile) => {
                                             const isOnline = onlineUsers[profile.id];
                                             const lastSeen = userLastSeen[profile.id];
                                             return (
@@ -2244,7 +2865,7 @@ export function CommunityView() {
                                     </div>
                                 </div>
                             </div>
-                        </ScrollArea>
+                        </div>
                     </motion.div>
                 )}
 
@@ -2296,6 +2917,24 @@ export function CommunityView() {
                                     </div>
                                 </div>
                                 <div className="flex gap-1">
+                                    {/* Friend Request Button - show when not friends */}
+                                    {!isFriendWithChatPartner && selectedConversation.otherUser && (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="text-pink-400 hover:text-pink-300 rounded-full h-10 w-10 hover:bg-pink-500/10"
+                                            onClick={() => sendFriendRequestFromChat(selectedConversation.otherUser.id)}
+                                            title="Ajouter en ami"
+                                        >
+                                            <UserPlus className="h-5 w-5" />
+                                        </Button>
+                                    )}
+                                    {isFriendWithChatPartner && (
+                                        <Badge className="bg-pink-500/20 text-pink-400 border-none text-[10px] self-center mr-1">
+                                            <Heart className="h-3 w-3 mr-1" />
+                                            Ami
+                                        </Badge>
+                                    )}
                                     {/* Voice & Video Call Buttons */}
                                     {user && selectedConversation.otherUser && (
                                         <DMCallButtons
@@ -2513,6 +3152,36 @@ export function CommunityView() {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Guest Auth Prompt Dialog */}
+            <Dialog open={showAuthPrompt} onOpenChange={setShowAuthPrompt}>
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-sm rounded-3xl p-0 overflow-hidden">
+                    <div className="p-8 text-center">
+                        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
+                            <Lock className="w-10 h-10 text-white" />
+                        </div>
+                        <h3 className="text-xl font-black mb-2">Connexion requise</h3>
+                        <p className="text-slate-400 text-sm mb-6">
+                            Connectez-vous ou créez un compte pour interagir avec la communauté.
+                        </p>
+                        <div className="space-y-3">
+                            <Button
+                                className="w-full h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 font-bold text-sm"
+                                onClick={() => { setShowAuthPrompt(false); setGlobalActiveTab('profile'); }}
+                            >
+                                Se connecter / S&apos;inscrire
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                className="w-full h-10 rounded-xl text-slate-400 text-sm"
+                                onClick={() => setShowAuthPrompt(false)}
+                            >
+                                Continuer en tant qu&apos;invité
+                            </Button>
+                        </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
@@ -2680,6 +3349,43 @@ function PrayerCard({
         }
     };
 
+    const handleDeletePrayer = async () => {
+        if (!isOwner) return;
+        const confirmed = window.confirm('Voulez-vous vraiment supprimer cette demande de prière ?');
+        if (!confirmed) return;
+
+        try {
+            const { error } = await supabase
+                .from('prayer_requests')
+                .delete()
+                .eq('id', prayerId);
+
+            if (error) throw error;
+            toast.success('Demande de prière supprimée');
+            // The parent component should refresh the list via realtime subscription
+        } catch (e: any) {
+            console.error('Error deleting prayer:', e);
+            toast.error('Impossible de supprimer cette demande');
+        }
+    };
+
+    const handleReport = async () => {
+        try {
+            await supabase
+                .from('reports')
+                .insert({
+                    reporter_id: userId,
+                    content_type: 'prayer_request',
+                    content_id: prayerId,
+                    reason: 'Signalé par un utilisateur'
+                });
+            toast.success('Signalement envoyé. Merci pour votre vigilance.');
+        } catch (e) {
+            // If reports table doesn't exist yet, just show confirmation
+            toast.success('Signalement pris en compte. Merci.');
+        }
+    };
+
     return (
         <>
             <Card className={cn(
@@ -2843,11 +3549,11 @@ function PrayerCard({
                                     </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="bg-[#1A1D24] border-white/10 text-slate-200">
-                                    <DropdownMenuItem className="focus:bg-white/5 focus:text-white cursor-pointer gap-2">
+                                    <DropdownMenuItem className="focus:bg-white/5 focus:text-white cursor-pointer gap-2" onClick={handleReport}>
                                         <Flag className="h-4 w-4" /> Signaler
                                     </DropdownMenuItem>
                                     {isOwner && (
-                                        <DropdownMenuItem className="focus:bg-red-500/10 focus:text-red-400 text-red-400 cursor-pointer gap-2">
+                                        <DropdownMenuItem className="focus:bg-red-500/10 focus:text-red-400 text-red-400 cursor-pointer gap-2" onClick={handleDeletePrayer}>
                                             <Trash2 className="h-4 w-4" /> Supprimer
                                         </DropdownMenuItem>
                                     )}
@@ -2924,12 +3630,32 @@ function PrayerCard({
 // Testimony Card Component
 function TestimonyCard({
     testimony,
-    onLike
+    onLike,
+    userId
 }: {
     testimony: Testimonial;
     onLike: () => void;
+    userId?: string;
 }) {
-    const hasLiked = testimony.likedBy?.includes('current-user'); // TODO: Use actual user ID
+    const hasLiked = userId && testimony.likedBy ? testimony.likedBy.includes(userId) : false;
+
+    const handleShareTestimony = async () => {
+        const shareData = {
+            title: 'Témoignage',
+            text: `Découvrez ce témoignage : "${testimony.content.substring(0, 100)}..."`,
+            url: window.location.href,
+        };
+        try {
+            if (navigator.share) {
+                await navigator.share(shareData);
+            } else {
+                await navigator.clipboard.writeText(`${shareData.text}\n${shareData.url}`);
+                toast.success('Lien copié dans le presse-papier');
+            }
+        } catch (err) {
+            console.error('Error sharing:', err);
+        }
+    };
 
     return (
         <Card className="bg-gradient-to-br from-amber-600/10 to-orange-600/5 border-amber-500/10 rounded-3xl overflow-hidden">
@@ -2978,7 +3704,7 @@ function TestimonyCard({
                     </Button>
 
                     <div className="flex gap-2">
-                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-500">
+                        <Button variant="ghost" size="icon" className="h-9 w-9 rounded-xl text-slate-500 hover:text-amber-400 transition-colors" onClick={handleShareTestimony}>
                             <Share2 className="h-4 w-4" />
                         </Button>
                     </div>

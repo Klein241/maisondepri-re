@@ -25,11 +25,11 @@ interface WordSearchGameProps {
     onNextRound?: () => void;
 }
 
-const DEFAULT_WORDS = [
-    "JESUS", "BIBLE", "PRIERE", "AMOUR", "FOI",
-    "ESPOIR", "PAIX", "GRACE", "DIEU", "ESPRIT",
-    "CROIX", "SALUT", "ANGE", "CIEL", "PARDON"
-];
+import { getWordSearchWords } from '@/lib/game-data';
+
+// ... (keep unused imports if any, but we are replacing imports too potentially)
+
+// Removed DEFAULT_WORDS internal constant in favor of dynamic generator
 
 // Colors for found words highlights
 const HIGHLIGHT_COLORS = [
@@ -65,7 +65,10 @@ export function WordSearchGame({
     // Initialize Game
     useEffect(() => {
         if (!initialGrid || !initialWords) {
-            const { grid: newGrid, placedWords } = generateWordSearch(DEFAULT_WORDS, {
+            // Generate dynamic words from our expanded list
+            const randomWords = getWordSearchWords(12); // Get 12 random words
+
+            const { grid: newGrid, placedWords } = generateWordSearch(randomWords, {
                 width: 10, // Slightly smaller for mobile friendliness
                 height: 12,
                 directions: ['horizontal', 'vertical', 'diagonal-down', 'diagonal-up']
@@ -257,7 +260,9 @@ export function WordSearchGame({
     };
 
     const restartGame = () => {
-        const { grid: newGrid, placedWords } = generateWordSearch(DEFAULT_WORDS, {
+        const randomWords = getWordSearchWords(12);
+
+        const { grid: newGrid, placedWords } = generateWordSearch(randomWords, {
             width: 10,
             height: 12,
             directions: ['horizontal', 'vertical', 'diagonal-down', 'diagonal-up']
