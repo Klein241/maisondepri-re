@@ -11,6 +11,7 @@ export type NotificationActionType =
     | 'new_prayer_published'    // New prayer request published
     | 'group_new_message'       // New message in your group
     | 'admin_new_group'         // Admin created a new official group
+    | 'dm_new_message'          // New direct message received
     | 'general';
 
 export interface NotificationActionData {
@@ -381,4 +382,38 @@ export async function notifyAdminNewGroup({
     } catch (e) {
         console.error('[Notification] Admin group notify error:', e);
     }
+}
+
+/**
+ * Notify a user of a new direct message with deep-link to the conversation
+ */
+export async function notifyDirectMessage({
+    recipientId,
+    senderId,
+    senderName,
+    messagePreview,
+    conversationId,
+}: {
+    recipientId: string;
+    senderId: string;
+    senderName: string;
+    messagePreview: string;
+    conversationId: string;
+}) {
+    // Don't notify yourself
+    if (recipientId === senderId) return;
+
+    await sendNotification({
+        userId: recipientId,
+        title: `💬 ${senderName}`,
+        message: messagePreview.length > 80 ? messagePreview.substring(0, 80) + '…' : messagePreview,
+        type: 'message',
+        actionType: 'dm_new_message',
+        actionData: {
+            tab: 'community',
+            communityTab: 'chat',
+            viewState: 'conversation',
+            conversationId: conversationId,
+        },
+    });
 }

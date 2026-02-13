@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
-import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage, notifyGroupAccessRequest, notifyGroupAccessApproved } from "@/lib/notifications";
+import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage, notifyGroupAccessRequest, notifyGroupAccessApproved, notifyDirectMessage } from "@/lib/notifications";
 
 type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call' | 'friends';
 
@@ -169,14 +169,13 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             }
         }
 
-        // Navigate to a specific viewState (e.g., group-detail, groups)
+        // Navigate to a specific viewState (e.g., group-detail, groups, conversation)
         if (nav.viewState) {
             const vs = nav.viewState as ViewState;
-            setViewState(vs);
 
             // If navigating to a group-detail, load the group
             if (vs === 'group-detail' && nav.groupId) {
-                // Find the group or load it
+                setViewState(vs);
                 const group = groups.find((g: any) => g.id === nav.groupId);
                 if (group) {
                     setSelectedGroup(group);
@@ -193,6 +192,40 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             }
                         });
                 }
+            }
+            // If navigating to a DM conversation, open the chat tab and load conversation
+            else if (vs === 'conversation' && nav.conversationId) {
+                setActiveTab('chat');
+                // Load the conversation details and open it
+                supabase
+                    .from('conversations')
+                    .select('*')
+                    .eq('id', nav.conversationId)
+                    .single()
+                    .then(async ({ data: conv }) => {
+                        if (!conv || !user) return;
+                        const partnerId = conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('id, full_name, avatar_url, is_online, last_seen')
+                            .eq('id', partnerId)
+                            .single();
+
+                        const conversation = {
+                            id: conv.id,
+                            otherUser: profile || { id: partnerId, full_name: 'Utilisateur', avatar_url: null },
+                            lastMessage: conv.last_message || '',
+                            lastMessageAt: conv.last_message_at || conv.created_at,
+                            unreadCount: 0,
+                        };
+                        setSelectedConversation(conversation);
+                        loadDirectMessages(conv.id);
+                        setViewState('conversation');
+                    });
+            }
+            // Otherwise, navigate to the specified viewState
+            else {
+                setViewState(vs);
             }
         }
     }, [pendingNavigation]);
@@ -869,6 +902,17 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 .from('conversations')
                 .update({ last_message_at: new Date().toISOString(), last_message: messageContent })
                 .eq('id', selectedConversation.id);
+
+            // Send notification to conversation partner
+            if (selectedConversation.otherUser?.id) {
+                notifyDirectMessage({
+                    recipientId: selectedConversation.otherUser.id,
+                    senderId: user.id,
+                    senderName: user.name || 'Utilisateur',
+                    messagePreview: messageContent,
+                    conversationId: selectedConversation.id,
+                });
+            }
 
         } catch (e) {
             console.error('Error sending DM:', e);

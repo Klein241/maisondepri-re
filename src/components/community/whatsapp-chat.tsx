@@ -18,6 +18,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { EmojiPicker } from '@/components/ui/emoji-picker';
+import { notifyDirectMessage } from '@/lib/notifications';
 
 // Types
 interface ChatUser {
@@ -259,6 +260,7 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                     // Check if this message belongs to the currently open conversation
                     const isRelevant = currentConv && msg.conversation_id === currentConv.id;
                     if (isRelevant) {
+                        // Message is for the conversation we're viewing — add it live
                         const { data: sender } = await supabase
                             .from('profiles')
                             .select('id, full_name, avatar_url')
@@ -276,6 +278,12 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                                 .from('direct_messages')
                                 .update({ is_read: true })
                                 .eq('id', msg.id);
+                        }
+                    } else {
+                        // Message is for a different conversation — refresh the conversation list
+                        // so the user sees updated last message and unread count
+                        if (msg.sender_id !== user.id) {
+                            loadConversations();
                         }
                     }
                 } else if (payload.eventType === 'UPDATE') {
@@ -629,6 +637,15 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                         }];
                     });
                 }
+
+                // Send notification to the conversation partner
+                notifyDirectMessage({
+                    recipientId: selectedConversation.participantId,
+                    senderId: user.id,
+                    senderName: user.name || 'Utilisateur',
+                    messagePreview: msgContent,
+                    conversationId: selectedConversation.id,
+                });
             } else if (view === 'group' && selectedGroup) {
                 const { data, error } = await supabase
                     .from('prayer_group_messages')
@@ -721,6 +738,15 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
                     .from('conversations')
                     .update({ last_message: '🎤 Message vocal', last_message_at: new Date().toISOString() })
                     .eq('id', selectedConversation.id);
+
+                // Send notification to conversation partner
+                notifyDirectMessage({
+                    recipientId: selectedConversation.participantId,
+                    senderId: user.id,
+                    senderName: user.name || 'Utilisateur',
+                    messagePreview: '🎤 Message vocal',
+                    conversationId: selectedConversation.id,
+                });
             } else if (view === 'group' && selectedGroup) {
                 const { error } = await supabase
                     .from('prayer_group_messages')
