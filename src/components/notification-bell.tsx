@@ -36,6 +36,7 @@ export function NotificationBell() {
     const user = useAppStore(s => s.user);
     const setActiveTab = useAppStore(s => s.setActiveTab);
     const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
+    const triggerDMRefresh = useAppStore(s => s.triggerDMRefresh);
 
     // Load notifications from localStorage + Supabase
     const loadNotifications = useCallback(async () => {
@@ -169,21 +170,30 @@ export function NotificationBell() {
                 const notif: AppNotification = {
                     id: `dm_${msg.id}`,
                     title: 'Nouveau message',
-                    message: msg.content?.substring(0, 80) || 'Message vocal 🎙️',
+                    message: `Message de ${profile?.full_name || 'Quelqu\'un'}: ${msg.content?.substring(0, 60) || 'Message vocal \ud83c\udfa4'}`,
                     type: 'message',
                     read: false,
                     created_at: msg.created_at || new Date().toISOString(),
                     sender_name: profile?.full_name || 'Quelqu\'un',
                     sender_avatar: profile?.avatar_url || undefined,
+                    action_data: JSON.stringify({
+                        tab: 'community',
+                        communityTab: 'chat',
+                        viewState: 'conversation',
+                        conversationId: msg.conversation_id,
+                    }),
                 };
 
                 setNotifications(prev => [notif, ...prev].slice(0, 50));
                 setUnreadMessages(prev => prev + 1);
 
-                // Trigger SW notification (works even when browser minimized)
+                // Signal the chat component to reload messages (RLS workaround)
+                triggerDMRefresh(msg.conversation_id);
+
+                // Trigger SW notification
                 triggerPushNotification(
-                    `💬 ${profile?.full_name || 'Nouveau message'}`,
-                    msg.content?.substring(0, 100) || 'Message vocal 🎙️'
+                    `\ud83d\udcac ${profile?.full_name || 'Nouveau message'}`,
+                    msg.content?.substring(0, 100) || 'Message vocal \ud83c\udfa4'
                 );
             })
             .subscribe();
@@ -208,19 +218,24 @@ export function NotificationBell() {
                 const notif: AppNotification = {
                     id: `friend_${req.id}`,
                     title: 'Demande d\'ami',
-                    message: `${profile?.full_name || 'Quelqu\'un'} vous a envoyé une demande d'ami`,
+                    message: `${profile?.full_name || 'Quelqu\'un'} vous a envoy\u00e9 une demande d'ami`,
                     type: 'friend_request',
                     read: false,
                     created_at: req.created_at || new Date().toISOString(),
                     sender_name: profile?.full_name || undefined,
                     sender_avatar: profile?.avatar_url || undefined,
+                    action_data: JSON.stringify({
+                        tab: 'community',
+                        communityTab: 'chat',
+                        viewState: 'friends',
+                    }),
                 };
 
                 setNotifications(prev => [notif, ...prev].slice(0, 50));
 
                 triggerPushNotification(
-                    '🤝 Demande d\'ami',
-                    `${profile?.full_name || 'Quelqu\'un'} veut être votre ami`
+                    '\ud83e\udd1d Demande d\'ami',
+                    `${profile?.full_name || 'Quelqu\'un'} veut \u00eatre votre ami`
                 );
             })
             .subscribe();
@@ -261,12 +276,18 @@ export function NotificationBell() {
                 const notif: AppNotification = {
                     id: `grp_${msg.id}`,
                     title: group?.name || 'Message de groupe',
-                    message: `${profile?.full_name || 'Quelqu\'un'}: ${msg.content?.substring(0, 60) || '🎙️'}`,
+                    message: `${profile?.full_name || 'Quelqu\'un'}: ${msg.content?.substring(0, 60) || '\ud83c\udfa4'}`,
                     type: 'group',
                     read: false,
                     created_at: msg.created_at || new Date().toISOString(),
                     sender_name: profile?.full_name || undefined,
                     sender_avatar: profile?.avatar_url || undefined,
+                    action_data: JSON.stringify({
+                        tab: 'community',
+                        viewState: 'group-detail',
+                        groupId: msg.group_id,
+                        groupName: group?.name || 'Groupe',
+                    }),
                 };
 
                 setNotifications(prev => [notif, ...prev].slice(0, 50));
@@ -400,23 +421,42 @@ export function NotificationBell() {
             console.error('Failed to parse action_data:', e);
         }
 
-        // Navigate to the right tab
-        const targetTab = actionData.tab || (notif.type === 'message' || notif.type === 'group' ? 'community' : null);
-        if (targetTab) {
-            setActiveTab(targetTab as any);
+        // If no action_data, infer navigation from notification type + id
+        if (!actionData.tab && !actionData.viewState) {
+            if (notif.type === 'message') {
+                actionData.tab = 'community';
+                actionData.communityTab = 'chat';
+                // Extract conversationId from dm_{msg_id} if possible  
+                if (notif.id.startsWith('dm_')) {
+                    actionData.viewState = 'messages';
+                }
+            } else if (notif.type === 'group') {
+                actionData.tab = 'community';
+                actionData.viewState = 'groups';
+            } else if (notif.type === 'friend_request') {
+                actionData.tab = 'community';
+                actionData.viewState = 'friends';
+            } else if (notif.type === 'prayer') {
+                actionData.tab = 'community';
+                actionData.communityTab = 'prayers';
+            } else {
+                actionData.tab = 'community';
+            }
         }
 
+        // Navigate to the right tab
+        const targetTab = actionData.tab || 'community';
+        setActiveTab(targetTab as any);
+
         // Set pending navigation for deep-link within the view
-        if (actionData.viewState || actionData.groupId || actionData.prayerId || actionData.communityTab || actionData.conversationId) {
-            setPendingNavigation({
-                viewState: actionData.viewState,
-                groupId: actionData.groupId,
-                groupName: actionData.groupName,
-                prayerId: actionData.prayerId,
-                communityTab: actionData.communityTab,
-                conversationId: actionData.conversationId,
-            });
-        }
+        setPendingNavigation({
+            viewState: actionData.viewState,
+            groupId: actionData.groupId,
+            groupName: actionData.groupName,
+            prayerId: actionData.prayerId,
+            communityTab: actionData.communityTab,
+            conversationId: actionData.conversationId,
+        });
 
         setIsOpen(false);
     };

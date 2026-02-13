@@ -18,7 +18,7 @@ interface NotificationPopup {
 }
 
 export function NotificationListener() {
-    const { user, setActiveTab, setPendingNavigation } = useAppStore();
+    const { user, setActiveTab, setPendingNavigation, triggerDMRefresh } = useAppStore();
     const [popups, setPopups] = useState<NotificationPopup[]>([]);
 
     const dismissPopup = (id: string) => {
@@ -45,16 +45,14 @@ export function NotificationListener() {
         setActiveTab(targetTab as any);
 
         // Set pending navigation for deep-link within the view
-        if (actionData.viewState || actionData.groupId || actionData.prayerId || actionData.communityTab || actionData.conversationId) {
-            setPendingNavigation({
-                viewState: actionData.viewState,
-                groupId: actionData.groupId,
-                groupName: actionData.groupName,
-                prayerId: actionData.prayerId,
-                communityTab: actionData.communityTab,
-                conversationId: actionData.conversationId,
-            });
-        }
+        setPendingNavigation({
+            viewState: actionData.viewState,
+            groupId: actionData.groupId,
+            groupName: actionData.groupName,
+            prayerId: actionData.prayerId,
+            communityTab: actionData.communityTab,
+            conversationId: actionData.conversationId,
+        });
     };
 
     useEffect(() => {
@@ -73,6 +71,16 @@ export function NotificationListener() {
 
                     // Add to popup queue
                     setPopups(prev => [...prev, { id, title, message, type, action_type, action_data }]);
+
+                    // If this is a DM notification, trigger DM refresh signal
+                    if (action_type === 'dm_new_message' && action_data) {
+                        try {
+                            const parsed = typeof action_data === 'string' ? JSON.parse(action_data) : action_data;
+                            if (parsed.conversationId) {
+                                triggerDMRefresh(parsed.conversationId);
+                            }
+                        } catch (e) { }
+                    }
 
                     // Auto-dismiss after 10 seconds
                     setTimeout(() => {

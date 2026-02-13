@@ -19,6 +19,7 @@ import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { notifyDirectMessage } from '@/lib/notifications';
+import { useAppStore } from '@/lib/store';
 
 // Types
 interface ChatUser {
@@ -237,6 +238,20 @@ export function WhatsAppChat({ user }: WhatsAppChatProps) {
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only re-run if user ID changes, not user object
+
+    // RLS workaround: listen for DM refresh signals from the notification system
+    const dmRefreshSignal = useAppStore(s => s.dmRefreshSignal);
+    useEffect(() => {
+        if (!dmRefreshSignal || !user) return;
+        const currentConv = selectedConversationRef.current;
+        if (currentConv && currentConv.id === dmRefreshSignal.conversationId) {
+            // Reload messages for the current conversation
+            loadMessages('conversation', currentConv.id);
+        } else if (view === 'list') {
+            // If on list view, reload conversations to update last message / unread
+            loadConversations();
+        }
+    }, [dmRefreshSignal]);
 
     // Realtime subscriptions - STABLE, only depends on user.id
     // Uses refs to access current conversation/group without recreating subscriptions

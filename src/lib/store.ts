@@ -125,6 +125,10 @@ interface AppState {
     pendingNavigation: { viewState?: string; groupId?: string; groupName?: string; prayerId?: string; communityTab?: string; conversationId?: string } | null;
     setPendingNavigation: (nav: { viewState?: string; groupId?: string; groupName?: string; prayerId?: string; communityTab?: string; conversationId?: string } | null) => void;
 
+    // DM refresh signal — triggers message reload in chat when a DM notification arrives (workaround for RLS blocking realtime)
+    dmRefreshSignal: { conversationId: string; timestamp: number } | null;
+    triggerDMRefresh: (conversationId: string) => void;
+
     // Bible Persistence
     bibleHighlights: BibleHighlight[];
     bibleFavorites: BibleFavorite[];
@@ -736,6 +740,8 @@ export const useAppStore = create<AppState>()(
             setSelectedDay: (day) => set({ selectedDay: day }),
             pendingNavigation: null,
             setPendingNavigation: (nav) => set({ pendingNavigation: nav }),
+            dmRefreshSignal: null,
+            triggerDMRefresh: (conversationId) => set({ dmRefreshSignal: { conversationId, timestamp: Date.now() } }),
 
             // Bible Persistence
             bibleHighlights: [],

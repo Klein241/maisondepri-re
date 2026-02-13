@@ -230,6 +230,24 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         }
     }, [pendingNavigation]);
 
+    // Watch for DM refresh signals (RLS workaround: when notification arrives, reload messages)
+    const dmRefreshSignal = useAppStore(s => s.dmRefreshSignal);
+    useEffect(() => {
+        if (!dmRefreshSignal) return;
+        // If we're viewing the conversation that just got a new message, reload messages
+        if (viewState === 'conversation' && selectedConversation && selectedConversation.id === dmRefreshSignal.conversationId) {
+            loadDirectMessages(dmRefreshSignal.conversationId);
+        }
+        // Also reload conversation list to update unread counts
+        if (viewState === 'messages' && user) {
+            // Debounce to avoid excessive reloads
+            const timer = setTimeout(() => {
+                loadConversations();
+            }, 500);
+            return () => clearTimeout(timer);
+        }
+    }, [dmRefreshSignal]);
+
     // Track online presence with robust updates
     useEffect(() => {
         if (!user) return;
