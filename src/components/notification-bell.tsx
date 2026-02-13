@@ -23,6 +23,8 @@ interface AppNotification {
     sender_name?: string;
     sender_avatar?: string;
     action_url?: string;
+    action_type?: string;
+    action_data?: string;
 }
 
 export function NotificationBell() {
@@ -33,6 +35,7 @@ export function NotificationBell() {
     const panelRef = useRef<HTMLDivElement>(null);
     const user = useAppStore(s => s.user);
     const setActiveTab = useAppStore(s => s.setActiveTab);
+    const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
 
     // Load notifications from localStorage + Supabase
     const loadNotifications = useCallback(async () => {
@@ -70,6 +73,37 @@ export function NotificationBell() {
                 setNotifications(prev => {
                     const nonAdmin = prev.filter(p => !p.id.startsWith('admin_'));
                     const merged = [...adminNotifs, ...nonAdmin]
+                        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+                        .slice(0, 50);
+                    return merged;
+                });
+            }
+        } catch (e) { }
+
+        // Load from Supabase notifications table (primary notification source)
+        try {
+            const { data: supaNotifs } = await supabase
+                .from('notifications')
+                .select('*')
+                .eq('user_id', user.id)
+                .order('created_at', { ascending: false })
+                .limit(30);
+
+            if (supaNotifs && supaNotifs.length > 0) {
+                const supaAppNotifs: AppNotification[] = supaNotifs.map(n => ({
+                    id: `supa_${n.id}`,
+                    title: n.title,
+                    message: n.message,
+                    type: (n.type === 'message' ? 'message' : n.type === 'prayer' ? 'prayer' : n.type === 'success' ? 'group' : 'system') as AppNotification['type'],
+                    read: n.is_read,
+                    created_at: n.created_at,
+                    action_type: n.action_type,
+                    action_data: n.action_data,
+                }));
+
+                setNotifications(prev => {
+                    const nonSupa = prev.filter(p => !p.id.startsWith('supa_'));
+                    const merged = [...supaAppNotifs, ...nonSupa]
                         .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
                         .slice(0, 50);
                     return merged;
@@ -349,9 +383,41 @@ export function NotificationBell() {
 
     const handleNotifClick = (notif: AppNotification) => {
         markAsRead(notif.id);
-        if (notif.type === 'message' || notif.type === 'group') {
-            setActiveTab('community');
+
+        // Mark as read in Supabase if it's a Supabase notification
+        if (notif.id.startsWith('supa_')) {
+            const supaId = notif.id.replace('supa_', '');
+            supabase.from('notifications').update({ is_read: true }).eq('id', supaId).then(() => { });
         }
+
+        // Parse action_data for deep-linking
+        let actionData: any = {};
+        try {
+            if (notif.action_data) {
+                actionData = typeof notif.action_data === 'string' ? JSON.parse(notif.action_data) : notif.action_data;
+            }
+        } catch (e) {
+            console.error('Failed to parse action_data:', e);
+        }
+
+        // Navigate to the right tab
+        const targetTab = actionData.tab || (notif.type === 'message' || notif.type === 'group' ? 'community' : null);
+        if (targetTab) {
+            setActiveTab(targetTab as any);
+        }
+
+        // Set pending navigation for deep-link within the view
+        if (actionData.viewState || actionData.groupId || actionData.prayerId || actionData.communityTab || actionData.conversationId) {
+            setPendingNavigation({
+                viewState: actionData.viewState,
+                groupId: actionData.groupId,
+                groupName: actionData.groupName,
+                prayerId: actionData.prayerId,
+                communityTab: actionData.communityTab,
+                conversationId: actionData.conversationId,
+            });
+        }
+
         setIsOpen(false);
     };
 

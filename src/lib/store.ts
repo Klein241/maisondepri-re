@@ -3,7 +3,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from './supabase';
 import { BibleVerse, DEFAULT_TRANSLATION as DEFAULT_BIBLE_ID } from './unified-bible-api';
 import { PrayerCategory, PrayerRequest as PrayerRequestType, Testimonial as TestimonialType } from './types';
-import { notifyPrayerPrayed } from './notifications';
+import { notifyPrayerPrayed, notifyFriendPrayed } from './notifications';
 
 // Types
 export interface DayProgress {
@@ -624,6 +624,14 @@ export const useAppStore = create<AppState>()(
                             prayerId: requestId,
                         }).catch(console.error);
                     }
+
+                    // Notify user's friends that they prayed for this topic
+                    notifyFriendPrayed({
+                        userId: user.id,
+                        userName: user.name,
+                        prayerContent: prayerReq?.content || '',
+                        prayerId: requestId,
+                    }).catch(console.error);
                 } catch (e) {
                     console.error('Error in prayForRequest:', e);
                 }

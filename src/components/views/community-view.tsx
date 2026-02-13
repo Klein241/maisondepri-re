@@ -38,7 +38,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
-import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage } from "@/lib/notifications";
+import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage, notifyGroupAccessRequest, notifyGroupAccessApproved } from "@/lib/notifications";
 
 type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call' | 'friends';
 
@@ -615,7 +615,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 throw error;
             }
 
-            // Send notification to group creator
+            // Send notification to group creator via Supabase notifications
             const { data: group } = await supabase
                 .from('prayer_groups')
                 .select('created_by, name')
@@ -623,25 +623,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 .single();
 
             if (group) {
-                // Store notification for the group creator
-                const notif = {
-                    id: `join_req_${groupId}_${user.id}_${Date.now()}`,
-                    title: 'Demande de rejoindre le groupe',
-                    message: `${user.name} demande à rejoindre "${group.name}"`,
-                    type: 'group' as const,
-                    read: false,
-                    created_at: new Date().toISOString(),
-                    sender_name: user.name,
-                    sender_avatar: user.avatar,
-                };
-
-                // Save to creator's notifications in localStorage
-                try {
-                    const stored = localStorage.getItem(`notifs_${group.created_by}`);
-                    const existing = stored ? JSON.parse(stored) : [];
-                    existing.unshift(notif);
-                    localStorage.setItem(`notifs_${group.created_by}`, JSON.stringify(existing.slice(0, 50)));
-                } catch (e) { }
+                notifyGroupAccessRequest({
+                    groupOwnerId: group.created_by,
+                    groupId,
+                    groupName: group.name,
+                    requesterName: user.name,
+                }).catch(console.error);
             }
 
             toast.success('✅ Demande envoyée! Le créateur du groupe sera notifié.');
@@ -663,6 +650,14 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             await supabase
                 .from('prayer_group_members')
                 .insert({ group_id: groupId, user_id: userId, role: 'member' });
+
+            // Notify the user that their request was approved
+            const groupData = groups.find(g => g.id === groupId);
+            notifyGroupAccessApproved({
+                userId,
+                groupId,
+                groupName: groupData?.name || selectedGroup?.name || 'Groupe de prière',
+            }).catch(console.error);
 
             // Update local state
             setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));

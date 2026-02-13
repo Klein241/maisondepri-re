@@ -31,6 +31,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { notifyAdminNewGroup } from '@/lib/notifications';
 
 interface PrayerGroup {
     id: string;
@@ -200,6 +201,15 @@ export default function AdminGroupsPage() {
             setIsCreateDialogOpen(false);
             setNewGroup({ name: '', description: '', is_open: true, is_urgent: false, max_members: 50 });
             fetchGroups();
+
+            // Notify all users about the new official group
+            if (data) {
+                notifyAdminNewGroup({
+                    groupId: data.id,
+                    groupName: data.name,
+                    excludeUserId: userData.user.id,
+                }).catch(console.error);
+            }
         } catch (e: any) {
             console.error('Error creating group:', e);
             toast.error('Erreur: ' + (e.message || 'Impossible de créer le groupe'));

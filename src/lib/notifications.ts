@@ -150,6 +150,58 @@ export async function notifyPrayerPrayed({
 }
 
 /**
+ * Notify a user's friends that the user prayed for a prayer request
+ */
+export async function notifyFriendPrayed({
+    userId,
+    userName,
+    prayerContent,
+    prayerId,
+}: {
+    userId: string;
+    userName: string;
+    prayerContent: string;
+    prayerId: string;
+}) {
+    try {
+        // Get user's accepted friends
+        const { data: friendships } = await supabase
+            .from('friendships')
+            .select('sender_id, receiver_id')
+            .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`)
+            .eq('status', 'accepted');
+
+        if (!friendships || friendships.length === 0) return;
+
+        const friendIds = friendships.map(f =>
+            f.sender_id === userId ? f.receiver_id : f.sender_id
+        );
+
+        const shortContent = prayerContent.substring(0, 50) + (prayerContent.length > 50 ? '...' : '');
+        const notifications = friendIds.map(friendId => ({
+            user_id: friendId,
+            title: '🙏 Votre ami a prié',
+            message: `Votre ami ${userName} a aussi prié pour ce sujet : "${shortContent}"`,
+            type: 'prayer',
+            action_type: 'friend_prayed' as const,
+            action_data: JSON.stringify({
+                tab: 'community',
+                communityTab: 'prieres',
+                prayerId,
+            }),
+            is_read: false,
+        }));
+
+        // Insert in batches of 50
+        for (let i = 0; i < notifications.length; i += 50) {
+            await supabase.from('notifications').insert(notifications.slice(i, i + 50));
+        }
+    } catch (e) {
+        console.error('[Notification] Friend prayed notify error:', e);
+    }
+}
+
+/**
  * Notify all users of a new prayer request
  */
 export async function notifyNewPrayer({
