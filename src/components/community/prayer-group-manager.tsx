@@ -21,6 +21,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { notifyGroupAccessRequest, notifyGroupAccessApproved } from '@/lib/notifications';
 
 interface PrayerGroup {
     id: string;
@@ -229,7 +230,7 @@ export function PrayerGroupManager({
                 if (error) throw error;
                 toast.success("Vous avez rejoint le groupe!");
             } else {
-                // Send join request for closed groups
+                // Send join request for closed groups (requires approval)
                 const { error } = await supabase
                     .from('prayer_group_join_requests')
                     .insert({
@@ -240,6 +241,22 @@ export function PrayerGroupManager({
 
                 if (error) throw error;
                 toast.success("Demande envoyée! En attente d'approbation.");
+
+                // Get current user name for the notification
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('full_name')
+                    .eq('id', currentUserId)
+                    .single();
+
+                // Notify the group owner
+                const groupOwnerId = (existingGroup as any).created_by || prayerOwnerId;
+                notifyGroupAccessRequest({
+                    groupOwnerId,
+                    groupId: existingGroup.id,
+                    groupName: existingGroup.name,
+                    requesterName: profile?.full_name || 'Un utilisateur',
+                }).catch(console.error);
             }
 
             loadGroup();
@@ -290,6 +307,13 @@ export function PrayerGroupManager({
                         user_id: userId,
                         role: 'member'
                     });
+
+                // Notify the user that their request was approved
+                notifyGroupAccessApproved({
+                    userId,
+                    groupId: existingGroup.id,
+                    groupName: existingGroup.name,
+                }).catch(console.error);
             }
 
             toast.success(approved ? "Membre approuvé" : "Demande rejetée");

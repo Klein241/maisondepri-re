@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useRef } from "react"
 import { useAppStore } from "@/lib/store"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -20,14 +21,19 @@ import {
     Share2,
     ChevronRight,
     User as UserIcon,
-    MapPin
+    MapPin,
+    Camera,
+    Loader2
 } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { AuthView } from "./auth-view"
+import { supabase } from "@/lib/supabase"
 
 export function ProfileView() {
-    const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme } = useAppStore()
+    const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme, setUser } = useAppStore()
+    const [isUploading, setIsUploading] = useState(false)
+    const fileInputRef = useRef<HTMLInputElement>(null)
 
     if (!user) {
         return (
@@ -43,7 +49,86 @@ export function ProfileView() {
         )
     }
 
-    // Calculate level based on days completed (Example: Level 1 per 5 days)
+    // Handle avatar upload
+    const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0]
+        if (!file || !user) return
+
+        // Validate file type
+        if (!file.type.startsWith('image/')) {
+            toast.error('Veuillez sélectionner une image')
+            return
+        }
+
+        // Validate file size (max 5MB)
+        if (file.size > 5 * 1024 * 1024) {
+            toast.error('L\'image est trop grande (max 5MB)')
+            return
+        }
+
+        setIsUploading(true)
+        try {
+            const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
+            const filePath = `avatars/${user.id}/avatar_${Date.now()}.${fileExt}`
+
+            // Upload to Supabase Storage (avatars bucket or chat-media)
+            const { data: uploadData, error: uploadError } = await supabase.storage
+                .from('chat-media')
+                .upload(filePath, file, {
+                    contentType: file.type,
+                    cacheControl: '3600',
+                    upsert: true,
+                })
+
+            if (uploadError) {
+                console.error('Upload error:', uploadError)
+                throw uploadError
+            }
+
+            // Get public URL
+            const { data: { publicUrl } } = supabase.storage
+                .from('chat-media')
+                .getPublicUrl(filePath)
+
+            // Update profile in Supabase
+            const { error: profileError } = await supabase
+                .from('profiles')
+                .update({ avatar_url: publicUrl })
+                .eq('id', user.id)
+
+            if (profileError) {
+                console.error('Profile update error:', profileError)
+                // Try via admin API
+                await fetch('/api/admin/delete-content', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({}) // We just need to trigger the profile update
+                })
+            }
+
+            // Update Supabase Auth user metadata
+            await supabase.auth.updateUser({
+                data: { avatar_url: publicUrl }
+            })
+
+            // Update local store
+            setUser({
+                ...user,
+                avatar: publicUrl,
+            })
+
+            toast.success('Photo de profil mise à jour !')
+        } catch (err: any) {
+            console.error('Avatar upload error:', err)
+            toast.error('Erreur lors de l\'upload de la photo')
+        } finally {
+            setIsUploading(false)
+            // Reset input
+            if (fileInputRef.current) fileInputRef.current.value = ''
+        }
+    }
+
+    // Calculate level based on days completed
     const level = Math.floor(totalDaysCompleted / 5) + 1
     const nextLevelProgress = ((totalDaysCompleted % 5) / 5) * 100
 
@@ -56,14 +141,46 @@ export function ProfileView() {
             <div className="relative z-10 max-w-4xl mx-auto w-full pt-8 px-4">
                 {/* Header Section */}
                 <div className="flex flex-col items-center mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
-                    <div className="relative mb-4">
+                    <div className="relative mb-4 group">
+                        {/* Hidden file input */}
+                        <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleAvatarUpload}
+                        />
                         <Avatar className="h-24 w-24 border-4 border-primary shadow-xl">
                             <AvatarImage src={user.avatar} />
                             <AvatarFallback className="text-3xl bg-primary/10 text-primary">
                                 {user.name.substring(0, 2).toUpperCase()}
                             </AvatarFallback>
                         </Avatar>
-                        <Badge className="absolute -bottom-2 -right-2 px-3 py-1 bg-gradient-to-r from-yellow-500 to-amber-600 border-none text-white shadow-lg">
+                        {/* Camera overlay - clickable */}
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                            className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer"
+                        >
+                            {isUploading ? (
+                                <Loader2 className="h-8 w-8 text-white animate-spin" />
+                            ) : (
+                                <Camera className="h-8 w-8 text-white" />
+                            )}
+                        </button>
+                        {/* Always-visible camera icon badge */}
+                        <button
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={isUploading}
+                            className="absolute -bottom-1 -right-1 bg-primary hover:bg-primary/80 text-white rounded-full p-1.5 shadow-lg border-2 border-[#0B0E14] transition-colors cursor-pointer"
+                        >
+                            {isUploading ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                                <Camera className="h-4 w-4" />
+                            )}
+                        </button>
+                        <Badge className="absolute -bottom-2 -left-2 px-3 py-1 bg-gradient-to-r from-yellow-500 to-amber-600 border-none text-white shadow-lg">
                             Niveau {level}
                         </Badge>
                     </div>

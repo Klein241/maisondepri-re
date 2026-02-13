@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { supabase } from './supabase';
 import { BibleVerse, DEFAULT_TRANSLATION as DEFAULT_BIBLE_ID } from './unified-bible-api';
 import { PrayerCategory, PrayerRequest as PrayerRequestType, Testimonial as TestimonialType } from './types';
+import { notifyPrayerPrayed } from './notifications';
 
 // Types
 export interface DayProgress {
@@ -119,6 +120,10 @@ interface AppState {
     selectedDay: number | null;
     setActiveTab: (tab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games') => void;
     setSelectedDay: (day: number | null) => void;
+
+    // Navigation from notifications (deep-link)
+    pendingNavigation: { viewState?: string; groupId?: string; groupName?: string; prayerId?: string; communityTab?: string; conversationId?: string } | null;
+    setPendingNavigation: (nav: { viewState?: string; groupId?: string; groupName?: string; prayerId?: string; communityTab?: string; conversationId?: string } | null) => void;
 
     // Bible Persistence
     bibleHighlights: BibleHighlight[];
@@ -607,6 +612,18 @@ export const useAppStore = create<AppState>()(
                                 : req
                         ),
                     }));
+
+                    // Send notification to prayer owner
+                    const prayerReq = get().prayerRequests.find(p => p.id === requestId);
+                    const prayerOwnerId = prayerReq?.userId;
+                    if (prayerOwnerId && prayerOwnerId !== user.id) {
+                        notifyPrayerPrayed({
+                            prayerOwnerId,
+                            prayerContent: prayerReq?.content || '',
+                            prayerUserName: user.name,
+                            prayerId: requestId,
+                        }).catch(console.error);
+                    }
                 } catch (e) {
                     console.error('Error in prayForRequest:', e);
                 }
@@ -709,6 +726,8 @@ export const useAppStore = create<AppState>()(
             selectedDay: null,
             setActiveTab: (tab) => set({ activeTab: tab }),
             setSelectedDay: (day) => set({ selectedDay: day }),
+            pendingNavigation: null,
+            setPendingNavigation: (nav) => set({ pendingNavigation: nav }),
 
             // Bible Persistence
             bibleHighlights: [],

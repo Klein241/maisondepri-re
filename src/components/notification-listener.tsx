@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
 import { useAppStore } from '@/lib/store'
-import { X, Bell, Sparkles, MessageSquare, AlertTriangle, CheckCircle2, Info, Heart } from 'lucide-react'
+import { X, Bell, Sparkles, MessageSquare, AlertTriangle, CheckCircle2, Info, Heart, Users } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Button } from '@/components/ui/button'
 
@@ -13,12 +13,12 @@ interface NotificationPopup {
     title: string;
     message: string;
     type: string;
-    action_type?: string; // 'message' | 'prayer' | 'testimony' | 'group' | etc.
+    action_type?: string;
     action_data?: string; // JSON string with navigation info
 }
 
 export function NotificationListener() {
-    const { user, setActiveTab } = useAppStore();
+    const { user, setActiveTab, setPendingNavigation } = useAppStore();
     const [popups, setPopups] = useState<NotificationPopup[]>([]);
 
     const dismissPopup = (id: string) => {
@@ -27,24 +27,33 @@ export function NotificationListener() {
         supabase.from('notifications').update({ is_read: true }).eq('id', id);
     };
 
-    // Handle notification click - navigate to relevant section
-    const handleNotificationClick = (popup: NotificationPopup) => {
+    // Handle notification click - deep-link navigate to relevant content
+    const navigateToContent = (popup: NotificationPopup) => {
         dismissPopup(popup.id);
 
-        switch (popup.type) {
-            case 'message':
-                // Navigate to community/messages section
-                setActiveTab('community');
-                break;
-            case 'prayer':
-                setActiveTab('community');
-                break;
-            case 'testimony':
-                setActiveTab('community');
-                break;
-            default:
-                // For generic notifications, just dismiss
-                break;
+        let actionData: any = {};
+        try {
+            if (popup.action_data) {
+                actionData = JSON.parse(popup.action_data);
+            }
+        } catch (e) {
+            console.error('Failed to parse action_data:', e);
+        }
+
+        // Navigate to the right tab
+        const targetTab = actionData.tab || 'community';
+        setActiveTab(targetTab as any);
+
+        // Set pending navigation for deep-link within the view
+        if (actionData.viewState || actionData.groupId || actionData.prayerId || actionData.communityTab || actionData.conversationId) {
+            setPendingNavigation({
+                viewState: actionData.viewState,
+                groupId: actionData.groupId,
+                groupName: actionData.groupName,
+                prayerId: actionData.prayerId,
+                communityTab: actionData.communityTab,
+                conversationId: actionData.conversationId,
+            });
         }
     };
 
@@ -70,7 +79,7 @@ export function NotificationListener() {
                         dismissPopup(id);
                     }, 10000);
 
-                    // Also show toast for redundancy - make it clickable
+                    // Toast
                     const icons: Record<string, string> = {
                         info: '📢',
                         success: '✅',
@@ -88,40 +97,26 @@ export function NotificationListener() {
                         className: "bg-[#0F1219] border-white/10 text-white cursor-pointer",
                         action: {
                             label: 'Voir',
-                            onClick: () => {
-                                if (type === 'message') {
-                                    setActiveTab('community');
-                                } else if (type === 'prayer' || type === 'testimony') {
-                                    setActiveTab('community');
-                                }
-                            }
+                            onClick: () => navigateToContent({ id, title, message, type, action_type, action_data })
                         }
                     });
 
-                    // Browser Notification - make it clickable
+                    // Browser Notification
                     if ("Notification" in window && Notification.permission === "granted") {
                         const browserNotif = new Notification(title, {
                             body: message,
-                            tag: id, // Prevent duplicate notifications
-                            requireInteraction: type === 'message', // Keep message notifications visible
+                            tag: id,
+                            requireInteraction: type === 'message',
                         });
 
-                        // Handle click on browser notification
                         browserNotif.onclick = () => {
                             window.focus();
-                            if (type === 'message') {
-                                setActiveTab('community');
-                            } else if (type === 'prayer' || type === 'testimony') {
-                                setActiveTab('community');
-                            }
+                            navigateToContent({ id, title, message, type, action_type, action_data });
                             browserNotif.close();
                         };
                     }
                 })
             .subscribe()
-
-        // NOTE: La permission de notification doit être demandée depuis une action utilisateur
-        // Ne pas demander automatiquement ici
 
         return () => { channel.unsubscribe() }
     }, [user])
@@ -134,6 +129,7 @@ export function NotificationListener() {
             case 'prayer': return <Heart className="h-6 w-6 text-pink-500" />;
             case 'testimony': return <Sparkles className="h-6 w-6 text-amber-400" />;
             case 'message': return <MessageSquare className="h-6 w-6 text-blue-500" />;
+            case 'info': return <Users className="h-6 w-6 text-indigo-500" />;
             default: return <Bell className="h-6 w-6 text-indigo-500" />;
         }
     };
@@ -160,7 +156,7 @@ export function NotificationListener() {
                     exit={{ opacity: 0, y: -50, scale: 0.9 }}
                     className="fixed z-[100] left-1/2 -translate-x-1/2 cursor-pointer"
                     style={{ top: `${100 + index * 100}px` }}
-                    onClick={() => handleNotificationClick(popup)}
+                    onClick={() => navigateToContent(popup)}
                 >
                     <div className={`
                         bg-gradient-to-br ${getGradient(popup.type)}

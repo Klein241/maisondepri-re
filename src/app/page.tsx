@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { BottomNav } from '@/components/bottom-nav';
 import { HomeView } from '@/components/views/home-view';
@@ -65,11 +65,23 @@ function SplashScreen() {
 export default function Home() {
   const { user, isHydrated, activeTab, setActiveTab, selectedDay, setSelectedDay } = useAppStore();
   const [showSplash, setShowSplash] = useState(true);
+  const [hideNav, setHideNav] = useState(false);
+
+  const handleHideNav = useCallback((hide: boolean) => {
+    setHideNav(hide);
+  }, []);
 
   // Force community view on load (Feed first)
   useEffect(() => {
     setActiveTab('community');
   }, []);
+
+  // Reset hideNav when switching to non-community tab
+  useEffect(() => {
+    if (activeTab !== 'community') {
+      setHideNav(false);
+    }
+  }, [activeTab]);
 
   // Handle splash screen duration
   useEffect(() => {
@@ -127,7 +139,7 @@ export default function Home() {
       case 'journal':
         return <JournalView />;
       case 'community':
-        return <CommunityView />;
+        return <CommunityView onHideNav={handleHideNav} />;
       case 'profile':
         return <ProfileView />;
       default:
@@ -146,8 +158,8 @@ export default function Home() {
         {renderContent()}
       </div>
 
-      {/* Only show bottom nav when not viewing day detail */}
-      {selectedDay === null && (
+      {/* Only show bottom nav when not viewing day detail and not in full-screen chat */}
+      {selectedDay === null && !hideNav && (
         <BottomNav
           activeTab={activeTab}
           onTabChange={setActiveTab}

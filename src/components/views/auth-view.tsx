@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Phone, MapPin, Building, Globe } from 'lucide-react';
+import { Mail, Lock, User, ArrowRight, Loader2, AlertCircle, Phone, MapPin, Building, Globe, Eye, EyeOff } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -25,6 +25,8 @@ export function AuthView() {
     const [city, setCity] = useState('');
     const [whatsapp, setWhatsapp] = useState('');
     const [signupPassword, setSignupPassword] = useState('');
+    const [showLoginPassword, setShowLoginPassword] = useState(false);
+    const [showSignupPassword, setShowSignupPassword] = useState(false);
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -109,25 +111,33 @@ export function AuthView() {
                                                 <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                                 <Input
                                                     type="tel"
-                                                    placeholder="Numéro WhatsApp"
+                                                    placeholder="Numéro WhatsApp (ex: +221 77...)"
                                                     value={loginPhone}
                                                     onChange={(e) => setLoginPhone(e.target.value)}
                                                     className="pl-10"
                                                     required
                                                 />
+                                                <p className="text-[10px] text-muted-foreground mt-1 pl-1">Avec l'indicatif du pays (ex: +221, +225, +33...)</p>
                                             </div>
                                         </div>
                                         <div className="space-y-2">
                                             <div className="relative">
                                                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                                 <Input
-                                                    type="password"
+                                                    type={showLoginPassword ? 'text' : 'password'}
                                                     placeholder="Mot de passe"
                                                     value={loginPassword}
                                                     onChange={(e) => setLoginPassword(e.target.value)}
-                                                    className="pl-10"
+                                                    className="pl-10 pr-10"
                                                     required
                                                 />
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                                                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                                >
+                                                    {showLoginPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                </button>
                                             </div>
                                         </div>
 
@@ -208,25 +218,33 @@ export function AuthView() {
                                             <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                             <Input
                                                 type="tel"
-                                                placeholder="Numéro WhatsApp (ex: +225 07...)"
+                                                placeholder="Numéro WhatsApp (ex: +221 77...)"
                                                 value={whatsapp}
                                                 onChange={(e) => setWhatsapp(e.target.value)}
                                                 className="pl-10"
                                                 required
                                             />
+                                            <p className="text-[10px] text-muted-foreground mt-1 pl-1">Avec l'indicatif du pays (ex: +221, +225, +33...)</p>
                                         </div>
 
                                         <div className="relative">
                                             <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
                                             <Input
-                                                type="password"
+                                                type={showSignupPassword ? 'text' : 'password'}
                                                 placeholder="Mot de passe (pour sécuriser)"
                                                 value={signupPassword}
                                                 onChange={(e) => setSignupPassword(e.target.value)}
-                                                className="pl-10"
+                                                className="pl-10 pr-10"
                                                 minLength={6}
                                                 required
                                             />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowSignupPassword(!showSignupPassword)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                            >
+                                                {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
                                         </div>
 
                                         <Button

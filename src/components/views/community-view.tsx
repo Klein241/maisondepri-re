@@ -34,6 +34,7 @@ import { cn } from "@/lib/utils";
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
+import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage } from "@/lib/notifications";
 
 type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call' | 'friends';
 
@@ -116,7 +117,11 @@ function VoiceMessagePlayer({ voiceUrl, duration, isOwn }: { voiceUrl: string; d
     );
 }
 
-export function CommunityView() {
+interface CommunityViewProps {
+    onHideNav?: (hide: boolean) => void;
+}
+
+export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const {
         prayerRequests, addPrayerRequest, prayForRequest,
         testimonials, addTestimonial, likeTestimonial,
@@ -124,6 +129,8 @@ export function CommunityView() {
     } = useAppStore();
     const setGlobalActiveTab = useAppStore(s => s.setActiveTab);
     const setBibleViewTarget = useAppStore(s => s.setBibleViewTarget);
+    const pendingNavigation = useAppStore(s => s.pendingNavigation);
+    const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
 
     // UI State
     const [viewState, setViewState] = useState<ViewState>('main');
@@ -207,6 +214,61 @@ export function CommunityView() {
         callback?.();
         return true;
     };
+
+    // Notify parent to hide/show bottom nav based on viewState
+    useEffect(() => {
+        const fullScreenViews: ViewState[] = ['conversation', 'group-detail', 'group-call'];
+        onHideNav?.(fullScreenViews.includes(viewState));
+    }, [viewState, onHideNav]);
+
+    // Handle deep-linking from notifications
+    useEffect(() => {
+        if (!pendingNavigation) return;
+
+        const nav = pendingNavigation;
+        setPendingNavigation(null); // Consume it
+
+        // Navigate to the right community sub-tab
+        if (nav.communityTab) {
+            const tabMap: Record<string, 'prayers' | 'testimonials' | 'chat'> = {
+                prieres: 'prayers',
+                prayers: 'prayers',
+                temoignages: 'testimonials',
+                testimonials: 'testimonials',
+                chat: 'chat',
+            };
+            if (tabMap[nav.communityTab]) {
+                setActiveTab(tabMap[nav.communityTab]);
+            }
+        }
+
+        // Navigate to a specific viewState (e.g., group-detail, groups)
+        if (nav.viewState) {
+            const vs = nav.viewState as ViewState;
+            setViewState(vs);
+
+            // If navigating to a group-detail, load the group
+            if (vs === 'group-detail' && nav.groupId) {
+                // Find the group or load it
+                const group = groups.find((g: any) => g.id === nav.groupId);
+                if (group) {
+                    setSelectedGroup(group);
+                } else {
+                    // Load the specific group
+                    supabase
+                        .from('prayer_groups')
+                        .select('*, profiles:created_by(full_name, avatar_url)')
+                        .eq('id', nav.groupId)
+                        .single()
+                        .then(({ data }) => {
+                            if (data) {
+                                setSelectedGroup(data as any);
+                            }
+                        });
+                }
+            }
+        }
+    }, [pendingNavigation]);
 
     // Track online presence with robust updates
     useEffect(() => {
@@ -350,7 +412,7 @@ export function CommunityView() {
         };
     }, [user]);
 
-    // Heartbeat to keep user online - every 5 minutes (much less frequent to avoid constant updates)
+    // Heartbeat to keep user online - every 90s to stay within the 2-minute online window
     useEffect(() => {
         if (!user) return;
         const interval = setInterval(async () => {
@@ -362,10 +424,31 @@ export function CommunityView() {
             } catch (e) {
                 // Silently fail if columns don't exist
             }
-        }, 300000); // Every 5 minutes - realtime subscription handles the rest
+        }, 90000); // Every 90 seconds - must be less than the 2-minute online window
 
         return () => clearInterval(interval);
     }, [user]);
+
+    // Real-time subscription for prayer_requests deletions - sync across all clients
+    useEffect(() => {
+        const { removePrayerRequest } = useAppStore.getState();
+        const prayerChannel = supabase.channel('prayer-realtime')
+            .on('postgres_changes', {
+                event: 'DELETE',
+                schema: 'public',
+                table: 'prayer_requests'
+            }, (payload) => {
+                const deletedId = (payload.old as any)?.id;
+                if (deletedId) {
+                    removePrayerRequest(deletedId);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            prayerChannel.unsubscribe();
+        };
+    }, []);
 
     // Load chat messages
     useEffect(() => {
@@ -946,6 +1029,15 @@ export function CommunityView() {
                         : m
                     )
                 );
+
+                // Notify other group members of new message
+                notifyGroupNewMessage({
+                    groupId: selectedGroup.id,
+                    groupName: selectedGroup.name || 'Groupe de prière',
+                    senderId: user.id,
+                    senderName: user.name,
+                    messagePreview: messageContent,
+                }).catch(console.error);
             }
         } catch (e) {
             console.error('Error sending group message:', e);
@@ -1463,19 +1555,28 @@ export function CommunityView() {
             if (dialogType === 'prayer') {
                 await addPrayerRequest(newContent, isAnonymous, newCategory, newPhotos);
 
+                // Get the newly created prayer's ID from the store 
+                const latestPrayers = useAppStore.getState().prayerRequests;
+                const newPrayerId = latestPrayers.length > 0 ? latestPrayers[0].id : null;
+
                 // If createGroupWithPrayer is toggled, also create a group
                 if (createGroupWithPrayer) {
                     try {
-                        const groupName = `🙏 Prière: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`;
+                        const groupName = `\u{1F64F} Prière: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`;
+                        const insertData: any = {
+                            name: groupName,
+                            description: newContent.substring(0, 200),
+                            created_by: user.id,
+                            is_open: true,
+                            requires_approval: true,
+                        };
+                        // Link prayer_request_id if we have it
+                        if (newPrayerId) {
+                            insertData.prayer_request_id = newPrayerId;
+                        }
                         const { data: groupData, error: groupError } = await supabase
                             .from('prayer_groups')
-                            .insert({
-                                name: groupName,
-                                description: newContent.substring(0, 200),
-                                created_by: user.id,
-                                is_open: true,
-                                requires_approval: true,
-                            })
+                            .insert(insertData)
                             .select()
                             .single();
 
@@ -1488,7 +1589,7 @@ export function CommunityView() {
                             });
                             setUserGroups(prev => [...prev, groupData.id]);
                             loadGroups();
-                            toast.success('🙏 Demande + groupe de prière créés!');
+                            toast.success('\u{1F64F} Demande + groupe de prière créés!');
                         }
                     } catch (ge) {
                         console.error('Error creating linked group:', ge);
@@ -1496,6 +1597,17 @@ export function CommunityView() {
                     }
                 } else {
                     toast.success('Demande de prière publiée!');
+                }
+
+                // Send notification to all users about new prayer
+                if (newPrayerId) {
+                    notifyNewPrayer({
+                        excludeUserId: user.id,
+                        prayerContent: newContent,
+                        userName: user.name,
+                        prayerId: newPrayerId,
+                        isAnonymous,
+                    }).catch(console.error);
                 }
             } else {
                 await addTestimonial(newContent, newPhotos);
@@ -1912,7 +2024,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col min-h-screen pb-24 max-w-4xl mx-auto w-full"
+                        className="relative z-10 flex flex-col min-h-screen pb-24 max-w-4xl mx-auto w-full overflow-x-hidden"
                     >
                         <header className="px-4 sm:px-6 pt-12 pb-4">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
@@ -2008,20 +2120,20 @@ export function CommunityView() {
                                                     key={group.id}
                                                     className="bg-emerald-500/5 border-emerald-500/10 rounded-3xl overflow-hidden hover:bg-emerald-500/10 transition-all"
                                                 >
-                                                    <CardContent className="p-5">
+                                                    <CardContent className="p-4 sm:p-5 break-words">
                                                         <div
-                                                            className="flex items-start gap-4 cursor-pointer"
+                                                            className="flex items-start gap-3 sm:gap-4 cursor-pointer"
                                                             onClick={() => {
                                                                 setSelectedGroup(group);
                                                                 loadGroupMessages(group.id);
                                                                 setViewState('group-detail');
                                                             }}
                                                         >
-                                                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-600/30 to-teal-600/30">
+                                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-600/30 to-teal-600/30 shrink-0">
                                                                 <Users className="h-7 w-7 text-emerald-400" />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-1">
+                                                                <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
                                                                     <h3 className="font-bold text-white truncate">{group.name}</h3>
                                                                     <Badge className="bg-emerald-500/20 text-emerald-400 border-none text-[10px]">
                                                                         <Check className="h-3 w-3 mr-1" />
@@ -2155,16 +2267,16 @@ export function CommunityView() {
                                                     key={group.id}
                                                     className="bg-white/5 border-white/5 rounded-3xl overflow-hidden hover:bg-white/10 transition-all"
                                                 >
-                                                    <CardContent className="p-5">
+                                                    <CardContent className="p-4 sm:p-5 break-words">
                                                         <div
-                                                            className="flex items-start gap-4 cursor-pointer"
+                                                            className="flex items-start gap-3 sm:gap-4 cursor-pointer"
                                                             onClick={() => {
                                                                 setSelectedGroup(group);
                                                                 loadGroupMessages(group.id);
                                                                 setViewState('group-detail');
                                                             }}
                                                         >
-                                                            <div className="w-14 h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-600/30 to-purple-600/30">
+                                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-600/30 to-purple-600/30 shrink-0">
                                                                 <Users className="h-7 w-7 text-indigo-400" />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
@@ -2453,7 +2565,7 @@ export function CommunityView() {
                         {/* Message Input - Enhanced */}
                         {/* Message input - always visible for group members */}
                         {(
-                            <div className="px-4 py-3 border-t border-white/10 bg-slate-900/80">
+                            <div className="px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] border-t border-white/10 bg-slate-900/95 backdrop-blur-md sticky bottom-0 z-30">
                                 {/* Emoji Picker */}
                                 <div className="relative">
                                     <EmojiPicker
@@ -2586,7 +2698,7 @@ export function CommunityView() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col min-h-screen pb-24 bg-[#0F1219] max-w-4xl mx-auto w-full"
+                        className="relative z-10 flex flex-col h-[100dvh] bg-[#0F1219] max-w-4xl mx-auto w-full overflow-hidden"
                     >
                         <header className="px-4 pt-12 pb-4 border-b border-white/5 bg-[#0F1219]/80 backdrop-blur-md sticky top-0 z-20">
                             <div className="flex items-center justify-between mb-4">
@@ -2672,7 +2784,7 @@ export function CommunityView() {
                             </motion.div>
                         </header>
 
-                        <div className="flex-1">
+                        <div className="flex-1 overflow-y-auto">
                             <div className="pb-32">
                                 {/* User's Joined Groups Section */}
                                 {userGroups.length > 0 && (
@@ -3219,8 +3331,28 @@ function PrayerCard({
     const [testimonyContent, setTestimonyContent] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showGroupDialog, setShowGroupDialog] = useState(false);
+    const [hasLinkedGroup, setHasLinkedGroup] = useState(false);
 
     const isOwner = userId === prayerUserId;
+
+    // Check if a prayer group exists for this prayer
+    useEffect(() => {
+        const checkGroup = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('prayer_groups')
+                    .select('id')
+                    .eq('prayer_request_id', prayerId)
+                    .limit(1);
+                if (!error && data && data.length > 0) {
+                    setHasLinkedGroup(true);
+                }
+            } catch (e) {
+                // Silently fail
+            }
+        };
+        checkGroup();
+    }, [prayerId]);
 
     // Mettre à jour l'état si les props changent (sync avec le serveur)
     useEffect(() => {
@@ -3360,12 +3492,21 @@ function PrayerCard({
         if (onDelete) onDelete(prayerId);
 
         try {
-            const { error } = await supabase
-                .from('prayer_requests')
-                .delete()
-                .eq('id', prayerId);
+            // Use admin API endpoint to bypass RLS
+            const response = await fetch('/api/admin/delete-content', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ table: 'prayer_requests', id: prayerId })
+            });
 
-            if (error) throw error;
+            if (!response.ok) {
+                // Fallback: try direct delete
+                const { error } = await supabase
+                    .from('prayer_requests')
+                    .delete()
+                    .eq('id', prayerId);
+                if (error) throw error;
+            }
             toast.success('Demande de prière supprimée');
         } catch (e: any) {
             console.error('Error deleting prayer:', e);
@@ -3512,16 +3653,18 @@ function PrayerCard({
                                 </span>
                             </Button>
 
-                            {/* Group Button */}
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="rounded-xl text-slate-400 hover:text-emerald-400"
-                                onClick={() => setShowGroupDialog(true)}
-                            >
-                                <Users className="h-4 w-4 mr-1" />
-                                <span className="text-xs">Groupe</span>
-                            </Button>
+                            {/* Group Button - only shows if a group was created for this prayer */}
+                            {hasLinkedGroup && (
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="rounded-xl text-slate-400 hover:text-emerald-400"
+                                    onClick={() => setShowGroupDialog(true)}
+                                >
+                                    <Users className="h-4 w-4 mr-1" />
+                                    <span className="text-xs">Groupe</span>
+                                </Button>
+                            )}
                         </div>
 
                         <div className="flex gap-2">
