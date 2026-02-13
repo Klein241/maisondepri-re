@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Trophy, Star, Clock, CheckCircle2, XCircle, Zap, Heart, Award, RefreshCw, Play, ChevronRight, Share2, Sparkles } from 'lucide-react';
+import { ArrowLeft, Trophy, Star, Clock, CheckCircle2, XCircle, Zap, Heart, Award, RefreshCw, Play, ChevronRight, Share2, Sparkles, Lock, Unlock, Grid3X3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -10,10 +10,11 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import confetti from 'canvas-confetti';
 import { quizGenerator, QuizQuestion as GeneratedQuestion } from '@/lib/quiz-generator';
+import { getBlockQuestions, getBlockInfo, getAllBlockInfos, type QuizQuestionItem } from '@/lib/quiz-questions-bank';
 
 // Types
 type Difficulty = 'easy' | 'medium' | 'hard';
-type GameState = 'menu' | 'playing' | 'result';
+type GameState = 'menu' | 'blocks' | 'playing' | 'result';
 
 interface QuizQuestion {
     id: number | string;
@@ -397,9 +398,29 @@ const DIFFICULTY_CONFIG = {
     hard: { label: 'Difficile', icon: '🔥', color: 'red', questions: QUESTIONS_HARD, timePerQuestion: 10, pointsPerQuestion: 30 },
 };
 
+// Block progress helpers
+function getBlockProgress(): Record<string, { bestScore: number; completed: boolean; stars: number }> {
+    try {
+        const data = localStorage.getItem('bible_quiz_block_progress');
+        return data ? JSON.parse(data) : {};
+    } catch { return {}; }
+}
+function saveBlockProgress(difficulty: string, block: number, score: number, maxScore: number) {
+    const progress = getBlockProgress();
+    const key = `${difficulty}_${block}`;
+    const pct = (score / maxScore) * 100;
+    const stars = pct >= 90 ? 3 : pct >= 70 ? 2 : pct >= 50 ? 1 : 0;
+    const existing = progress[key];
+    if (!existing || score > existing.bestScore) {
+        progress[key] = { bestScore: score, completed: pct >= 50, stars };
+    }
+    localStorage.setItem('bible_quiz_block_progress', JSON.stringify(progress));
+}
+
 export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
     const [gameState, setGameState] = useState<GameState>('menu');
     const [difficulty, setDifficulty] = useState<Difficulty>('easy');
+    const [selectedBlock, setSelectedBlock] = useState(1);
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
     const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
     const [isAnswerRevealed, setIsAnswerRevealed] = useState(false);
@@ -411,11 +432,12 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
     const [answers, setAnswers] = useState<{ correct: boolean; time: number }[]>([]);
     const [shuffledQuestions, setShuffledQuestions] = useState<QuizQuestion[]>([]);
     const [lives, setLives] = useState(3);
+    const [blockProgress, setBlockProgress] = useState(getBlockProgress());
 
     const config = DIFFICULTY_CONFIG[difficulty];
     const currentQuestion = shuffledQuestions[currentQuestionIndex];
     const totalQuestions = shuffledQuestions.length;
-    const progress = ((currentQuestionIndex + 1) / totalQuestions) * 100;
+    const progress = totalQuestions > 0 ? ((currentQuestionIndex + 1) / totalQuestions) * 100 : 0;
 
     // Shuffle function
     const shuffleArray = <T,>(array: T[]): T[] => {
@@ -427,10 +449,16 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
         return shuffled;
     };
 
-    // Start game - now uses dynamic quiz generator
-    const startGame = async (diff: Difficulty) => {
+    // Show block selection
+    const selectDifficulty = (diff: Difficulty) => {
         setDifficulty(diff);
-        setGameState('playing'); // Show loading state
+        setGameState('blocks');
+    };
+
+    // Start game from a block
+    const startBlockGame = (block: number) => {
+        setSelectedBlock(block);
+        setGameState('playing');
         setCurrentQuestionIndex(0);
         setScore(0);
         setStreak(0);
@@ -440,29 +468,25 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
         setAnswers([]);
         setSelectedAnswer(null);
         setIsAnswerRevealed(false);
-        setTimeLeft(DIFFICULTY_CONFIG[diff].timePerQuestion);
+        setTimeLeft(DIFFICULTY_CONFIG[difficulty].timePerQuestion);
 
-        try {
-            // Get questions from the dynamic generator
-            const dynamicQuestions = await quizGenerator.getQuestions(8, diff);
+        // Get 20 questions from the block's 200-question pool
+        const blockQuestions = getBlockQuestions(difficulty, block);
+        const selected = blockQuestions.slice(0, 20);
+        const formatted: QuizQuestion[] = selected.map((q, i) => ({
+            id: q.id || i,
+            question: q.question,
+            options: q.options,
+            correct: q.correct,
+            reference: q.reference || '',
+            explanation: q.explanation
+        }));
+        setShuffledQuestions(formatted);
+    };
 
-            // Convert to component's expected format
-            const formattedQuestions: QuizQuestion[] = dynamicQuestions.map((q, i) => ({
-                id: q.id || i,
-                question: q.question,
-                options: q.options,
-                correct: q.correctIndex,
-                reference: q.reference,
-                explanation: q.explanation
-            }));
-
-            setShuffledQuestions(formattedQuestions);
-        } catch (error) {
-            console.warn('Dynamic questions failed, using static fallback');
-            // Fallback to static questions from config
-            const staticQuestions = shuffleArray(DIFFICULTY_CONFIG[diff].questions).slice(0, 8);
-            setShuffledQuestions(staticQuestions);
-        }
+    // Legacy start game (backward compatible)
+    const startGame = async (diff: Difficulty) => {
+        selectDifficulty(diff);
     };
 
     // Timer effect
@@ -568,9 +592,14 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
             });
         }
 
+        // Save block progress
+        const maxScore = totalQuestions * config.pointsPerQuestion;
+        saveBlockProgress(difficulty, selectedBlock, score, maxScore);
+        setBlockProgress(getBlockProgress());
+
         // Save score
         if (onSaveScore) {
-            onSaveScore(score, totalQuestions * config.pointsPerQuestion, difficulty, totalTime);
+            onSaveScore(score, maxScore, difficulty, totalTime);
         }
     };
 
@@ -628,7 +657,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 <Button
                                     variant="ghost"
                                     className="w-full h-24 rounded-3xl bg-gradient-to-r from-emerald-600/20 to-emerald-600/10 border border-emerald-500/20 hover:border-emerald-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
-                                    onClick={() => startGame('easy')}
+                                    onClick={() => selectDifficulty('easy')}
                                 >
                                     <div className="flex items-center gap-4 w-full">
                                         <div className="w-14 h-14 bg-emerald-500/20 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
@@ -636,7 +665,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                         </div>
                                         <div className="text-left flex-1">
                                             <h3 className="font-bold text-lg text-white">Facile</h3>
-                                            <p className="text-sm text-emerald-400/80">20s par question • 10 pts</p>
+                                            <p className="text-sm text-emerald-400/80">10 niveaux • 200 questions/niveau</p>
                                         </div>
                                         <ChevronRight className="h-6 w-6 text-slate-500 group-hover:translate-x-1 transition-transform" />
                                     </div>
@@ -646,7 +675,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 <Button
                                     variant="ghost"
                                     className="w-full h-24 rounded-3xl bg-gradient-to-r from-amber-600/20 to-amber-600/10 border border-amber-500/20 hover:border-amber-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
-                                    onClick={() => startGame('medium')}
+                                    onClick={() => selectDifficulty('medium')}
                                 >
                                     <div className="flex items-center gap-4 w-full">
                                         <div className="w-14 h-14 bg-amber-500/20 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
@@ -654,7 +683,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                         </div>
                                         <div className="text-left flex-1">
                                             <h3 className="font-bold text-lg text-white">Moyen</h3>
-                                            <p className="text-sm text-amber-400/80">15s par question • 20 pts</p>
+                                            <p className="text-sm text-amber-400/80">10 niveaux • 200 questions/niveau</p>
                                         </div>
                                         <ChevronRight className="h-6 w-6 text-slate-500 group-hover:translate-x-1 transition-transform" />
                                     </div>
@@ -664,7 +693,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 <Button
                                     variant="ghost"
                                     className="w-full h-24 rounded-3xl bg-gradient-to-r from-red-600/20 to-red-600/10 border border-red-500/20 hover:border-red-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
-                                    onClick={() => startGame('hard')}
+                                    onClick={() => selectDifficulty('hard')}
                                 >
                                     <div className="flex items-center gap-4 w-full">
                                         <div className="w-14 h-14 bg-red-500/20 rounded-2xl flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
@@ -672,7 +701,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                         </div>
                                         <div className="text-left flex-1">
                                             <h3 className="font-bold text-lg text-white">Difficile</h3>
-                                            <p className="text-sm text-red-400/80">10s par question • 30 pts</p>
+                                            <p className="text-sm text-red-400/80">10 niveaux • 200 questions/niveau</p>
                                         </div>
                                         <ChevronRight className="h-6 w-6 text-slate-500 group-hover:translate-x-1 transition-transform" />
                                     </div>
@@ -684,19 +713,99 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                         <div className="px-6 pb-10">
                             <div className="bg-white/5 rounded-2xl p-4 flex items-center justify-around border border-white/5">
                                 <div className="text-center">
-                                    <p className="text-2xl font-black text-white">8</p>
+                                    <p className="text-2xl font-black text-white">6000</p>
                                     <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Questions</p>
                                 </div>
                                 <div className="w-[1px] h-8 bg-white/10" />
                                 <div className="text-center">
-                                    <p className="text-2xl font-black text-white">3</p>
-                                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Vies</p>
+                                    <p className="text-2xl font-black text-white">30</p>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Niveaux</p>
                                 </div>
                                 <div className="w-[1px] h-8 bg-white/10" />
                                 <div className="text-center">
-                                    <p className="text-2xl font-black text-indigo-400">∞</p>
-                                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Bonus</p>
+                                    <p className="text-2xl font-black text-indigo-400">⭐</p>
+                                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Étoiles</p>
                                 </div>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
+                {/* ========== BLOCKS SELECTION STATE ========== */}
+                {gameState === 'blocks' && (
+                    <motion.div
+                        key="blocks"
+                        initial={{ opacity: 0, x: 20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: -20 }}
+                        className="relative z-10 min-h-screen flex flex-col"
+                    >
+                        <header className="px-6 pt-12 pb-4">
+                            <Button variant="ghost" size="icon" onClick={() => setGameState('menu')} className="mb-4">
+                                <ArrowLeft className="h-6 w-6" />
+                            </Button>
+                            <div className="text-center">
+                                <Badge className={cn(
+                                    "mb-3 px-4 py-1 text-sm font-black",
+                                    difficulty === 'easy' ? 'bg-emerald-600' : difficulty === 'medium' ? 'bg-amber-600' : 'bg-red-600'
+                                )}>
+                                    {difficulty === 'easy' ? '🌱 Facile' : difficulty === 'medium' ? '⚡ Moyen' : '🔥 Difficile'}
+                                </Badge>
+                                <h1 className="text-2xl font-black mt-2">Choisir un Niveau</h1>
+                                <p className="text-slate-500 text-sm mt-1">Chaque niveau contient 200 questions uniques</p>
+                            </div>
+                        </header>
+
+                        <div className="flex-1 px-6 py-4 overflow-y-auto pb-32">
+                            <div className="grid grid-cols-2 gap-3">
+                                {getAllBlockInfos(difficulty).map((info) => {
+                                    const key = `${difficulty}_${info.block}`;
+                                    const prog = blockProgress[key];
+                                    const isUnlocked = info.block === 1 || blockProgress[`${difficulty}_${info.block - 1}`]?.completed;
+                                    const colorClass = difficulty === 'easy' ? 'emerald' : difficulty === 'medium' ? 'amber' : 'red';
+
+                                    return (
+                                        <motion.div
+                                            key={info.block}
+                                            initial={{ opacity: 0, y: 20 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            transition={{ delay: info.block * 0.05 }}
+                                        >
+                                            <Card
+                                                className={cn(
+                                                    "rounded-2xl overflow-hidden cursor-pointer transition-all border",
+                                                    isUnlocked
+                                                        ? `bg-gradient-to-br from-${colorClass}-600/20 to-${colorClass}-600/5 border-${colorClass}-500/20 hover:border-${colorClass}-500/40 hover:scale-[1.03]`
+                                                        : "bg-white/5 border-white/5 opacity-50",
+                                                    prog?.completed && "ring-2 ring-amber-500/30"
+                                                )}
+                                                onClick={() => isUnlocked && startBlockGame(info.block)}
+                                            >
+                                                <CardContent className="p-4 text-center">
+                                                    <div className="text-3xl mb-2">{isUnlocked ? info.icon : '🔒'}</div>
+                                                    <h3 className="font-bold text-sm text-white">{info.label}</h3>
+                                                    <p className="text-[10px] text-slate-400 mt-1">{info.theme}</p>
+
+                                                    {/* Stars */}
+                                                    <div className="flex justify-center gap-1 mt-2">
+                                                        {[1, 2, 3].map(s => (
+                                                            <Star key={s} className={cn(
+                                                                "h-4 w-4",
+                                                                (prog?.stars || 0) >= s
+                                                                    ? "text-amber-400 fill-amber-400"
+                                                                    : "text-slate-700"
+                                                            )} />
+                                                        ))}
+                                                    </div>
+
+                                                    {prog?.bestScore !== undefined && (
+                                                        <p className="text-[10px] text-slate-500 mt-1">Meilleur: {prog.bestScore} pts</p>
+                                                    )}
+                                                </CardContent>
+                                            </Card>
+                                        </motion.div>
+                                    );
+                                })}
                             </div>
                         </div>
                     </motion.div>
@@ -926,10 +1035,18 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 </Button>
                                 <Button
                                     className="flex-1 h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-500"
-                                    onClick={() => setGameState('menu')}
+                                    onClick={() => startBlockGame(selectedBlock)}
                                 >
                                     <RefreshCw className="h-5 w-5 mr-2" />
                                     Rejouer
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    className="flex-1 h-14 rounded-2xl bg-white/5 border border-white/10"
+                                    onClick={() => setGameState('blocks')}
+                                >
+                                    <Grid3X3 className="h-5 w-5 mr-2" />
+                                    Niveaux
                                 </Button>
                             </div>
                         </motion.div>
