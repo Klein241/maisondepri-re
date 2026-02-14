@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import { notifyFriendRequestAccepted } from '@/lib/notifications';
 
 interface UserProfile {
     id: string;
@@ -339,6 +340,14 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
             if (accept) {
                 setFriendIds(prev => [...prev, senderId]);
                 loadFriends();
+
+                // Notify the sender that their request was accepted
+                notifyFriendRequestAccepted({
+                    userId: senderId,
+                    accepterId: userId,
+                    accepterName: userName,
+                }).catch(console.error);
+
                 toast.success("Ami ajouté! 🎉");
             } else {
                 toast.info("Demande refusée");

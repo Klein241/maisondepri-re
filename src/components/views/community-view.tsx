@@ -6,7 +6,7 @@ import {
     MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search, Pin, Shield, BellRing,
     Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
     Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings,
-    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck, Gamepad2
+    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck, Gamepad2, LogIn
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -221,6 +221,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         setSelectedConversation(conversation);
                         loadDirectMessages(conv.id);
                         setViewState('conversation');
+                        if (onHideNav) onHideNav(true);
                     });
             }
             // Otherwise, navigate to the specified viewState
@@ -1665,7 +1666,19 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         </h1>
                                         <p className="text-slate-500 text-xs font-medium mt-0.5">Prions ensemble</p>
                                     </div>
-                                    <NotificationBell />
+                                    <div className="flex items-center gap-2">
+                                        {!user && (
+                                            <Button
+                                                size="sm"
+                                                className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-4 h-9 text-xs font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all"
+                                                onClick={() => setGlobalActiveTab('profile')}
+                                            >
+                                                <LogIn className="h-3.5 w-3.5" />
+                                                Se connecter
+                                            </Button>
+                                        )}
+                                        <NotificationBell />
+                                    </div>
                                 </div>
                                 {/* Action Buttons - horizontal scroll on mobile */}
                                 <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
@@ -1837,6 +1850,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 name: user.name || 'Utilisateur',
                                                 avatar: user.avatar
                                             } : null}
+                                            onHideNav={onHideNav}
                                         />
                                     </div>
                                 </TabsContent>
@@ -2830,6 +2844,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 setSelectedConversation(conv);
                                                 loadDirectMessages(conv.id);
                                                 setViewState('conversation');
+                                                if (onHideNav) onHideNav(true);
                                             }}
                                         >
                                             <div className="relative">
@@ -2924,6 +2939,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                 });
                                                                 loadDirectMessages(convId);
                                                                 setViewState('conversation');
+                                                                if (onHideNav) onHideNav(true);
                                                             }
                                                         } catch (e) {
                                                             console.error('Error creating conversation:', e);
@@ -2982,6 +2998,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     onClick={() => {
                                         setSelectedConversation(null);
                                         setViewState('messages');
+                                        if (onHideNav) onHideNav(false);
                                     }}
                                     className="hover:bg-white/5 rounded-full"
                                 >
@@ -3200,44 +3217,52 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 // Try to find or create a conversation with this friend
                                 if (!user) return;
                                 try {
-                                    // Check if conversation exists
-                                    const { data: existing } = await supabase
-                                        .from('conversations')
-                                        .select('*')
-                                        .or(`and(participant1_id.eq.${user.id},participant2_id.eq.${friendId}),and(participant1_id.eq.${friendId},participant2_id.eq.${user.id})`)
-                                        .single();
+                                    // USE RPC to get/create convention safely and avoid duplicates
+                                    let finalConvId = null;
+                                    const { data: convId, error } = await supabase
+                                        .rpc('get_or_create_conversation', { other_user_id: friendId });
 
-                                    if (existing) {
+                                    if (!error && convId) {
+                                        finalConvId = convId;
+                                    } else {
+                                        // Fallback manual check
+                                        const { data: existing } = await supabase
+                                            .from('conversations')
+                                            .select('id')
+                                            .or(`and(participant1_id.eq.${user.id},participant2_id.eq.${friendId}),and(participant1_id.eq.${friendId},participant2_id.eq.${user.id})`)
+                                            .maybeSingle();
+
+                                        if (existing) finalConvId = existing.id;
+                                        else {
+                                            const { data: newConv } = await supabase.from('conversations').insert({
+                                                participant1_id: user.id,
+                                                participant2_id: friendId,
+                                                last_message_at: new Date().toISOString()
+                                            }).select().single();
+                                            if (newConv) finalConvId = newConv.id;
+                                        }
+                                    }
+
+                                    if (finalConvId) {
+                                        const { data: conv } = await supabase
+                                            .from('conversations')
+                                            .select('*')
+                                            .eq('id', finalConvId)
+                                            .single();
+
                                         const { data: profile } = await supabase
                                             .from('profiles')
                                             .select('id, full_name, avatar_url')
                                             .eq('id', friendId)
                                             .single();
+
                                         setSelectedConversation({
-                                            ...existing,
+                                            ...conv,
                                             otherUser: profile || { id: friendId, full_name: friendName, avatar_url: null }
                                         });
+                                        await loadDirectMessages(finalConvId);
                                         setViewState('conversation');
-                                    } else {
-                                        // Create new conversation
-                                        const { data: newConv, error } = await supabase
-                                            .from('conversations')
-                                            .insert({
-                                                participant1_id: user.id,
-                                                participant2_id: friendId,
-                                                last_message_at: new Date().toISOString()
-                                            })
-                                            .select()
-                                            .single();
-
-                                        if (error) throw error;
-                                        if (newConv) {
-                                            setSelectedConversation({
-                                                ...newConv,
-                                                otherUser: { id: friendId, full_name: friendName, avatar_url: null }
-                                            });
-                                            setViewState('conversation');
-                                        }
+                                        if (onHideNav) onHideNav(true);
                                     }
                                 } catch (e) {
                                     console.error('Error starting chat:', e);

@@ -26,6 +26,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { WordSearchGame } from "../games/word-search-game";
 import { ChronoGame } from "../games/chrono-game";
 import { WhoAmIGame } from "../games/who-am-i-game";
+import { getGameHistory, getGameStats, formatGameTypeName, getGameTypeEmoji, type GameHistoryEntry } from "@/lib/game-history";
 import { Switch } from "@/components/ui/switch"
 import { Progress } from "@/components/ui/progress"
 import { motion, AnimatePresence } from "framer-motion"
@@ -87,6 +88,8 @@ export function BibleView() {
     const [showBookFilter, setShowBookFilter] = useState<'all' | 'ot' | 'nt'>('all')
     const [recentChapters, setRecentChapters] = useState<{ bookId: string, bookName: string, chapter: string }[]>([])
     const [activeGame, setActiveGame] = useState<string | null>(null)
+    const [gameHistory, setGameHistory] = useState<GameHistoryEntry[]>([])
+    const [gameStats, setGameStats] = useState(getGameStats())
 
     const audioRef = useRef<HTMLAudioElement>(null)
 
@@ -865,6 +868,80 @@ export function BibleView() {
                                             <Users className="w-5 h-5 mr-3" />
                                             REJOIGNEZ UN GROUPE DE JOUEURS
                                         </Button>
+
+                                        {/* Game Stats Summary */}
+                                        {(() => {
+                                            const stats = getGameStats();
+                                            const history = getGameHistory().slice(0, 5);
+                                            return stats.totalGamesPlayed > 0 ? (
+                                                <div className="mb-8 space-y-4">
+                                                    <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest">Vos Statistiques</h3>
+                                                    <div className="bg-white/5 rounded-2xl p-4 flex items-center justify-around border border-white/5">
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-white">{stats.totalGamesPlayed}</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Parties</p>
+                                                        </div>
+                                                        <div className="w-[1px] h-8 bg-white/10" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-amber-400">{stats.bestScore}</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Meilleur</p>
+                                                        </div>
+                                                        <div className="w-[1px] h-8 bg-white/10" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-indigo-400">{Math.floor(stats.totalTimeSeconds / 60)}m</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Temps</p>
+                                                        </div>
+                                                        <div className="w-[1px] h-8 bg-white/10" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-emerald-400">{stats.totalStars}⭐</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Étoiles</p>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Recent History */}
+                                                    {history.length > 0 && (
+                                                        <>
+                                                            <h3 className="text-xs font-black text-slate-500 uppercase tracking-widest mt-4">Historique récent</h3>
+                                                            <div className="space-y-2">
+                                                                {history.map((entry) => (
+                                                                    <div
+                                                                        key={entry.id}
+                                                                        className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5"
+                                                                    >
+                                                                        <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center text-lg">
+                                                                            {getGameTypeEmoji(entry.gameType)}
+                                                                        </div>
+                                                                        <div className="flex-1 min-w-0">
+                                                                            <p className="font-bold text-sm text-white truncate">{formatGameTypeName(entry.gameType)}</p>
+                                                                            <p className="text-[10px] text-slate-500">
+                                                                                {entry.difficulty ? `${entry.difficulty.charAt(0).toUpperCase() + entry.difficulty.slice(1)}` : ''}
+                                                                                {entry.blockNumber ? ` • Niveau ${entry.blockNumber}` : ''}
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="font-black text-sm text-white">{entry.score} pts</p>
+                                                                            <p className="text-[10px] text-slate-500">{Math.floor(entry.timeSeconds / 60)}:{(entry.timeSeconds % 60).toString().padStart(2, '0')}</p>
+                                                                        </div>
+                                                                        {entry.stars !== undefined && entry.stars > 0 && (
+                                                                            <div className="flex gap-0.5">
+                                                                                {[1, 2, 3].map(s => (
+                                                                                    <Star key={s} className={cn(
+                                                                                        "h-3 w-3",
+                                                                                        s <= (entry.stars || 0)
+                                                                                            ? "text-amber-400 fill-amber-400"
+                                                                                            : "text-slate-700"
+                                                                                    )} />
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            ) : null;
+                                        })()}
 
                                         <div className="space-y-4">
                                             {/* Quiz Card */}

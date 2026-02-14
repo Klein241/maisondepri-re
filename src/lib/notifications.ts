@@ -384,6 +384,7 @@ export async function notifyAdminNewGroup({
     }
 }
 
+
 /**
  * Notify a user of a new direct message with deep-link to the conversation
  */
@@ -415,5 +416,59 @@ export async function notifyDirectMessage({
             viewState: 'conversation',
             conversationId: conversationId,
         },
+    });
+}
+
+/**
+ * Notify user that their friend request was accepted
+ */
+export async function notifyFriendRequestAccepted({
+    userId, // User who sent the request (and is now being notified)
+    accepterId, // User who accepted the request
+    accepterName,
+}: {
+    userId: string;
+    accepterId: string;
+    accepterName: string;
+}) {
+    // We need to find or create the conversation to redirect correctly
+    // But for now, we can redirect to the generic chat tab or initiate a conversation check in CommunityView
+    // The best UX is to go to the conversation with this new friend.
+
+    // We'll pass the partnerId (accepterId) in actionData, and CommunityView needs to handle "start conversation"
+    // OR we can just point to the friends list.
+    // The user requirement: "clique et est diriger exact dessus". 
+    // "Dessus" implies the relationship or the chat. Let's try to point to a conversation.
+
+    // Check if conversation exists (optional, but good for deep link)
+    let conversationId: string | undefined;
+
+    try {
+        const { data: conv } = await supabase
+            .from('conversations')
+            .select('id')
+            .or(`and(participant1_id.eq.${userId},participant2_id.eq.${accepterId}),and(participant1_id.eq.${accepterId},participant2_id.eq.${userId})`)
+            .maybeSingle();
+
+        if (conv) conversationId = conv.id;
+    } catch (e) {
+        // Ignore error
+    }
+
+    const actionData: NotificationActionData = {
+        tab: 'community',
+        communityTab: 'chat',
+        // If we found a conversation, go to it. If not, maybe 'friends' view or trigger a "new conversation" flow
+        viewState: conversationId ? 'conversation' : 'messages',
+        conversationId: conversationId,
+    };
+
+    await sendNotification({
+        userId,
+        title: '👋 Ami ajouté !',
+        message: `${accepterName} a accepté votre demande d'ami.`,
+        type: 'success', // or 'friend_request'
+        actionType: 'general', // We use general + specific actionData
+        actionData,
     });
 }

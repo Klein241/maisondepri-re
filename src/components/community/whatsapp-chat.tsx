@@ -73,6 +73,7 @@ interface TypingUser {
 
 interface WhatsAppChatProps {
     user: { id: string; name: string; avatar?: string } | null;
+    onHideNav?: (hide: boolean) => void;
 }
 
 // Voice Message Player Component
@@ -149,9 +150,14 @@ function VoiceMessagePlayer({ voiceUrl, duration }: { voiceUrl: string; duration
     );
 }
 
-export function WhatsAppChat({ user }: WhatsAppChatProps) {
+export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     // View State
     const [view, setView] = useState<'list' | 'conversation' | 'group'>('list');
+
+    // Notify parent to hide/show bottom nav based on view
+    useEffect(() => {
+        onHideNav?.(view !== 'list');
+    }, [view, onHideNav]);
     const [activeTab, setActiveTab] = useState<'conversations' | 'groups' | 'admin_groups'>('conversations');
 
     // Data State

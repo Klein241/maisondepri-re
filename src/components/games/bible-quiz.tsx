@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import confetti from 'canvas-confetti';
 import { quizGenerator, QuizQuestion as GeneratedQuestion } from '@/lib/quiz-generator';
 import { getBlockQuestions, getBlockInfo, getAllBlockInfos, type QuizQuestionItem } from '@/lib/quiz-questions-bank';
+import { addGameHistory, saveGame, deleteGameSaveByType, getGameSave } from '@/lib/game-history';
 
 // Types
 type Difficulty = 'easy' | 'medium' | 'hard';
@@ -596,6 +597,22 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
         const maxScore = totalQuestions * config.pointsPerQuestion;
         saveBlockProgress(difficulty, selectedBlock, score, maxScore);
         setBlockProgress(getBlockProgress());
+
+        // Save to game history
+        const pct = totalQuestions > 0 ? (score / maxScore) * 100 : 0;
+        const stars = pct >= 90 ? 3 : pct >= 70 ? 2 : pct >= 50 ? 1 : 0;
+        addGameHistory({
+            gameType: 'quiz',
+            difficulty,
+            score,
+            maxScore,
+            timeSeconds: totalTime,
+            blockNumber: selectedBlock,
+            stars,
+        });
+
+        // Remove any saved game for this block since it's complete
+        deleteGameSaveByType('quiz', difficulty, selectedBlock);
 
         // Save score
         if (onSaveScore) {

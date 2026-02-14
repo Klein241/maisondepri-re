@@ -150,156 +150,49 @@ export function NotificationBell() {
         if (!user) return;
 
         // Listen for new DMs
-        const dmChannel = supabase
-            .channel(`notif_dm_${user.id}_${Date.now()}`)
+        // Listen for new notifications (messages, friend requests accepted, etc.)
+        const notificationChannel = supabase
+            .channel(`notif_generic_${user.id}_${Date.now()}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
-                table: 'direct_messages',
-            }, async (payload) => {
-                const msg = payload.new as any;
-                if (msg.sender_id === user.id) return;
-
-                // Get sender profile
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name, avatar_url')
-                    .eq('id', msg.sender_id)
-                    .single();
+                table: 'notifications',
+                filter: `user_id=eq.${user.id}`,
+            }, (payload) => {
+                const n = payload.new as any;
 
                 const notif: AppNotification = {
-                    id: `dm_${msg.id}`,
-                    title: 'Nouveau message',
-                    message: `Message de ${profile?.full_name || 'Quelqu\'un'}: ${msg.content?.substring(0, 60) || 'Message vocal \ud83c\udfa4'}`,
-                    type: 'message',
-                    read: false,
-                    created_at: msg.created_at || new Date().toISOString(),
-                    sender_name: profile?.full_name || 'Quelqu\'un',
-                    sender_avatar: profile?.avatar_url || undefined,
-                    action_data: JSON.stringify({
-                        tab: 'community',
-                        communityTab: 'chat',
-                        viewState: 'conversation',
-                        conversationId: msg.conversation_id,
-                    }),
-                };
-
-                setNotifications(prev => [notif, ...prev].slice(0, 50));
-                setUnreadMessages(prev => prev + 1);
-
-                // Signal the chat component to reload messages (RLS workaround)
-                triggerDMRefresh(msg.conversation_id);
-
-                // Trigger SW notification
-                triggerPushNotification(
-                    `\ud83d\udcac ${profile?.full_name || 'Nouveau message'}`,
-                    msg.content?.substring(0, 100) || 'Message vocal \ud83c\udfa4'
-                );
-            })
-            .subscribe();
-
-        // Listen for friend requests
-        const friendChannel = supabase
-            .channel(`notif_friend_${user.id}_${Date.now()}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'friendships',
-                filter: `receiver_id=eq.${user.id}`,
-            }, async (payload) => {
-                const req = payload.new as any;
-
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name, avatar_url')
-                    .eq('id', req.sender_id)
-                    .single();
-
-                const notif: AppNotification = {
-                    id: `friend_${req.id}`,
-                    title: 'Demande d\'ami',
-                    message: `${profile?.full_name || 'Quelqu\'un'} vous a envoy\u00e9 une demande d'ami`,
-                    type: 'friend_request',
-                    read: false,
-                    created_at: req.created_at || new Date().toISOString(),
-                    sender_name: profile?.full_name || undefined,
-                    sender_avatar: profile?.avatar_url || undefined,
-                    action_data: JSON.stringify({
-                        tab: 'community',
-                        communityTab: 'chat',
-                        viewState: 'friends',
-                    }),
+                    id: `supa_${n.id}`,
+                    title: n.title,
+                    message: n.message,
+                    type: (n.type === 'message' ? 'message' : n.type === 'prayer' ? 'prayer' : n.type === 'success' ? 'group' : 'system') as any,
+                    read: n.is_read || false,
+                    created_at: n.created_at,
+                    action_type: n.action_type,
+                    action_data: n.action_data,
                 };
 
                 setNotifications(prev => [notif, ...prev].slice(0, 50));
 
-                triggerPushNotification(
-                    '\ud83e\udd1d Demande d\'ami',
-                    `${profile?.full_name || 'Quelqu\'un'} veut \u00eatre votre ami`
-                );
+                if (!n.is_read) {
+                    setUnreadMessages(prev => prev + 1);
+                }
+
+                // If it's a DM, trigger chat refresh
+                if (n.type === 'message') {
+                    try {
+                        const data = typeof n.action_data === 'string' ? JSON.parse(n.action_data) : n.action_data;
+                        if (data && data.conversationId) {
+                            triggerDMRefresh(data.conversationId);
+                        }
+                    } catch (e) { }
+                }
+
+                triggerPushNotification(n.title, n.message);
             })
             .subscribe();
 
-        // Listen for group messages
-        const groupChannel = supabase
-            .channel(`notif_group_${user.id}_${Date.now()}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'prayer_group_messages',
-            }, async (payload) => {
-                const msg = payload.new as any;
-                if (msg.user_id === user.id) return;
-
-                // Check if user is member of this group
-                const { data: membership } = await supabase
-                    .from('prayer_group_members')
-                    .select('id')
-                    .eq('group_id', msg.group_id)
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-
-                if (!membership) return;
-
-                const { data: profile } = await supabase
-                    .from('profiles')
-                    .select('full_name, avatar_url')
-                    .eq('id', msg.user_id)
-                    .single();
-
-                const { data: group } = await supabase
-                    .from('prayer_groups')
-                    .select('name')
-                    .eq('id', msg.group_id)
-                    .single();
-
-                const notif: AppNotification = {
-                    id: `grp_${msg.id}`,
-                    title: group?.name || 'Message de groupe',
-                    message: `${profile?.full_name || 'Quelqu\'un'}: ${msg.content?.substring(0, 60) || '\ud83c\udfa4'}`,
-                    type: 'group',
-                    read: false,
-                    created_at: msg.created_at || new Date().toISOString(),
-                    sender_name: profile?.full_name || undefined,
-                    sender_avatar: profile?.avatar_url || undefined,
-                    action_data: JSON.stringify({
-                        tab: 'community',
-                        viewState: 'group-detail',
-                        groupId: msg.group_id,
-                        groupName: group?.name || 'Groupe',
-                    }),
-                };
-
-                setNotifications(prev => [notif, ...prev].slice(0, 50));
-
-                triggerPushNotification(
-                    `👥 ${group?.name || 'Groupe'}`,
-                    `${profile?.full_name}: ${msg.content?.substring(0, 80) || '🎙️'}`
-                );
-            })
-            .subscribe();
-
-        // Listen for admin notifications
+        // Listen for admin notifications (these are from a separate admin_notifications table)
         const adminChannel = supabase
             .channel(`notif_admin_${user.id}_${Date.now()}`)
             .on('postgres_changes', {
@@ -323,9 +216,7 @@ export function NotificationBell() {
             .subscribe();
 
         return () => {
-            dmChannel.unsubscribe();
-            friendChannel.unsubscribe();
-            groupChannel.unsubscribe();
+            notificationChannel.unsubscribe();
             adminChannel.unsubscribe();
         };
     }, [user]);
@@ -581,7 +472,7 @@ export function NotificationBell() {
                             )}
 
                             {/* Notification List */}
-                            <ScrollArea className="max-h-[55vh]">
+                            <ScrollArea className="h-[60vh]">
                                 {notifications.length === 0 ? (
                                     <div className="text-center py-12 px-4">
                                         <Bell className="h-10 w-10 text-slate-700 mx-auto mb-3" />

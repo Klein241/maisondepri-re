@@ -10,6 +10,7 @@ import confetti from 'canvas-confetti';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
 import { CHRONO_EVENTS } from '@/lib/game-data';
+import { addGameHistory } from '@/lib/game-history';
 
 interface ChronoEvent {
     id: string;
@@ -77,6 +78,15 @@ export function ChronoGame({
             const timeTaken = Math.floor((Date.now() - startTime) / 1000);
             if (onComplete) onComplete(timeTaken);
             if (onProgress) onProgress(100);
+
+            // Save to game history
+            addGameHistory({
+                gameType: 'chrono',
+                score: Math.max(0, 300 - timeTaken * 5),
+                maxScore: 300,
+                timeSeconds: timeTaken,
+            });
+
             confetti();
         } else {
             setFeedback('wrong');

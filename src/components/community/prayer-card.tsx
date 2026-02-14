@@ -1,9 +1,9 @@
 'use client';
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
     Heart, Users, Share2, Flag, Sparkles,
-    Lock, CheckCircle2, Loader2, Trash2, MoreVertical, MessageSquare
+    Lock, CheckCircle2, Loader2, Trash2, MoreVertical, MessageSquare, ChevronDown, ChevronUp, Calendar
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,7 +17,7 @@ import { PrayerCategory, PrayerRequest } from "@/lib/types";
 import { PhotoGallery } from "@/components/ui/photo-upload";
 import { PrayerGroupManager } from "@/components/community/prayer-group-manager";
 import { cn } from "@/lib/utils";
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, format } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 
@@ -55,6 +55,28 @@ export function PrayerCard({
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [showGroupDialog, setShowGroupDialog] = useState(false);
     const [hasLinkedGroup, setHasLinkedGroup] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(false);
+
+    // Content truncation logic
+    const CONTENT_PREVIEW_LENGTH = 150;
+    const contentText = prayer.content || '';
+    const isLongContent = contentText.length > CONTENT_PREVIEW_LENGTH;
+    const displayContent = isExpanded || !isLongContent
+        ? contentText
+        : contentText.substring(0, CONTENT_PREVIEW_LENGTH).trim() + '…';
+
+    // Formatted date
+    const formattedDate = useMemo(() => {
+        if (!prayer.createdAt) return null;
+        try {
+            const date = new Date(prayer.createdAt);
+            const absolute = format(date, "d MMM yyyy 'à' HH:mm", { locale: fr });
+            const relative = formatDistanceToNow(date, { addSuffix: true, locale: fr });
+            return { absolute, relative };
+        } catch {
+            return null;
+        }
+    }, [prayer.createdAt]);
 
     const isOwner = userId === prayerUserId;
 
@@ -275,9 +297,18 @@ export function PrayerCard({
                                 <p className="font-bold text-sm text-white">
                                     {prayer.isAnonymous ? 'Anonyme' : (prayer.userName || (prayer as any).profiles?.full_name || 'Utilisateur')}
                                 </p>
-                                <p className="text-[10px] text-slate-500">
-                                    {prayer.createdAt ? formatDistanceToNow(new Date(prayer.createdAt), { addSuffix: true, locale: fr }) : ''}
-                                </p>
+                                {formattedDate && (
+                                    <div className="flex items-center gap-1.5">
+                                        <Calendar className="h-3 w-3 text-slate-500" />
+                                        <p className="text-[10px] text-slate-500" title={formattedDate.absolute}>
+                                            {formattedDate.absolute}
+                                        </p>
+                                        <span className="text-[10px] text-slate-600">•</span>
+                                        <p className="text-[10px] text-slate-600">
+                                            {formattedDate.relative}
+                                        </p>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -314,7 +345,27 @@ export function PrayerCard({
                     )}
 
                     {/* Content */}
-                    <p className="text-slate-200 leading-relaxed mb-4">{prayer.content}</p>
+                    <div className="mb-4">
+                        <p className="text-slate-200 leading-relaxed">{displayContent}</p>
+                        {isLongContent && (
+                            <button
+                                onClick={() => setIsExpanded(!isExpanded)}
+                                className="mt-2 flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                            >
+                                {isExpanded ? (
+                                    <>
+                                        <ChevronUp className="h-3.5 w-3.5" />
+                                        Lire moins
+                                    </>
+                                ) : (
+                                    <>
+                                        <ChevronDown className="h-3.5 w-3.5" />
+                                        Lire la suite
+                                    </>
+                                )}
+                            </button>
+                        )}
+                    </div>
 
                     {/* Photos */}
                     {prayer.photos && prayer.photos.length > 0 && (

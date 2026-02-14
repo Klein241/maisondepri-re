@@ -323,12 +323,19 @@ export function PWAManager() {
 
     return (
         <>
-            {/* Offline indicator bar */}
-            {!isOnline && (
-                <div className="fixed top-0 left-0 right-0 z-[9999] bg-amber-600 text-white text-center py-1.5 text-xs font-bold animate-pulse">
-                    📴 Mode hors-ligne — Les données seront synchronisées automatiquement
-                </div>
-            )}
+            {/* Offline indicator bar - positioned below header to avoid overlapping back buttons */}
+            <AnimatePresence>
+                {!isOnline && !dismissed && (
+                    <motion.div
+                        initial={{ y: -50, opacity: 0 }}
+                        animate={{ y: 0, opacity: 1 }}
+                        exit={{ y: -50, opacity: 0 }}
+                        className="fixed top-14 left-2 right-2 z-[9999] bg-amber-600/95 backdrop-blur-md text-white text-center py-2 px-4 text-xs font-bold rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
+                    >
+                        <span>📴 Mode hors-ligne — Synchronisation automatique au retour</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Fixed PWA Install Button - Bottom right, always visible */}
             <AnimatePresence>

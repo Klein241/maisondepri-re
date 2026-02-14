@@ -10,6 +10,7 @@ import confetti from 'canvas-confetti';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
 import { generateWordSearch } from '@/lib/word-search-generator';
+import { addGameHistory } from '@/lib/game-history';
 
 interface WordSearchGameProps {
     onBack: () => void;
@@ -179,6 +180,15 @@ export function WordSearchGame({
                         setGameState('finished');
                         const timeTaken = Math.floor((Date.now() - startTime) / 1000);
                         if (onComplete) onComplete(timeTaken);
+
+                        // Save to game history
+                        addGameHistory({
+                            gameType: 'word_search',
+                            score: Math.max(0, 500 - timeTaken * 3),
+                            maxScore: 500,
+                            timeSeconds: timeTaken,
+                        });
+
                         confetti({
                             particleCount: 100,
                             spread: 70,

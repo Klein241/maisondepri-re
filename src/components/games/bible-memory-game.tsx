@@ -10,6 +10,7 @@ import confetti from 'canvas-confetti';
 import { bibleApi, BibleVerse } from '@/lib/unified-bible-api';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
+import { addGameHistory } from '@/lib/game-history';
 
 interface Word {
     id: string;
@@ -152,9 +153,18 @@ export function BibleMemoryGame({
             });
             // Complete Logic
             if (onProgress) onProgress(100);
+
+            // Save to game history
+            const finalTime = Math.floor((Date.now() - (startTime || Date.now())) / 1000);
+            addGameHistory({
+                gameType: 'memory',
+                score: Math.max(0, 400 - finalTime * 4),
+                maxScore: 400,
+                timeSeconds: finalTime,
+                metadata: { reference: originalVerse?.reference, streak: streak + 1 },
+            });
+
             if (mode === 'multiplayer' && onComplete) {
-                // Calculate final time
-                const finalTime = Math.floor((Date.now() - (startTime || Date.now())) / 1000);
                 onComplete(finalTime);
             }
         } else {
