@@ -427,18 +427,24 @@ export function PrayerCard({
                                 </span>
                             </Button>
 
-                            {/* Group Button - only shows if a group was created for this prayer */}
-                            {hasLinkedGroup && (
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="rounded-xl text-slate-400 hover:text-emerald-400"
-                                    onClick={() => setShowGroupDialog(true)}
-                                >
-                                    <Users className="h-4 w-4 mr-1" />
-                                    <span className="text-xs">Groupe</span>
-                                </Button>
-                            )}
+                            {/* Group Button - always show so users can check or owners can create */}
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                    "rounded-xl",
+                                    hasLinkedGroup
+                                        ? "text-emerald-400 hover:text-emerald-300"
+                                        : "text-slate-400 hover:text-emerald-400"
+                                )}
+                                onClick={() => setShowGroupDialog(true)}
+                            >
+                                <Users className="h-4 w-4 mr-1" />
+                                <span className="text-xs">Groupe</span>
+                                {hasLinkedGroup && (
+                                    <span className="ml-1 w-2 h-2 bg-emerald-400 rounded-full" />
+                                )}
+                            </Button>
                         </div>
 
                         <div className="flex gap-2">

@@ -186,6 +186,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const recordingTimeRef = useRef(0);
 
     // Refs
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -830,6 +831,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current = mediaRecorder;
             audioChunksRef.current = [];
+            recordingTimeRef.current = 0;
 
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
@@ -841,9 +843,10 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 stream.getTracks().forEach(track => track.stop());
 
-                // Send the voice message
-                if (audioBlob.size > 0 && recordingTime > 0) {
-                    await sendVoiceMessage(audioBlob, recordingTime);
+                // Use ref to get real duration (state is stale in this closure)
+                const duration = recordingTimeRef.current;
+                if (audioBlob.size > 0 && duration > 0) {
+                    await sendVoiceMessage(audioBlob, duration);
                 }
             };
 
@@ -851,8 +854,9 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             setIsRecording(true);
             setRecordingTime(0);
 
-            // Track recording time
+            // Track recording time - sync both state and ref
             recordingIntervalRef.current = setInterval(() => {
+                recordingTimeRef.current += 1;
                 setRecordingTime(prev => prev + 1);
             }, 1000);
 

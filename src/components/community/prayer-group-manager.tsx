@@ -90,17 +90,17 @@ export function PrayerGroupManager({
     const loadGroup = async () => {
         setIsLoading(true);
         try {
-            // Check if group exists for this prayer
+            // Check if group exists for this prayer - use maybeSingle to avoid 406
             const { data: groupData, error: groupError } = await supabase
                 .from('prayer_groups')
-                .select(`
-                    *,
-                    creator:created_by (full_name, avatar_url)
-                `)
+                .select('*')
                 .eq('prayer_request_id', prayerId)
-                .single();
+                .maybeSingle();
 
-            if (groupError && groupError.code !== 'PGRST116') throw groupError;
+            if (groupError) {
+                console.error('Error querying group:', groupError);
+                // Don't throw - just show empty state
+            }
 
             if (groupData) {
                 // Get member count
@@ -137,8 +137,20 @@ export function PrayerGroupManager({
                     }
                 }
 
+                // Load creator profile separately to avoid embedded join errors
+                let creator = undefined;
+                if (groupData.created_by) {
+                    const { data: creatorData } = await supabase
+                        .from('profiles')
+                        .select('full_name, avatar_url')
+                        .eq('id', groupData.created_by)
+                        .maybeSingle();
+                    if (creatorData) creator = creatorData;
+                }
+
                 setExistingGroup({
                     ...groupData,
+                    creator,
                     member_count: count || 0,
                     is_member: isMember,
                     pending_request: pendingRequest

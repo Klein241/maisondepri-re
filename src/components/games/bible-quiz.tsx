@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ArrowLeft, Trophy, Star, Clock, CheckCircle2, XCircle, Zap, Heart, Award, RefreshCw, Play, ChevronRight, Share2, Sparkles, Lock, Unlock, Grid3X3 } from 'lucide-react';
+import { ArrowLeft, Trophy, Star, Clock, CheckCircle2, XCircle, Zap, Heart, Award, RefreshCw, Play, Pause, ChevronRight, Share2, Sparkles, Lock, Unlock, Grid3X3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
@@ -434,6 +434,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
     const [shuffledQuestions, setShuffledQuestions] = useState<QuizQuestion[]>([]);
     const [lives, setLives] = useState(3);
     const [blockProgress, setBlockProgress] = useState(getBlockProgress());
+    const [isPaused, setIsPaused] = useState(false);
 
     const config = DIFFICULTY_CONFIG[difficulty];
     const currentQuestion = shuffledQuestions[currentQuestionIndex];
@@ -492,7 +493,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
 
     // Timer effect
     useEffect(() => {
-        if (gameState !== 'playing' || isAnswerRevealed) return;
+        if (gameState !== 'playing' || isAnswerRevealed || isPaused) return;
 
         const timer = setInterval(() => {
             setTimeLeft(prev => {
@@ -506,7 +507,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
         }, 1000);
 
         return () => clearInterval(timer);
-    }, [gameState, isAnswerRevealed, currentQuestionIndex]);
+    }, [gameState, isAnswerRevealed, currentQuestionIndex, isPaused]);
 
     // Handle timeout
     const handleTimeout = () => {
@@ -837,9 +838,60 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                         exit={{ opacity: 0, x: -20 }}
                         className="relative z-10 min-h-screen flex flex-col"
                     >
+                        {/* Pause Overlay */}
+                        <AnimatePresence>
+                            {isPaused && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    exit={{ opacity: 0 }}
+                                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex flex-col items-center justify-center"
+                                >
+                                    <motion.div
+                                        initial={{ scale: 0.8 }}
+                                        animate={{ scale: 1 }}
+                                        className="text-center"
+                                    >
+                                        <div className="w-24 h-24 rounded-full bg-indigo-600/30 flex items-center justify-center mx-auto mb-6 border-2 border-indigo-500/50">
+                                            <Pause className="h-12 w-12 text-indigo-400" />
+                                        </div>
+                                        <h2 className="text-3xl font-black text-white mb-2">Pause</h2>
+                                        <p className="text-slate-400 mb-8">Le chronomètre est en pause</p>
+                                        <div className="flex flex-col gap-3">
+                                            <Button
+                                                onClick={() => setIsPaused(false)}
+                                                className="bg-indigo-600 hover:bg-indigo-500 h-14 px-10 rounded-2xl text-lg font-bold gap-2"
+                                            >
+                                                <Play className="h-5 w-5" />
+                                                Reprendre
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                onClick={() => { setIsPaused(false); setGameState('menu'); }}
+                                                className="text-slate-400 hover:text-white"
+                                            >
+                                                <ArrowLeft className="h-4 w-4 mr-2" />
+                                                Quitter le quiz
+                                            </Button>
+                                        </div>
+                                    </motion.div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
                         {/* Game Header */}
                         <header className="px-6 pt-8 pb-4">
                             <div className="flex items-center justify-between mb-4">
+                                {/* Pause Button */}
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => setIsPaused(true)}
+                                    className="h-10 w-10 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                                >
+                                    <Pause className="h-5 w-5" />
+                                </Button>
+
                                 {/* Lives */}
                                 <div className="flex items-center gap-1">
                                     {[...Array(3)].map((_, i) => (

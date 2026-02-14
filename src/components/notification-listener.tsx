@@ -87,29 +87,7 @@ export function NotificationListener() {
                         dismissPopup(id);
                     }, 10000);
 
-                    // Toast
-                    const icons: Record<string, string> = {
-                        info: '📢',
-                        success: '✅',
-                        warning: '⚠️',
-                        error: '❌',
-                        prayer: '🙏',
-                        testimony: '✨',
-                        message: '💬'
-                    };
-
-                    toast(title, {
-                        description: message,
-                        icon: <span className="text-xl">{icons[type] || '📢'}</span>,
-                        duration: 6000,
-                        className: "bg-[#0F1219] border-white/10 text-white cursor-pointer",
-                        action: {
-                            label: 'Voir',
-                            onClick: () => navigateToContent({ id, title, message, type, action_type, action_data })
-                        }
-                    });
-
-                    // Browser Notification
+                    // Browser Notification (no toast - the custom popup already handles it)
                     if ("Notification" in window && Notification.permission === "granted") {
                         const browserNotif = new Notification(title, {
                             body: message,

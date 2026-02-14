@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { useState, useEffect, useRef } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, HelpCircle, Trophy, CheckCircle2 } from 'lucide-react';
+import { ArrowLeft, HelpCircle, Trophy, CheckCircle2, Pause, Play } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
@@ -49,14 +49,30 @@ export function WhoAmIGame({
     const [elapsedTime, setElapsedTime] = useState(0);
     const [currentClueIndex, setCurrentClueIndex] = useState(0);
     const [options, setOptions] = useState<string[]>([]);
+    const [isPaused, setIsPaused] = useState(false);
+    const pausedTimeRef = useRef(0);
+    const lastPauseRef = useRef<number | null>(null);
 
     useEffect(() => {
-        if (gameState !== 'playing') return;
+        if (gameState !== 'playing' || isPaused) return;
         const interval = setInterval(() => {
-            setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+            setElapsedTime(Math.floor((Date.now() - startTime - pausedTimeRef.current) / 1000));
         }, 1000);
         return () => clearInterval(interval);
-    }, [gameState, startTime]);
+    }, [gameState, startTime, isPaused]);
+
+    const togglePause = () => {
+        if (isPaused) {
+            if (lastPauseRef.current) {
+                pausedTimeRef.current += Date.now() - lastPauseRef.current;
+                lastPauseRef.current = null;
+            }
+            setIsPaused(false);
+        } else {
+            lastPauseRef.current = Date.now();
+            setIsPaused(true);
+        }
+    };
 
     useEffect(() => {
         if (!characters[currentIndex]) return;
@@ -70,12 +86,12 @@ export function WhoAmIGame({
     }, [currentIndex, characters]);
 
     useEffect(() => {
-        if (gameState !== 'playing') return;
+        if (gameState !== 'playing' || isPaused) return;
         const interval = setInterval(() => {
             setCurrentClueIndex(prev => Math.min(prev + 1, 2));
         }, 5000);
         return () => clearInterval(interval);
-    }, [currentIndex, gameState]);
+    }, [currentIndex, gameState, isPaused]);
 
     const handleGuess = (name: string) => {
         const target = characters[currentIndex];
@@ -115,10 +131,59 @@ export function WhoAmIGame({
                 <Button variant="ghost" onClick={onBack}>
                     <ArrowLeft className="mr-2 h-4 w-4" /> Quitter
                 </Button>
-                <Badge variant="outline" className="text-xl font-mono text-cyan-400 border-cyan-500/50 px-3 py-1">
-                    {formatTime(elapsedTime)}
-                </Badge>
+                <div className="flex items-center gap-3">
+                    {gameState === 'playing' && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={togglePause}
+                            className="h-10 w-10 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                        >
+                            <Pause className="h-5 w-5" />
+                        </Button>
+                    )}
+                    <Badge variant="outline" className="text-xl font-mono text-cyan-400 border-cyan-500/50 px-3 py-1">
+                        {formatTime(elapsedTime)}
+                    </Badge>
+                </div>
             </div>
+
+            {/* Pause Overlay */}
+            <AnimatePresence>
+                {isPaused && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex flex-col items-center justify-center"
+                    >
+                        <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center">
+                            <div className="w-24 h-24 rounded-full bg-amber-600/30 flex items-center justify-center mx-auto mb-6 border-2 border-amber-500/50">
+                                <Pause className="h-12 w-12 text-amber-400" />
+                            </div>
+                            <h2 className="text-3xl font-black text-white mb-2">Pause</h2>
+                            <p className="text-slate-400 mb-8">Le chronomètre est en pause</p>
+                            <div className="flex flex-col gap-3">
+                                <Button
+                                    onClick={togglePause}
+                                    className="bg-amber-600 hover:bg-amber-500 h-14 px-10 rounded-2xl text-lg font-bold gap-2"
+                                >
+                                    <Play className="h-5 w-5" />
+                                    Reprendre
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => { setIsPaused(false); onBack(); }}
+                                    className="text-slate-400 hover:text-white"
+                                >
+                                    <ArrowLeft className="h-4 w-4 mr-2" />
+                                    Quitter le jeu
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Multiplayer Live Progress (Opponents) */}
             {mode === 'multiplayer' && players.length > 0 && gameState === 'playing' && (

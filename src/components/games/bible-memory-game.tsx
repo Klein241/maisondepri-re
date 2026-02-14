@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, CheckCircle2, Trophy, Clock, ArrowLeft, ArrowRight } from 'lucide-react';
+import { RefreshCw, CheckCircle2, Trophy, Clock, ArrowLeft, ArrowRight, Pause, Play } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { bibleApi, BibleVerse } from '@/lib/unified-bible-api';
 import { cn } from '@/lib/utils';
@@ -53,6 +53,9 @@ export function BibleMemoryGame({
     // Timer state
     const [startTime, setStartTime] = useState<number | null>(null);
     const [elapsedTime, setElapsedTime] = useState(0);
+    const [isPaused, setIsPaused] = useState(false);
+    const pausedTimeRef = useRef(0);
+    const lastPauseRef = useRef<number | null>(null);
 
     // Initial Load
     useEffect(() => {
@@ -66,13 +69,26 @@ export function BibleMemoryGame({
     // Timer Logic
     useEffect(() => {
         let interval: NodeJS.Timeout;
-        if (gameState === 'playing' && startTime) {
+        if (gameState === 'playing' && startTime && !isPaused) {
             interval = setInterval(() => {
-                setElapsedTime(Math.floor((Date.now() - startTime) / 1000));
+                setElapsedTime(Math.floor((Date.now() - startTime - pausedTimeRef.current) / 1000));
             }, 1000);
         }
         return () => clearInterval(interval);
-    }, [gameState, startTime]);
+    }, [gameState, startTime, isPaused]);
+
+    const togglePause = () => {
+        if (isPaused) {
+            if (lastPauseRef.current) {
+                pausedTimeRef.current += Date.now() - lastPauseRef.current;
+                lastPauseRef.current = null;
+            }
+            setIsPaused(false);
+        } else {
+            lastPauseRef.current = Date.now();
+            setIsPaused(true);
+        }
+    };
 
     // Format Time
     const formatTime = (seconds: number) => {
@@ -187,6 +203,16 @@ export function BibleMemoryGame({
                 </Button>
 
                 <div className="flex items-center gap-4">
+                    {gameState === 'playing' && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={togglePause}
+                            className="h-9 w-9 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white"
+                        >
+                            <Pause className="h-4 w-4" />
+                        </Button>
+                    )}
                     <Badge variant="outline" className="text-lg font-mono text-cyan-400 border-cyan-500/50 px-3 py-1 gap-2">
                         <Clock className="w-4 h-4" />
                         {formatTime(elapsedTime)}
@@ -199,6 +225,43 @@ export function BibleMemoryGame({
                     )}
                 </div>
             </div>
+
+            {/* Pause Overlay */}
+            <AnimatePresence>
+                {isPaused && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex flex-col items-center justify-center"
+                    >
+                        <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center">
+                            <div className="w-24 h-24 rounded-full bg-purple-600/30 flex items-center justify-center mx-auto mb-6 border-2 border-purple-500/50">
+                                <Pause className="h-12 w-12 text-purple-400" />
+                            </div>
+                            <h2 className="text-3xl font-black text-white mb-2">Pause</h2>
+                            <p className="text-slate-400 mb-8">Le chronomètre est en pause</p>
+                            <div className="flex flex-col gap-3">
+                                <Button
+                                    onClick={togglePause}
+                                    className="bg-purple-600 hover:bg-purple-500 h-14 px-10 rounded-2xl text-lg font-bold gap-2"
+                                >
+                                    <Play className="h-5 w-5" />
+                                    Reprendre
+                                </Button>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => { setIsPaused(false); onBack(); }}
+                                    className="text-slate-400 hover:text-white"
+                                >
+                                    <ArrowLeft className="h-4 w-4 mr-2" />
+                                    Quitter le jeu
+                                </Button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Multiplayer Live Progress (Opponents) */}
             {mode === 'multiplayer' && players.length > 0 && gameState === 'playing' && (
