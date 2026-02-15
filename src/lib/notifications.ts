@@ -472,3 +472,33 @@ export async function notifyFriendRequestAccepted({
         actionData,
     });
 }
+
+/**
+ * Notify a user that they have been invited to join a prayer group
+ */
+export async function notifyGroupInvitation({
+    userId,
+    inviterName,
+    groupId,
+    groupName,
+}: {
+    userId: string;
+    inviterName: string;
+    groupId: string;
+    groupName: string;
+}) {
+    await sendNotification({
+        userId,
+        title: '👥 Invitation à un groupe',
+        message: `${inviterName} vous invite à rejoindre le groupe de prière "${groupName}"`,
+        type: 'info',
+        actionType: 'group_invitation',
+        actionData: {
+            tab: 'community',
+            communityTab: 'prieres',
+            viewState: 'main',
+            groupId,
+            groupName,
+        },
+    });
+}

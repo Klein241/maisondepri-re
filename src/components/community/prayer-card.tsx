@@ -80,7 +80,7 @@ export function PrayerCard({
 
     const isOwner = userId === prayerUserId;
 
-    // Check if a prayer group exists for this prayer
+    // Check if a prayer group exists for this prayer — also re-check when dialog closes
     useEffect(() => {
         const checkGroup = async () => {
             try {
@@ -89,15 +89,13 @@ export function PrayerCard({
                     .select('id')
                     .eq('prayer_request_id', prayerId)
                     .limit(1);
-                if (!error && data && data.length > 0) {
-                    setHasLinkedGroup(true);
-                }
+                setHasLinkedGroup(!error && !!data && data.length > 0);
             } catch (e) {
                 // Silently fail
             }
         };
         checkGroup();
-    }, [prayerId]);
+    }, [prayerId, showGroupDialog]);
 
     // Mettre à jour l'état si les props changent (sync avec le serveur)
     useEffect(() => {
@@ -540,13 +538,14 @@ export function PrayerCard({
 
             {/* Group Dialog */}
             <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
-                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem]">
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-2xl sm:rounded-[2rem] max-h-[85vh] overflow-y-auto">
                     <PrayerGroupManager
                         prayerId={prayerId}
                         prayerContent={prayer.content}
                         prayerOwnerId={prayerUserId}
                         currentUserId={userId}
                         onClose={() => setShowGroupDialog(false)}
+                        isDialogOpen={showGroupDialog}
                     />
                 </DialogContent>
             </Dialog>
