@@ -2133,8 +2133,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             </DialogContent>
                         </Dialog>
 
-                        <ScrollArea className="flex-1 px-3 sm:px-6">
-                            <div className="space-y-6 pb-32">
+                        <ScrollArea className="flex-1 overflow-x-hidden">
+                            <div className="space-y-6 pb-32 px-3 sm:px-6 max-w-full overflow-hidden">
                                 {/* ===== PENDING JOIN REQUESTS (for group creators) ===== */}
                                 {groupJoinRequests.length > 0 && (
                                     <div>
@@ -2206,9 +2206,9 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             {groups.filter(g => !userGroups.includes(g.id)).map((group) => (
                                                 <Card
                                                     key={group.id}
-                                                    className="bg-white/5 border-white/5 rounded-3xl overflow-hidden hover:bg-white/10 transition-all"
+                                                    className="bg-white/5 border-white/5 rounded-2xl overflow-hidden hover:bg-white/10 transition-all"
                                                 >
-                                                    <CardContent className="p-4 sm:p-5 break-words">
+                                                    <CardContent className="p-3 sm:p-4">
                                                         <div
                                                             className="flex items-start gap-3 sm:gap-4 cursor-pointer"
                                                             onClick={() => {
@@ -2217,12 +2217,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                 setViewState('group-detail');
                                                             }}
                                                         >
-                                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-indigo-600/30 to-purple-600/30 shrink-0">
-                                                                <Users className="h-7 w-7 text-indigo-400" />
+                                                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-600/30 to-purple-600/30 shrink-0">
+                                                                <Users className="h-5 w-5 sm:h-7 sm:w-7 text-indigo-400" />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                                                                    <h3 className="font-bold text-white truncate">{group.name}</h3>
+                                                                <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                                                                    <h3 className="font-bold text-white text-sm truncate max-w-[180px] sm:max-w-none">{group.name}</h3>
                                                                     {group.isAnswered && (
                                                                         <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
                                                                             <Sparkles className="h-3 w-3 mr-1" />
@@ -2230,7 +2230,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                         </Badge>
                                                                     )}
                                                                 </div>
-                                                                <p className="text-sm text-slate-400 line-clamp-2">{group.description}</p>
+                                                                <p className="text-xs sm:text-sm text-slate-400 line-clamp-2">{group.description}</p>
                                                                 <div className="flex items-center gap-3 mt-2">
                                                                     <span className="text-xs text-slate-500 flex items-center gap-1">
                                                                         <Users className="h-3 w-3" />
@@ -2249,7 +2249,6 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                     Créé par {(group as any).profiles?.full_name || 'Utilisateur'}
                                                                 </p>
                                                             </div>
-                                                            <ChevronRight className="h-5 w-5 text-slate-500 shrink-0" />
                                                         </div>
 
                                                         {/* Friend suggestion - show if a friend is in this group */}
@@ -2267,7 +2266,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                             <Button
                                                                 size="sm"
                                                                 className={cn(
-                                                                    "w-full h-10 rounded-xl font-bold",
+                                                                    "w-full h-9 sm:h-10 rounded-xl font-bold text-sm",
                                                                     group.isOpen
                                                                         ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
                                                                         : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
@@ -3295,7 +3294,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                     </div>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }
 
