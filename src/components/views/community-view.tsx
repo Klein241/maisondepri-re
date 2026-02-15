@@ -709,15 +709,21 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     // Approve a join request
     const approveJoinRequest = async (requestId: string, groupId: string, userId: string) => {
         try {
-            await supabase
-                .from('prayer_group_join_requests')
-                .update({ status: 'approved', reviewed_at: new Date().toISOString(), reviewed_by: user?.id })
-                .eq('id', requestId);
-
-            // Add the user as a member
-            await supabase
+            // First add the user as a member (before deleting request)
+            const { error: memberError } = await supabase
                 .from('prayer_group_members')
                 .insert({ group_id: groupId, user_id: userId, role: 'member' });
+
+            // Ignore duplicate key errors (user already a member)
+            if (memberError && !memberError.message.includes('duplicate')) {
+                console.error('Member insert error:', memberError);
+            }
+
+            // DELETE the request completely (not update) to prevent it from reappearing
+            await supabase
+                .from('prayer_group_join_requests')
+                .delete()
+                .eq('id', requestId);
 
             // Notify the user that their request was approved
             const groupData = groups.find(g => g.id === groupId);
@@ -742,12 +748,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         }
     };
 
-    // Reject a join request
+    // Reject a join request - DELETE it completely
     const rejectJoinRequest = async (requestId: string, groupId: string) => {
         try {
             await supabase
                 .from('prayer_group_join_requests')
-                .update({ status: 'rejected', reviewed_at: new Date().toISOString(), reviewed_by: user?.id })
+                .delete()
                 .eq('id', requestId);
 
             setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));
@@ -1708,11 +1714,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </Button>
                                     <Button
                                         size="sm"
-                                        className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative"
                                         onClick={() => requireAuth(() => { loadGroups(); setViewState('groups'); })}
                                     >
                                         <Users className="h-3.5 w-3.5" />
                                         Groupes
+                                        {Object.values(pendingRequestCounts).reduce((a, b) => a + b, 0) > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4.5 h-4.5 min-w-[18px] min-h-[18px] rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                                                {Object.values(pendingRequestCounts).reduce((a, b) => a + b, 0)}
+                                            </span>
+                                        )}
                                     </Button>
                                     <Button
                                         size="sm"
@@ -2041,7 +2052,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col min-h-screen pb-24 max-w-4xl mx-auto w-full overflow-x-hidden"
+                        className="relative z-10 flex flex-col h-[100dvh] pb-0 max-w-4xl mx-auto w-full overflow-x-hidden"
                     >
                         <header className="px-4 sm:px-6 pt-12 pb-4">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
@@ -2124,93 +2135,6 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                         <ScrollArea className="flex-1 px-3 sm:px-6">
                             <div className="space-y-6 pb-32">
-                                {/* ===== MES GROUPES ===== */}
-                                {groups.filter(g => userGroups.includes(g.id)).length > 0 && (
-                                    <div>
-                                        <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                            <UserCheck className="h-3.5 w-3.5" />
-                                            Mes Groupes ({groups.filter(g => userGroups.includes(g.id)).length})
-                                        </h3>
-                                        <div className="space-y-3">
-                                            {groups.filter(g => userGroups.includes(g.id)).map((group) => (
-                                                <Card
-                                                    key={group.id}
-                                                    className="bg-emerald-500/5 border-emerald-500/10 rounded-3xl overflow-hidden hover:bg-emerald-500/10 transition-all"
-                                                >
-                                                    <CardContent className="p-4 sm:p-5 break-words">
-                                                        <div
-                                                            className="flex items-start gap-3 sm:gap-4 cursor-pointer"
-                                                            onClick={() => {
-                                                                setSelectedGroup(group);
-                                                                loadGroupMessages(group.id);
-                                                                setViewState('group-detail');
-                                                            }}
-                                                        >
-                                                            <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center bg-gradient-to-br from-emerald-600/30 to-teal-600/30 shrink-0">
-                                                                <Users className="h-7 w-7 text-emerald-400" />
-                                                            </div>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-1.5 sm:gap-2 mb-1 flex-wrap">
-                                                                    <h3 className="font-bold text-white truncate">{group.name}</h3>
-                                                                    <Badge className="bg-emerald-500/20 text-emerald-400 border-none text-[10px]">
-                                                                        <Check className="h-3 w-3 mr-1" />
-                                                                        Membre
-                                                                    </Badge>
-                                                                    {(group.created_by === user?.id || group.createdBy === user?.id) && (
-                                                                        <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
-                                                                            <Crown className="h-3 w-3 mr-1" />
-                                                                            Créateur
-                                                                        </Badge>
-                                                                    )}
-                                                                    {pendingRequestCounts[group.id] > 0 && (
-                                                                        <Badge className="bg-orange-500/20 text-orange-400 border-none text-[10px] animate-pulse">
-                                                                            <BellRing className="h-3 w-3 mr-1" />
-                                                                            {pendingRequestCounts[group.id]} demande(s)
-                                                                        </Badge>
-                                                                    )}
-                                                                </div>
-                                                                <p className="text-sm text-slate-400 line-clamp-1">{group.description}</p>
-                                                                <div className="flex items-center gap-3 mt-2">
-                                                                    <span className="text-xs text-slate-500 flex items-center gap-1">
-                                                                        <Users className="h-3 w-3" />
-                                                                        {group.memberCount || 0} membres
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            <ChevronRight className="h-5 w-5 text-emerald-400 shrink-0" />
-                                                        </div>
-                                                        <div className="mt-3 pt-3 border-t border-white/5 flex gap-2">
-                                                            <Button
-                                                                size="sm"
-                                                                className="flex-1 h-9 rounded-xl bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
-                                                                onClick={() => {
-                                                                    setSelectedGroup(group);
-                                                                    loadGroupMessages(group.id);
-                                                                    setViewState('group-detail');
-                                                                }}
-                                                            >
-                                                                <MessageCircle className="h-3.5 w-3.5 mr-1.5" />
-                                                                Chat du groupe
-                                                            </Button>
-                                                            <Button
-                                                                variant="ghost"
-                                                                size="sm"
-                                                                className="h-9 rounded-xl bg-red-500/10 text-red-400 hover:bg-red-500/20 px-3"
-                                                                onClick={(e) => {
-                                                                    e.stopPropagation();
-                                                                    leaveGroup(group.id);
-                                                                }}
-                                                            >
-                                                                <X className="h-3.5 w-3.5" />
-                                                            </Button>
-                                                        </div>
-                                                    </CardContent>
-                                                </Card>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
                                 {/* ===== PENDING JOIN REQUESTS (for group creators) ===== */}
                                 {groupJoinRequests.length > 0 && (
                                     <div>
@@ -2486,22 +2410,24 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </div>
                             )}
 
-                            {/* Group Tools Toggle */}
-                            <div className="flex gap-2 mt-2">
-                                <Button
-                                    size="sm"
-                                    className={cn(
-                                        "flex-1 rounded-xl gap-2 h-9 text-xs font-bold transition-all",
-                                        showGroupTools
-                                            ? "bg-violet-600/20 text-violet-400 border border-violet-500/30"
-                                            : "bg-white/5 text-slate-400 hover:bg-white/10"
-                                    )}
-                                    onClick={() => setShowGroupTools(!showGroupTools)}
-                                >
-                                    <Wrench className="h-3.5 w-3.5" />
-                                    {showGroupTools ? 'Masquer les outils' : 'Outils du groupe'}
-                                </Button>
-                            </div>
+                            {/* Group Tools Toggle - only for creator */}
+                            {(selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id) && (
+                                <div className="flex gap-2 mt-2">
+                                    <Button
+                                        size="sm"
+                                        className={cn(
+                                            "flex-1 rounded-xl gap-2 h-9 text-xs font-bold transition-all",
+                                            showGroupTools
+                                                ? "bg-violet-600/20 text-violet-400 border border-violet-500/30"
+                                                : "bg-white/5 text-slate-400 hover:bg-white/10"
+                                        )}
+                                        onClick={() => setShowGroupTools(!showGroupTools)}
+                                    >
+                                        <Wrench className="h-3.5 w-3.5" />
+                                        {showGroupTools ? 'Masquer les outils' : 'Outils du groupe'}
+                                    </Button>
+                                </div>
+                            )}
 
                             {/* Group Tools Panel */}
                             <GroupToolsPanel

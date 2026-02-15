@@ -3,15 +3,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-    BarChart3, Plus, X, Check, Loader2, Pin, Calendar,
-    Vote, Users, FileText, Clock, Sparkles, Send, Heart,
-    ChevronDown, ChevronUp, Trash2, Crown, Bell
+    BarChart3, Plus, X, Check, Loader2, Calendar,
+    Users, Clock, Send, Heart, BookOpen, MessageSquare,
+    ChevronDown, Trash2, Crown, Sparkles, Target, Megaphone
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -48,9 +47,10 @@ interface GroupPollWidgetProps {
     groupId: string;
     userId: string;
     userName: string;
+    isCreator: boolean;
 }
 
-export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetProps) {
+export function GroupPollWidget({ groupId, userId, userName, isCreator }: GroupPollWidgetProps) {
     const [polls, setPolls] = useState<GroupPoll[]>([]);
     const [showCreatePoll, setShowCreatePoll] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -58,7 +58,6 @@ export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetPr
     const [newOptions, setNewOptions] = useState(['', '']);
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [isMultiple, setIsMultiple] = useState(false);
-    const [expandedPoll, setExpandedPoll] = useState<string | null>(null);
 
     const loadPolls = useCallback(async () => {
         try {
@@ -137,14 +136,12 @@ export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetPr
 
             const updatedOptions = poll.options.map(opt => {
                 if (opt.id === optionId) {
-                    // Toggle vote
                     if (opt.voters.includes(userId)) {
                         return { ...opt, votes: opt.votes - 1, voters: opt.voters.filter(v => v !== userId) };
                     } else {
                         return { ...opt, votes: opt.votes + 1, voters: [...opt.voters, userId] };
                     }
                 }
-                // If not multiple choice, remove vote from other options
                 if (!poll.is_multiple && opt.voters.includes(userId)) {
                     return { ...opt, votes: opt.votes - 1, voters: opt.voters.filter(v => v !== userId) };
                 }
@@ -183,28 +180,37 @@ export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetPr
 
     return (
         <div className="space-y-3">
-            {/* Create Poll Button */}
-            <Button
-                size="sm"
-                className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 gap-2 h-9"
-                onClick={() => setShowCreatePoll(true)}
-            >
-                <BarChart3 className="h-4 w-4" />
-                Créer un sondage
-            </Button>
+            {/* Create Poll Button - only for creator */}
+            {isCreator && (
+                <Button
+                    size="sm"
+                    className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 gap-2 h-9"
+                    onClick={() => setShowCreatePoll(true)}
+                >
+                    <BarChart3 className="h-4 w-4" />
+                    Créer un sondage
+                </Button>
+            )}
 
-            {/* Active Polls */}
+            {/* Active Polls - visible by everyone */}
+            {polls.length === 0 && (
+                <div className="text-center py-4">
+                    <BarChart3 className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                    <p className="text-xs text-slate-500">Aucun sondage actif</p>
+                </div>
+            )}
+
             {polls.map(poll => (
                 <motion.div
                     key={poll.id}
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="bg-violet-500/5 border border-violet-500/20 rounded-2xl p-4 space-y-3"
+                    className="bg-violet-500/5 border border-violet-500/20 rounded-2xl p-3 sm:p-4 space-y-3"
                 >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-2">
                         <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                                <BarChart3 className="h-4 w-4 text-violet-400 shrink-0" />
+                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                <BarChart3 className="h-3.5 w-3.5 text-violet-400 shrink-0" />
                                 <span className="text-[10px] text-violet-400 font-bold uppercase">Sondage</span>
                                 {poll.is_anonymous && (
                                     <Badge className="bg-slate-500/20 text-slate-400 border-none text-[9px]">Anonyme</Badge>
@@ -215,11 +221,11 @@ export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetPr
                                 par {poll.creator_name} • {formatDistanceToNow(new Date(poll.created_at), { addSuffix: true, locale: fr })}
                             </p>
                         </div>
-                        {poll.created_by === userId && (
+                        {(poll.created_by === userId || isCreator) && (
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="h-7 w-7 text-slate-500 hover:text-red-400"
+                                className="h-7 w-7 text-slate-500 hover:text-red-400 shrink-0"
                                 onClick={() => deletePoll(poll.id)}
                             >
                                 <Trash2 className="h-3.5 w-3.5" />
@@ -227,25 +233,22 @@ export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetPr
                         )}
                     </div>
 
-                    {/* Poll Options */}
                     <div className="space-y-2">
                         {poll.options.map(opt => {
                             const hasVoted = opt.voters.includes(userId);
                             const percentage = poll.total_votes > 0 ? Math.round((opt.votes / poll.total_votes) * 100) : 0;
-
                             return (
                                 <motion.button
                                     key={opt.id}
                                     whileTap={{ scale: 0.98 }}
                                     onClick={() => votePoll(poll.id, opt.id)}
                                     className={cn(
-                                        "w-full rounded-xl p-3 text-left relative overflow-hidden transition-all",
+                                        "w-full rounded-xl p-2.5 sm:p-3 text-left relative overflow-hidden transition-all",
                                         hasVoted
                                             ? "border-2 border-violet-500/40 bg-violet-500/10"
                                             : "border border-white/10 bg-white/5 hover:bg-white/10"
                                     )}
                                 >
-                                    {/* Background progress bar */}
                                     <motion.div
                                         initial={{ width: 0 }}
                                         animate={{ width: `${percentage}%` }}
@@ -253,13 +256,13 @@ export function GroupPollWidget({ groupId, userId, userName }: GroupPollWidgetPr
                                         className="absolute inset-0 bg-violet-500/10 rounded-xl"
                                     />
                                     <div className="relative flex items-center justify-between">
-                                        <div className="flex items-center gap-2">
-                                            {hasVoted && <Check className="h-3.5 w-3.5 text-violet-400" />}
-                                            <span className={cn("text-sm", hasVoted ? "text-white font-bold" : "text-slate-300")}>
+                                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                                            {hasVoted && <Check className="h-3.5 w-3.5 text-violet-400 shrink-0" />}
+                                            <span className={cn("text-sm truncate", hasVoted ? "text-white font-bold" : "text-slate-300")}>
                                                 {opt.text}
                                             </span>
                                         </div>
-                                        <div className="flex items-center gap-2">
+                                        <div className="flex items-center gap-1.5 shrink-0 ml-2">
                                             <span className="text-xs text-slate-400 font-mono">{percentage}%</span>
                                             <span className="text-[10px] text-slate-500">({opt.votes})</span>
                                         </div>
@@ -448,7 +451,6 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
         const newCount = prayerCount + 1;
 
         try {
-            // Upsert - create or update
             const { error } = await supabase
                 .from('group_prayer_counter')
                 .upsert({
@@ -475,9 +477,7 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
     const progress = Math.min((prayerCount / prayerGoal) * 100, 100);
 
     return (
-        <motion.div
-            className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-4 space-y-3"
-        >
+        <motion.div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-3 sm:p-4 space-y-3">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
@@ -494,7 +494,6 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
                 </div>
             </div>
 
-            {/* Progress bar */}
             <div className="h-2.5 bg-white/5 rounded-full overflow-hidden">
                 <motion.div
                     initial={{ width: 0 }}
@@ -504,7 +503,6 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
                 />
             </div>
 
-            {/* Pray button */}
             <motion.div whileTap={{ scale: 0.95 }}>
                 <Button
                     className={cn(
@@ -517,18 +515,11 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
                     disabled={userHasPrayed}
                 >
                     {userHasPrayed ? (
-                        <>
-                            <Check className="h-4 w-4 mr-2" />
-                            J'ai prié aujourd'hui ✨
-                        </>
+                        <><Check className="h-4 w-4 mr-2" /> J&apos;ai prié aujourd&apos;hui ✨</>
                     ) : (
-                        <>
-                            <Heart className="h-4 w-4 mr-2" />
-                            Je prie maintenant 🙏
-                        </>
+                        <><Heart className="h-4 w-4 mr-2" /> Je prie maintenant 🙏</>
                     )}
 
-                    {/* Animation */}
                     <AnimatePresence>
                         {showAnimation && (
                             <motion.div
@@ -544,7 +535,6 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
                 </Button>
             </motion.div>
 
-            {/* Recent prayers */}
             {recentPrayers.length > 0 && (
                 <div className="pt-2 border-t border-white/5">
                     <p className="text-[10px] text-slate-500 mb-1.5">Dernières prières :</p>
@@ -583,9 +573,10 @@ interface GroupEventsWidgetProps {
     groupId: string;
     userId: string;
     userName: string;
+    isCreator: boolean;
 }
 
-export function GroupEventsWidget({ groupId, userId, userName }: GroupEventsWidgetProps) {
+export function GroupEventsWidget({ groupId, userId, userName, isCreator }: GroupEventsWidgetProps) {
     const [events, setEvents] = useState<GroupEvent[]>([]);
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -689,46 +680,41 @@ export function GroupEventsWidget({ groupId, userId, userName }: GroupEventsWidg
 
     return (
         <div className="space-y-3">
-            <Button
-                size="sm"
-                className="w-full rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 gap-2 h-9"
-                onClick={() => setShowCreate(true)}
-            >
-                <Calendar className="h-4 w-4" />
-                Créer un événement
-            </Button>
+            {/* Creator only */}
+            {isCreator && (
+                <Button
+                    size="sm"
+                    className="w-full rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 gap-2 h-9"
+                    onClick={() => setShowCreate(true)}
+                >
+                    <Calendar className="h-4 w-4" />
+                    Créer un événement
+                </Button>
+            )}
 
-            {/* Events list */}
             {events.map(event => {
                 const isAttending = event.attendees?.includes(userId);
-                const isExpired = new Date(event.event_date) < new Date();
-
                 return (
                     <motion.div
                         key={event.id}
                         initial={{ opacity: 0, y: 10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className={cn(
-                            "border rounded-2xl p-4",
-                            isExpired
-                                ? "bg-slate-500/5 border-slate-500/10 opacity-60"
-                                : "bg-teal-500/5 border-teal-500/20"
-                        )}
+                        className="bg-teal-500/5 border border-teal-500/20 rounded-2xl p-3 sm:p-4"
                     >
                         <div className="flex items-start gap-3">
-                            <div className="w-12 h-14 rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 flex flex-col items-center justify-center shrink-0">
-                                <span className="text-[10px] text-teal-300 font-bold uppercase">
+                            <div className="w-11 h-13 rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 flex flex-col items-center justify-center shrink-0 p-1">
+                                <span className="text-[9px] text-teal-300 font-bold uppercase">
                                     {new Date(event.event_date + 'T00:00:00').toLocaleDateString('fr-FR', { month: 'short' })}
                                 </span>
-                                <span className="text-lg font-black text-white">
+                                <span className="text-lg font-black text-white leading-none">
                                     {new Date(event.event_date + 'T00:00:00').getDate()}
                                 </span>
                             </div>
                             <div className="flex-1 min-w-0">
                                 <h4 className="font-bold text-white text-sm truncate">{event.title}</h4>
                                 <div className="flex items-center gap-2 mt-0.5">
-                                    <Clock className="h-3 w-3 text-slate-500" />
-                                    <span className="text-xs text-slate-400">
+                                    <Clock className="h-3 w-3 text-slate-500 shrink-0" />
+                                    <span className="text-xs text-slate-400 truncate">
                                         {formatEventDate(event.event_date)} à {event.event_time}
                                     </span>
                                 </div>
@@ -739,24 +725,22 @@ export function GroupEventsWidget({ groupId, userId, userName }: GroupEventsWidg
                                     <span className="text-[10px] text-slate-500">
                                         {event.attendees?.length || 0} participant(s)
                                     </span>
-                                    {!isExpired && (
-                                        <Button
-                                            size="sm"
-                                            className={cn(
-                                                "h-7 px-3 rounded-lg text-[10px] font-bold",
-                                                isAttending
-                                                    ? "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
-                                                    : "bg-teal-600 hover:bg-teal-500"
-                                            )}
-                                            onClick={() => toggleAttendance(event.id)}
-                                        >
-                                            {isAttending ? (
-                                                <><Check className="h-3 w-3 mr-1" /> Inscrit</>
-                                            ) : (
-                                                <><Plus className="h-3 w-3 mr-1" /> Participer</>
-                                            )}
-                                        </Button>
-                                    )}
+                                    <Button
+                                        size="sm"
+                                        className={cn(
+                                            "h-7 px-3 rounded-lg text-[10px] font-bold",
+                                            isAttending
+                                                ? "bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30"
+                                                : "bg-teal-600 hover:bg-teal-500"
+                                        )}
+                                        onClick={() => toggleAttendance(event.id)}
+                                    >
+                                        {isAttending ? (
+                                            <><Check className="h-3 w-3 mr-1" /> Inscrit</>
+                                        ) : (
+                                            <><Plus className="h-3 w-3 mr-1" /> Participer</>
+                                        )}
+                                    </Button>
                                 </div>
                             </div>
                         </div>
@@ -802,7 +786,7 @@ export function GroupEventsWidget({ groupId, userId, userName }: GroupEventsWidg
                                 value={newDescription}
                                 onChange={e => setNewDescription(e.target.value)}
                                 placeholder="Détails de l'événement..."
-                                className="mt-1 bg-white/5 border-white/10 rounded-xl min-h-[60px] resize-none"
+                                className="mt-1 bg-white/5 border-white/10 rounded-xl min-h-[80px] resize-none"
                             />
                         </div>
                         <div className="grid grid-cols-2 gap-3">
@@ -834,7 +818,7 @@ export function GroupEventsWidget({ groupId, userId, userName }: GroupEventsWidg
                             {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : (
                                 <>
                                     <Calendar className="h-4 w-4 mr-2" />
-                                    Créer l'événement
+                                    Créer l&apos;événement
                                 </>
                             )}
                         </Button>
@@ -847,7 +831,7 @@ export function GroupEventsWidget({ groupId, userId, userName }: GroupEventsWidg
 
 
 // =====================================================
-// 4. GROUP TOOLS PANEL (combines all features)
+// 4. GROUP TOOLS PANEL (5 tools - creator publishes, members interact)
 // =====================================================
 
 interface GroupToolsPanelProps {
@@ -860,7 +844,37 @@ interface GroupToolsPanelProps {
 }
 
 export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose, isOpen }: GroupToolsPanelProps) {
-    const [activeSection, setActiveSection] = useState<'polls' | 'prayer' | 'events' | null>(null);
+    const [activeSection, setActiveSection] = useState<'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | null>(null);
+    const [dailyVerse, setDailyVerse] = useState('');
+    const [announcement, setAnnouncement] = useState('');
+    const [savedVerse, setSavedVerse] = useState<string | null>(null);
+    const [savedAnnouncement, setSavedAnnouncement] = useState<string | null>(null);
+
+    // Load saved verse and announcement from localStorage
+    useEffect(() => {
+        if (isOpen) {
+            const verse = localStorage.getItem(`group_verse_${groupId}`);
+            const ann = localStorage.getItem(`group_announcement_${groupId}`);
+            if (verse) setSavedVerse(verse);
+            if (ann) setSavedAnnouncement(ann);
+        }
+    }, [isOpen, groupId]);
+
+    const saveVerse = () => {
+        if (!dailyVerse.trim()) return;
+        localStorage.setItem(`group_verse_${groupId}`, dailyVerse.trim());
+        setSavedVerse(dailyVerse.trim());
+        setDailyVerse('');
+        toast.success('Verset du jour épinglé ! 📖');
+    };
+
+    const saveAnnouncement = () => {
+        if (!announcement.trim()) return;
+        localStorage.setItem(`group_announcement_${groupId}`, announcement.trim());
+        setSavedAnnouncement(announcement.trim());
+        setAnnouncement('');
+        toast.success('Annonce publiée ! 📢');
+    };
 
     const tools = [
         {
@@ -868,7 +882,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
             icon: BarChart3,
             label: 'Sondages',
             gradient: 'from-violet-600 to-purple-600',
-            description: 'Créer des sondages'
+            description: 'Voter & créer'
         },
         {
             id: 'prayer' as const,
@@ -882,7 +896,21 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
             icon: Calendar,
             label: 'Événements',
             gradient: 'from-teal-600 to-cyan-600',
-            description: 'Planifier des rencontres'
+            description: 'Rendez-vous'
+        },
+        {
+            id: 'verse' as const,
+            icon: BookOpen,
+            label: 'Verset du jour',
+            gradient: 'from-sky-500 to-blue-600',
+            description: 'Méditation'
+        },
+        {
+            id: 'announcement' as const,
+            icon: Megaphone,
+            label: 'Annonces',
+            gradient: 'from-rose-500 to-pink-600',
+            description: 'Communiqués'
         }
     ];
 
@@ -896,29 +924,51 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
                 >
-                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-4 space-y-3 mt-3">
-                        {/* Tool buttons */}
+                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 sm:p-4 space-y-3 mt-3">
+                        {/* Tool grid */}
                         {activeSection === null ? (
-                            <div className="grid grid-cols-3 gap-2">
-                                {tools.map(tool => (
-                                    <motion.button
-                                        key={tool.id}
-                                        whileHover={{ scale: 1.03 }}
-                                        whileTap={{ scale: 0.97 }}
-                                        onClick={() => setActiveSection(tool.id)}
-                                        className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all text-center space-y-1.5"
-                                    >
-                                        <div className={cn(
-                                            "w-9 h-9 rounded-lg bg-gradient-to-br mx-auto flex items-center justify-center",
-                                            tool.gradient
-                                        )}>
-                                            <tool.icon className="h-4 w-4 text-white" />
+                            <>
+                                {/* Pinned Content visible by all */}
+                                {savedVerse && (
+                                    <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3 space-y-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <BookOpen className="h-3.5 w-3.5 text-sky-400" />
+                                            <span className="text-[10px] font-bold text-sky-400 uppercase">Verset du jour</span>
                                         </div>
-                                        <p className="text-xs font-bold text-white">{tool.label}</p>
-                                        <p className="text-[9px] text-slate-500">{tool.description}</p>
-                                    </motion.button>
-                                ))}
-                            </div>
+                                        <p className="text-sm text-slate-200 italic">{savedVerse}</p>
+                                    </div>
+                                )}
+                                {savedAnnouncement && (
+                                    <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 space-y-1">
+                                        <div className="flex items-center gap-1.5">
+                                            <Megaphone className="h-3.5 w-3.5 text-rose-400" />
+                                            <span className="text-[10px] font-bold text-rose-400 uppercase">Annonce</span>
+                                        </div>
+                                        <p className="text-sm text-slate-200">{savedAnnouncement}</p>
+                                    </div>
+                                )}
+
+                                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
+                                    {tools.map(tool => (
+                                        <motion.button
+                                            key={tool.id}
+                                            whileHover={{ scale: 1.03 }}
+                                            whileTap={{ scale: 0.97 }}
+                                            onClick={() => setActiveSection(tool.id)}
+                                            className="p-2.5 sm:p-3 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all text-center space-y-1"
+                                        >
+                                            <div className={cn(
+                                                "w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br mx-auto flex items-center justify-center",
+                                                tool.gradient
+                                            )}>
+                                                <tool.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-white" />
+                                            </div>
+                                            <p className="text-[10px] sm:text-xs font-bold text-white leading-tight">{tool.label}</p>
+                                            <p className="text-[8px] sm:text-[9px] text-slate-500 leading-tight hidden sm:block">{tool.description}</p>
+                                        </motion.button>
+                                    ))}
+                                </div>
+                            </>
                         ) : (
                             <>
                                 <div className="flex items-center gap-2 mb-2">
@@ -937,13 +987,103 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                 </div>
 
                                 {activeSection === 'polls' && (
-                                    <GroupPollWidget groupId={groupId} userId={userId} userName={userName} />
+                                    <GroupPollWidget groupId={groupId} userId={userId} userName={userName} isCreator={isCreator} />
                                 )}
                                 {activeSection === 'prayer' && (
                                     <CollectivePrayerCounter groupId={groupId} userId={userId} userName={userName} />
                                 )}
                                 {activeSection === 'events' && (
-                                    <GroupEventsWidget groupId={groupId} userId={userId} userName={userName} />
+                                    <GroupEventsWidget groupId={groupId} userId={userId} userName={userName} isCreator={isCreator} />
+                                )}
+                                {activeSection === 'verse' && (
+                                    <div className="space-y-3">
+                                        {savedVerse && (
+                                            <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3">
+                                                <p className="text-sm text-slate-200 italic">📖 {savedVerse}</p>
+                                                {isCreator && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="mt-2 h-7 text-[10px] text-red-400"
+                                                        onClick={() => {
+                                                            localStorage.removeItem(`group_verse_${groupId}`);
+                                                            setSavedVerse(null);
+                                                        }}
+                                                    >
+                                                        <X className="h-3 w-3 mr-1" /> Retirer
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )}
+                                        {isCreator ? (
+                                            <div className="space-y-2">
+                                                <Textarea
+                                                    value={dailyVerse}
+                                                    onChange={e => setDailyVerse(e.target.value)}
+                                                    placeholder="Collez un verset biblique pour le groupe..."
+                                                    className="bg-white/5 border-white/10 rounded-xl min-h-[80px] resize-none text-sm"
+                                                />
+                                                <Button
+                                                    className="w-full h-9 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 font-bold text-xs"
+                                                    onClick={saveVerse}
+                                                    disabled={!dailyVerse.trim()}
+                                                >
+                                                    <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+                                                    Épingler le verset
+                                                </Button>
+                                            </div>
+                                        ) : !savedVerse && (
+                                            <div className="text-center py-4">
+                                                <BookOpen className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                                                <p className="text-xs text-slate-500">Aucun verset épinglé par le créateur</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {activeSection === 'announcement' && (
+                                    <div className="space-y-3">
+                                        {savedAnnouncement && (
+                                            <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3">
+                                                <p className="text-sm text-slate-200">📢 {savedAnnouncement}</p>
+                                                {isCreator && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="mt-2 h-7 text-[10px] text-red-400"
+                                                        onClick={() => {
+                                                            localStorage.removeItem(`group_announcement_${groupId}`);
+                                                            setSavedAnnouncement(null);
+                                                        }}
+                                                    >
+                                                        <X className="h-3 w-3 mr-1" /> Retirer
+                                                    </Button>
+                                                )}
+                                            </div>
+                                        )}
+                                        {isCreator ? (
+                                            <div className="space-y-2">
+                                                <Textarea
+                                                    value={announcement}
+                                                    onChange={e => setAnnouncement(e.target.value)}
+                                                    placeholder="Écrivez une annonce pour le groupe..."
+                                                    className="bg-white/5 border-white/10 rounded-xl min-h-[80px] resize-none text-sm"
+                                                />
+                                                <Button
+                                                    className="w-full h-9 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 font-bold text-xs"
+                                                    onClick={saveAnnouncement}
+                                                    disabled={!announcement.trim()}
+                                                >
+                                                    <Megaphone className="h-3.5 w-3.5 mr-1.5" />
+                                                    Publier l&apos;annonce
+                                                </Button>
+                                            </div>
+                                        ) : !savedAnnouncement && (
+                                            <div className="text-center py-4">
+                                                <Megaphone className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                                                <p className="text-xs text-slate-500">Aucune annonce du créateur</p>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                             </>
                         )}
