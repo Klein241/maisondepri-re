@@ -1680,11 +1680,11 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         <NotificationBell />
                                     </div>
                                 </div>
-                                {/* Action Buttons - horizontal scroll on mobile */}
-                                <div className="flex gap-2 overflow-x-auto scrollbar-hide pb-2 -mx-1 px-1">
+                                {/* Row 1: Social actions */}
+                                <div className="flex gap-2 pb-1.5 -mx-1 px-1">
                                     <Button
                                         size="sm"
-                                        className="shrink-0 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        className="flex-1 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
                                         onClick={() => requireAuth(() => setViewState('friends'))}
                                     >
                                         <UserPlus className="h-3.5 w-3.5" />
@@ -1692,7 +1692,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </Button>
                                     <Button
                                         size="sm"
-                                        className="shrink-0 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
                                         onClick={() => requireAuth(() => { loadGroups(); setViewState('groups'); })}
                                     >
                                         <Users className="h-3.5 w-3.5" />
@@ -1700,16 +1700,19 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </Button>
                                     <Button
                                         size="sm"
-                                        className="shrink-0 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
                                         onClick={() => requireAuth(() => setViewState('messages'))}
                                     >
                                         <MessageCircle className="h-3.5 w-3.5" />
                                         Messages
                                     </Button>
+                                </div>
+                                {/* Row 2: Content actions */}
+                                <div className="flex gap-2 pb-2 -mx-1 px-1">
                                     <EventCalendarButton />
                                     <Button
                                         size="sm"
-                                        className="shrink-0 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative overflow-hidden animate-pulse shadow-lg shadow-amber-500/30"
+                                        className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative overflow-hidden animate-pulse shadow-lg shadow-amber-500/30"
                                         onClick={() => { setBibleViewTarget('games'); setGlobalActiveTab('bible'); }}
                                     >
                                         <Gamepad2 className="h-3.5 w-3.5" />
@@ -1843,7 +1846,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
                                 <TabsContent value="chat" className="mt-0 flex flex-col -mx-4">
-                                    <div className="relative" style={{ height: 'calc(100dvh - 280px)', minHeight: '400px' }}>
+                                    <div className="relative flex-1" style={{ height: 'calc(100dvh - 300px)', minHeight: '400px', maxHeight: 'calc(100dvh - 200px)' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
@@ -2278,7 +2281,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                 <Users className="h-7 w-7 text-indigo-400" />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 mb-1">
+                                                                <div className="flex items-center gap-2 mb-1 flex-wrap">
                                                                     <h3 className="font-bold text-white truncate">{group.name}</h3>
                                                                     {group.isAnswered && (
                                                                         <Badge className="bg-amber-500/20 text-amber-400 border-none text-[10px]">
@@ -2288,7 +2291,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                     )}
                                                                 </div>
                                                                 <p className="text-sm text-slate-400 line-clamp-2">{group.description}</p>
-                                                                <div className="flex items-center gap-3 mt-3">
+                                                                <div className="flex items-center gap-3 mt-2">
                                                                     <span className="text-xs text-slate-500 flex items-center gap-1">
                                                                         <Users className="h-3 w-3" />
                                                                         {group.memberCount || 0} membres
@@ -2300,6 +2303,11 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                         </span>
                                                                     )}
                                                                 </div>
+                                                                {/* Creator name */}
+                                                                <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
+                                                                    <Crown className="h-3 w-3 text-amber-500" />
+                                                                    Créé par {(group as any).profiles?.full_name || 'Utilisateur'}
+                                                                </p>
                                                             </div>
                                                             <ChevronRight className="h-5 w-5 text-slate-500 shrink-0" />
                                                         </div>
@@ -2314,24 +2322,39 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                             </div>
                                                         )}
 
-                                                        {group.isOpen && (
-                                                            <div className="mt-4 pt-4 border-t border-white/5">
-                                                                <Button
-                                                                    size="sm"
-                                                                    className="w-full h-10 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
-                                                                    onClick={(e) => {
-                                                                        e.stopPropagation();
-                                                                        requestJoinGroup(group.id);
-                                                                    }}
-                                                                >
-                                                                    <Shield className="h-4 w-4 mr-2" />
-                                                                    Demander à rejoindre
-                                                                </Button>
+                                                        {/* Join / Request button - always visible */}
+                                                        <div className="mt-3 pt-3 border-t border-white/5">
+                                                            <Button
+                                                                size="sm"
+                                                                className={cn(
+                                                                    "w-full h-10 rounded-xl font-bold",
+                                                                    group.isOpen
+                                                                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
+                                                                        : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
+                                                                )}
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    requestJoinGroup(group.id);
+                                                                }}
+                                                            >
+                                                                {group.isOpen ? (
+                                                                    <>
+                                                                        <UserPlus className="h-4 w-4 mr-2" />
+                                                                        Rejoindre le groupe
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <Shield className="h-4 w-4 mr-2" />
+                                                                        Demander à rejoindre
+                                                                    </>
+                                                                )}
+                                                            </Button>
+                                                            {!group.isOpen && (
                                                                 <p className="text-[10px] text-slate-600 mt-1.5 text-center">
                                                                     Le créateur du groupe approuvera votre demande
                                                                 </p>
-                                                            </div>
-                                                        )}
+                                                            )}
+                                                        </div>
                                                     </CardContent>
                                                 </Card>
                                             ))}
