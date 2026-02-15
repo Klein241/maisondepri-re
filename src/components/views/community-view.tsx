@@ -635,21 +635,35 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         }
     };
 
-    // Request to join a group (instead of auto-join)
+    // Request to join a group - or directly join if group is open
     const requestJoinGroup = async (groupId: string) => {
         if (!user) return;
+
+        // Check if this is an open group - if so, join directly
+        const targetGroup = groups.find(g => g.id === groupId);
+        if (targetGroup?.isOpen) {
+            await joinGroup(groupId);
+            return;
+        }
+
         try {
             // Check if already requested
-            const { data: existing } = await supabase
-                .from('prayer_group_join_requests')
-                .select('id')
-                .eq('group_id', groupId)
-                .eq('user_id', user.id)
-                .maybeSingle();
+            let alreadyRequested = false;
+            try {
+                const { data: existing } = await supabase
+                    .from('prayer_group_join_requests')
+                    .select('id')
+                    .eq('group_id', groupId)
+                    .eq('user_id', user.id)
+                    .maybeSingle();
 
-            if (existing) {
-                toast.info('Vous avez déjà envoyé une demande pour ce groupe');
-                return;
+                if (existing) {
+                    toast.info('Vous avez déjà envoyé une demande pour ce groupe');
+                    return;
+                }
+            } catch (checkErr: any) {
+                // If the check fails due to RLS, proceed with insert anyway
+                console.log('Check existing request failed, proceeding:', checkErr?.message);
             }
 
             const { error } = await supabase
@@ -661,15 +675,15 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 });
 
             if (error) {
-                // Fallback: if table doesn't exist, use direct join  
-                if (error.message.includes('does not exist') || error.code === '42P01') {
+                // Fallback: if table doesn't exist or RLS error, use direct join  
+                if (error.message.includes('does not exist') || error.code === '42P01' || error.code === '42P17') {
                     await joinGroup(groupId);
                     return;
                 }
                 throw error;
             }
 
-            // Send notification to group creator via Supabase notifications
+            // Send notification to group creator
             const { data: group } = await supabase
                 .from('prayer_groups')
                 .select('created_by, name')
@@ -2060,7 +2074,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                         {/* Create Group Dialog */}
                         <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
-                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem]">
+                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-[2rem]">
                                 <DialogHeader>
                                     <DialogTitle className="text-xl font-bold">Créer un groupe de prière</DialogTitle>
                                     <DialogDescription className="text-slate-400">
@@ -2108,7 +2122,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             </DialogContent>
                         </Dialog>
 
-                        <ScrollArea className="flex-1 px-6">
+                        <ScrollArea className="flex-1 px-3 sm:px-6">
                             <div className="space-y-6 pb-32">
                                 {/* ===== MES GROUPES ===== */}
                                 {groups.filter(g => userGroups.includes(g.id)).length > 0 && (
@@ -2392,8 +2406,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         exit={{ opacity: 0, x: -20 }}
                         className="relative z-10 flex flex-col h-[100dvh] pb-0 max-w-4xl mx-auto w-full"
                     >
-                        <header className="px-6 pt-12 pb-4 border-b border-white/5">
-                            <div className="flex items-center gap-4 mb-4">
+                        <header className="px-3 sm:px-6 pt-12 pb-4 border-b border-white/5">
+                            <div className="flex items-center gap-2 sm:gap-4 mb-4">
                                 <Button
                                     variant="ghost"
                                     size="icon"
