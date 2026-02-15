@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search, Pin, Shield, BellRing,
     Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
-    Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings,
+    Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings, Wrench,
     MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck, Gamepad2, LogIn
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { FriendSystem } from "@/components/community/friend-system";
 import { NotificationBell } from "@/components/notification-bell";
 import { IncomingCallOverlay, useCallListener, DMCallButtons } from "@/components/community/call-system";
 import { EventCalendarButton } from "@/components/community/event-calendar";
+import { GroupToolsPanel } from "@/components/community/group-tools";
 import { PrayerCard } from "@/components/community/prayer-card";
 import { TestimonyCard } from "@/components/community/testimony-card";
 import { ChatMessage } from "@/components/community/chat-message";
@@ -126,6 +127,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [showMembersPanel, setShowMembersPanel] = useState(false);
     const [groupMembers, setGroupMembers] = useState<any[]>([]);
     const [showPinnedPrayer, setShowPinnedPrayer] = useState(false);
+    const [showGroupTools, setShowGroupTools] = useState(false);
 
     // User friends for suggestions
     const [userFriends, setUserFriends] = useState<string[]>([]);
@@ -2469,6 +2471,33 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </p>
                                 </div>
                             )}
+
+                            {/* Group Tools Toggle */}
+                            <div className="flex gap-2 mt-2">
+                                <Button
+                                    size="sm"
+                                    className={cn(
+                                        "flex-1 rounded-xl gap-2 h-9 text-xs font-bold transition-all",
+                                        showGroupTools
+                                            ? "bg-violet-600/20 text-violet-400 border border-violet-500/30"
+                                            : "bg-white/5 text-slate-400 hover:bg-white/10"
+                                    )}
+                                    onClick={() => setShowGroupTools(!showGroupTools)}
+                                >
+                                    <Wrench className="h-3.5 w-3.5" />
+                                    {showGroupTools ? 'Masquer les outils' : 'Outils du groupe'}
+                                </Button>
+                            </div>
+
+                            {/* Group Tools Panel */}
+                            <GroupToolsPanel
+                                groupId={selectedGroup.id}
+                                userId={user?.id || ''}
+                                userName={user?.name || 'Utilisateur'}
+                                isCreator={selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id}
+                                isOpen={showGroupTools}
+                                onClose={() => setShowGroupTools(false)}
+                            />
 
                             {/* Members Panel (for creator) */}
                             <AnimatePresence>
