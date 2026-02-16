@@ -1185,16 +1185,25 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         const parts = content.split(urlRegex);
         const hasUrl = parts.length > 1;
 
-        // Highlight @mentions
-        const renderWithMentions = (text: string) => {
-            const mentionParts = text.split(/(@\w[\w\s]*?\s)/g);
-            if (mentionParts.length <= 1) return text;
-            return mentionParts.map((p, i) =>
-                p.startsWith('@') ? <span key={i} className="text-indigo-400 font-semibold">{p}</span> : p
-            );
+        // Highlight @mentions and **bold**
+        const renderWithFormatting = (text: string) => {
+            // Split by bold (**text**)
+            const boldParts = text.split(/(\*\*.*?\*\*)/g);
+            return boldParts.map((part, i) => {
+                if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
+                    return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
+                }
+
+                // Handle mentions within non-bold text
+                const mentionParts = part.split(/(@\w[\w\s]*?\s)/g);
+                if (mentionParts.length <= 1) return part;
+                return mentionParts.map((p, j) =>
+                    p.startsWith('@') ? <span key={`${i}-${j}`} className="text-indigo-400 font-semibold">{p}</span> : p
+                );
+            });
         };
 
-        if (!hasUrl) return <p className="text-sm whitespace-pre-wrap break-words">{renderWithMentions(content)}</p>;
+        if (!hasUrl) return <p className="text-sm whitespace-pre-wrap break-words">{renderWithFormatting(content)}</p>;
 
         return (
             <div className="text-sm whitespace-pre-wrap break-words">
@@ -1222,7 +1231,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                         );
                     }
                     urlRegex.lastIndex = 0;
-                    return <span key={i}>{part}</span>;
+                    return <span key={i}>{renderWithFormatting(part)}</span>;
                 })}
             </div>
         );
@@ -1339,13 +1348,15 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         if (!bibleReference.trim()) { toast.error('Entrez une référence (ex: Jean 3:16)'); return; }
         setIsFetchingBible(true);
         try {
-            const res = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&version=${bibleVersion}`);
+            // Fix param name: version -> translation, and ensure lowercase
+            const res = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&translation=${bibleVersion.toLowerCase()}`);
             if (!res.ok) throw new Error('Not found');
             const data = await res.json();
             setBibleContent(data.text || data.content || 'Passage non trouvé');
         } catch {
-            // Fallback: just set the reference as content
-            setBibleContent(`📖 ${bibleReference} (${bibleVersion})\n\n[Passage à lire dans votre Bible]`);
+            // Fallback: just set the reference as content but cleaner
+            setBibleContent(`[Passage non trouvé ou erreur réseau. Veuillez vérifier la référence.]`);
+            toast.error("Impossible de récupérer le passage. Vérifiez la référence.");
         }
         setIsFetchingBible(false);
     };

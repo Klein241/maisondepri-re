@@ -116,11 +116,15 @@ export function PrayerGroupManager({
             console.log('[PrayerGroupManager] Loading group for prayerId:', prayerId);
 
             // Primary: Check if group exists for this prayer by prayer_request_id
-            let { data: groupData, error: groupError } = await supabase
+            // Use order+limit to handle cases where multiple groups might have been created
+            let { data: groupDataArray, error: groupError } = await supabase
                 .from('prayer_groups')
                 .select('*')
                 .eq('prayer_request_id', prayerId)
-                .maybeSingle();
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            let groupData = groupDataArray?.[0];
 
             if (groupError) {
                 console.error('[PrayerGroupManager] Error querying group by prayer_request_id:', groupError);
