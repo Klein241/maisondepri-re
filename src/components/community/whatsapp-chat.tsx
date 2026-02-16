@@ -50,6 +50,16 @@ interface ChatGroup {
     unreadCount: number;
     is_admin_created: boolean;
     prayer_request_id?: string;
+    avatar_url?: string | null;
+    created_by?: string;
+}
+
+interface GroupMember {
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+    is_online?: boolean;
+    role?: string;
 }
 
 interface Message {
@@ -168,6 +178,8 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     const [allUsers, setAllUsers] = useState<ChatUser[]>([]);
     const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
     const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+    const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
+    const [showGroupMembers, setShowGroupMembers] = useState(false);
 
     // UI State
     const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null);
@@ -316,7 +328,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             })
             .subscribe();
 
-        // Subscribe to group messages
+        // Subscribe to group messages — listen for ALL inserts, filter by current group
         const groupChannel = supabase
             .channel(`grp_${user.id}_${sessionId}`)
             .on('postgres_changes', {
@@ -327,6 +339,24 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 const msg = payload.new as any;
                 const currentGroup = selectedGroupRef.current;
                 if (currentGroup && msg.group_id === currentGroup.id) {
+                    // Skip if we already have this message (optimistic add)
+                    // Use a small delay to let optimistic add settle
+                    if (msg.user_id === user.id) {
+                        // Own message — already added optimistically, just skip
+                        setMessages(prev => {
+                            if (prev.find(m => m.id === msg.id)) return prev;
+                            // If not found (edge case), add it
+                            return [...prev, {
+                                ...msg,
+                                sender_id: msg.user_id,
+                                sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                                is_read: true
+                            }];
+                        });
+                        return;
+                    }
+
+                    // Other user's message — fetch sender profile and add
                     const { data: sender } = await supabase
                         .from('profiles')
                         .select('id, full_name, avatar_url')
@@ -342,6 +372,9 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             is_read: true
                         }];
                     });
+                } else if (!currentGroup) {
+                    // User is on the list view — reload groups to update last message
+                    loadGroups();
                 }
             })
             .subscribe();
@@ -515,16 +548,24 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 const userGroups: ChatGroup[] = [];
                 const adminGroupsList: ChatGroup[] = [];
 
-                (groupData || []).forEach((g: any) => {
+                for (const g of (groupData || [])) {
+                    // Get member count
+                    const { count } = await supabase
+                        .from('prayer_group_members')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('group_id', g.id);
+
                     const group: ChatGroup = {
                         id: g.id,
                         name: g.name,
                         description: g.description,
                         is_urgent: g.is_urgent || false,
-                        member_count: 0,
+                        member_count: count || 0,
                         unreadCount: 0,
                         is_admin_created: !g.prayer_request_id,
-                        prayer_request_id: g.prayer_request_id
+                        prayer_request_id: g.prayer_request_id,
+                        avatar_url: g.avatar_url || null,
+                        created_by: g.created_by,
                     };
 
                     if (g.prayer_request_id) {
@@ -532,7 +573,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     } else {
                         adminGroupsList.push(group);
                     }
-                });
+                }
 
                 setGroups(userGroups);
                 setAdminGroups(adminGroupsList);
@@ -542,6 +583,29 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             }
         } catch (e) {
             console.error('Error loading groups:', e);
+        }
+    };
+
+    // Load group members with online status
+    const loadGroupMembers = async (groupId: string) => {
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_members')
+                .select('user_id, role, profiles:user_id(id, full_name, avatar_url, is_online)')
+                .eq('group_id', groupId);
+
+            if (error) throw error;
+
+            const members: GroupMember[] = (data || []).map((m: any) => ({
+                id: m.profiles?.id || m.user_id,
+                full_name: m.profiles?.full_name || 'Utilisateur',
+                avatar_url: m.profiles?.avatar_url || null,
+                is_online: m.profiles?.is_online || onlineUsers[m.user_id] || false,
+                role: m.role || 'member',
+            }));
+            setGroupMembers(members);
+        } catch (e) {
+            console.error('Error loading group members:', e);
         }
     };
 
@@ -908,6 +972,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         setSelectedConversation(null);
         setView('group');
         loadMessages('group', group.id);
+        loadGroupMembers(group.id);
     };
 
     // Start new conversation - creates it in Supabase
@@ -993,6 +1058,49 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         }
     };
 
+    // URL regex for detecting links in messages
+    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+
+    // Render message content with clickable links
+    const renderMessageContent = (content: string) => {
+        const parts = content.split(urlRegex);
+        if (parts.length <= 1) return <p className="text-sm whitespace-pre-wrap break-words">{content}</p>;
+
+        return (
+            <div className="text-sm whitespace-pre-wrap break-words">
+                {parts.map((part, i) => {
+                    if (urlRegex.test(part)) {
+                        urlRegex.lastIndex = 0; // Reset regex
+                        // Extract domain for display
+                        let domain = '';
+                        try { domain = new URL(part).hostname; } catch { domain = part; }
+                        return (
+                            <span key={i}>
+                                <a
+                                    href={part}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-300 underline hover:text-blue-200 transition-colors break-all"
+                                >
+                                    {part}
+                                </a>
+                                <div className="mt-1 rounded-lg bg-white/5 border border-white/10 p-2 max-w-full overflow-hidden">
+                                    <p className="text-[10px] text-slate-400 truncate">🔗 {domain}</p>
+                                    <p className="text-xs text-slate-300 truncate">{part.length > 60 ? part.slice(0, 60) + '...' : part}</p>
+                                </div>
+                            </span>
+                        );
+                    }
+                    urlRegex.lastIndex = 0;
+                    return <span key={i}>{part}</span>;
+                })}
+            </div>
+        );
+    };
+
+    // Count online members in current group
+    const onlineMembersCount = groupMembers.filter(m => m.is_online || onlineUsers[m.id]).length;
+
     if (!user) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -1004,7 +1112,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     // List View (WhatsApp-style)
     if (view === 'list') {
         return (
-            <div className="flex flex-col h-full bg-gradient-to-b from-slate-900 to-slate-950">
+            <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
                 {/* Header */}
                 <div className="p-4 border-b border-white/10">
                     <div className="flex items-center justify-between mb-4">
@@ -1020,21 +1128,21 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                         </Button>
                     </div>
 
-                    {/* Tabs */}
-                    <div className="flex gap-2">
+                    {/* Tabs - responsive scroll on mobile */}
+                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none -mx-1 px-1">
                         <Button
                             variant={activeTab === 'conversations' ? 'default' : 'ghost'}
                             size="sm"
                             onClick={() => setActiveTab('conversations')}
                             className={cn(
-                                "rounded-full",
+                                "rounded-full shrink-0 text-xs sm:text-sm",
                                 activeTab === 'conversations' && "bg-indigo-600"
                             )}
                         >
-                            <MessageSquare className="h-4 w-4 mr-1" />
+                            <MessageSquare className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
                             Privés
                             {conversations.reduce((acc, c) => acc + c.unreadCount, 0) > 0 && (
-                                <Badge className="ml-1 bg-red-500 text-white h-5 w-5 p-0 flex items-center justify-center rounded-full">
+                                <Badge className="ml-1 bg-red-500 text-white h-5 w-5 p-0 flex items-center justify-center rounded-full text-[10px]">
                                     {conversations.reduce((acc, c) => acc + c.unreadCount, 0)}
                                 </Badge>
                             )}
@@ -1044,11 +1152,11 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             size="sm"
                             onClick={() => setActiveTab('groups')}
                             className={cn(
-                                "rounded-full",
+                                "rounded-full shrink-0 text-xs sm:text-sm",
                                 activeTab === 'groups' && "bg-indigo-600"
                             )}
                         >
-                            <Users className="h-4 w-4 mr-1" />
+                            <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
                             Groupes
                         </Button>
                         <Button
@@ -1056,11 +1164,11 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             size="sm"
                             onClick={() => setActiveTab('admin_groups')}
                             className={cn(
-                                "rounded-full",
+                                "rounded-full shrink-0 text-xs sm:text-sm",
                                 activeTab === 'admin_groups' && "bg-purple-600"
                             )}
                         >
-                            <Users className="h-4 w-4 mr-1" />
+                            <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4 mr-1" />
                             Officiels
                         </Button>
                     </div>
@@ -1098,7 +1206,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                     <button
                                         key={conv.id}
                                         onClick={() => openConversation(conv)}
-                                        className="w-full p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
+                                        className="w-full p-3 sm:p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left overflow-hidden"
                                     >
                                         <div className="relative">
                                             <Avatar className="h-12 w-12">
@@ -1111,21 +1219,21 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                                 <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-slate-900" />
                                             )}
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center justify-between">
-                                                <span className="font-medium text-white truncate">
+                                        <div className="flex-1 min-w-0 overflow-hidden">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <span className="font-medium text-white truncate text-sm sm:text-base">
                                                     {conv.participant.full_name || 'Utilisateur'}
                                                 </span>
-                                                <span className="text-xs text-slate-500">
+                                                <span className="text-[10px] sm:text-xs text-slate-500 shrink-0">
                                                     {formatTime(conv.lastMessageAt)}
                                                 </span>
                                             </div>
-                                            <div className="flex items-center justify-between">
-                                                <p className="text-sm text-slate-400 truncate">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-xs sm:text-sm text-slate-400 truncate">
                                                     {conv.lastMessage}
                                                 </p>
                                                 {conv.unreadCount > 0 && (
-                                                    <Badge className="bg-indigo-600 text-white h-5 min-w-5 flex items-center justify-center rounded-full text-xs">
+                                                    <Badge className="bg-indigo-600 text-white h-5 min-w-5 flex items-center justify-center rounded-full text-xs shrink-0">
                                                         {conv.unreadCount}
                                                     </Badge>
                                                 )}
@@ -1148,7 +1256,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                     <button
                                         key={group.id}
                                         onClick={() => openGroup(group)}
-                                        className="w-full p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
+                                        className="w-full p-3 sm:p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left overflow-hidden"
                                     >
                                         <div className={cn(
                                             "w-12 h-12 rounded-full flex items-center justify-center",
@@ -1158,16 +1266,17 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                         )}>
                                             <Users className="h-6 w-6 text-white" />
                                         </div>
-                                        <div className="flex-1 min-w-0">
+                                        <div className="flex-1 min-w-0 overflow-hidden">
                                             <div className="flex items-center gap-2">
-                                                <span className="font-medium text-white truncate">{group.name}</span>
+                                                <span className="font-medium text-white truncate text-sm sm:text-base">{group.name}</span>
                                                 {group.is_urgent && (
-                                                    <Badge className="bg-red-500/20 text-red-400 text-xs">URGENT</Badge>
+                                                    <Badge className="bg-red-500/20 text-red-400 text-[10px] sm:text-xs shrink-0">URGENT</Badge>
                                                 )}
                                             </div>
-                                            <p className="text-sm text-slate-400 truncate">
+                                            <p className="text-xs sm:text-sm text-slate-400 truncate">
                                                 {group.description || 'Groupe de prière'}
                                             </p>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">{group.member_count} membres</p>
                                         </div>
                                     </button>
                                 ))
@@ -1185,7 +1294,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                     <button
                                         key={group.id}
                                         onClick={() => openGroup(group)}
-                                        className="w-full p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left"
+                                        className="w-full p-3 sm:p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left overflow-hidden"
                                     >
                                         <div className={cn(
                                             "w-12 h-12 rounded-full flex items-center justify-center",
@@ -1288,7 +1397,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     const currentGroup = view === 'group' ? selectedGroup : null;
 
     return (
-        <div className="flex flex-col h-full bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
             {/* Chat Header */}
             <div className="p-3 border-b border-white/10 flex items-center gap-3 bg-slate-900/80 backdrop-blur-sm">
                 <Button variant="ghost" size="icon" onClick={() => setView('list')}>
@@ -1356,29 +1465,49 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 {currentGroup && (
                     <>
                         <div className={cn(
-                            "w-10 h-10 rounded-full flex items-center justify-center",
+                            "w-10 h-10 shrink-0 rounded-full flex items-center justify-center overflow-hidden",
                             currentGroup.is_urgent
                                 ? "bg-gradient-to-br from-red-500 to-orange-500"
                                 : "bg-gradient-to-br from-indigo-500 to-purple-500"
                         )}>
-                            <Users className="h-5 w-5 text-white" />
+                            {currentGroup.avatar_url ? (
+                                <img src={currentGroup.avatar_url} alt={currentGroup.name} className="w-full h-full object-cover" />
+                            ) : (
+                                <Users className="h-5 w-5 text-white" />
+                            )}
                         </div>
-                        <div className="flex-1">
-                            <p className="font-medium text-white flex items-center gap-2">
-                                {currentGroup.name}
+                        <div className="flex-1 min-w-0 overflow-hidden" onClick={() => setShowGroupMembers(!showGroupMembers)}>
+                            <p className="font-medium text-white flex items-center gap-2 text-sm sm:text-base truncate cursor-pointer">
+                                <span className="truncate">{currentGroup.name}</span>
                                 {currentGroup.is_urgent && (
-                                    <Badge className="bg-red-500/20 text-red-400 text-xs">URGENT</Badge>
+                                    <Badge className="bg-red-500/20 text-red-400 text-[10px] shrink-0">URGENT</Badge>
                                 )}
                             </p>
-                            <p className="text-xs text-slate-400">
-                                {currentGroup.member_count} membres
+                            <p className="text-[10px] sm:text-xs text-slate-400 flex items-center gap-1">
+                                <span>{currentGroup.member_count} membres</span>
+                                {onlineMembersCount > 0 && (
+                                    <span className="flex items-center gap-1">
+                                        <span className="text-slate-500">•</span>
+                                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block animate-pulse" />
+                                        <span className="text-green-400">{onlineMembersCount} en ligne</span>
+                                    </span>
+                                )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-8 w-8 sm:h-9 sm:w-9"
+                                onClick={() => setShowGroupMembers(!showGroupMembers)}
+                                title="Voir les membres"
+                            >
+                                <Users className="h-4 w-4" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-8 w-8 sm:h-9 sm:w-9"
                                 onClick={() => {
                                     const chars = 'abcdefghijklmnopqrstuvwxyz';
                                     const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -1388,15 +1517,51 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 }}
                                 title="Appel vidéo de groupe"
                             >
-                                <Video className="h-5 w-5" />
+                                <Video className="h-4 w-4" />
                             </Button>
                         </div>
                     </>
                 )}
             </div>
 
+            {/* Group Members Panel */}
+            <AnimatePresence>
+                {showGroupMembers && currentGroup && (
+                    <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        className="border-b border-white/10 bg-slate-800/50 overflow-hidden"
+                    >
+                        <div className="p-3 max-h-40 overflow-y-auto">
+                            <div className="flex flex-wrap gap-2">
+                                {groupMembers.map(member => (
+                                    <div key={member.id} className="flex items-center gap-1.5 bg-white/5 rounded-full px-2 py-1">
+                                        <div className="relative">
+                                            <Avatar className="h-5 w-5">
+                                                <AvatarImage src={member.avatar_url || undefined} />
+                                                <AvatarFallback className="text-[8px] bg-slate-600">
+                                                    {getInitials(member.full_name)}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                            {(member.is_online || onlineUsers[member.id]) && (
+                                                <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full border border-slate-800" />
+                                            )}
+                                        </div>
+                                        <span className="text-[10px] text-slate-300 max-w-[80px] truncate">{member.full_name}</span>
+                                        {member.role === 'admin' && (
+                                            <span className="text-[8px] text-amber-400">👑</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Messages */}
-            <ScrollArea className="flex-1 p-4">
+            <ScrollArea className="flex-1 p-2 sm:p-4">
                 {isLoading ? (
                     <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
@@ -1430,7 +1595,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                     )}
                                     <div
                                         className={cn(
-                                            "max-w-[75%] rounded-2xl px-4 py-2",
+                                            "max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2",
                                             isOwn
                                                 ? "bg-indigo-600 text-white rounded-br-sm"
                                                 : "bg-white/10 text-white rounded-bl-sm"
@@ -1449,7 +1614,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                                 duration={msg.voice_duration}
                                             />
                                         ) : (
-                                            <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                                            renderMessageContent(msg.content)
                                         )}
 
                                         <div className="flex items-center justify-end gap-1 mt-1">
@@ -1496,7 +1661,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     />
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2">
                     <Button
                         variant="ghost"
                         size="icon"
@@ -1544,7 +1709,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 handleTyping();
                             }}
                             onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                            className="flex-1 bg-white/5 border-white/10 rounded-full"
+                            className="flex-1 bg-white/5 border-white/10 rounded-full text-sm sm:text-base min-w-0"
                         />
                     )}
 

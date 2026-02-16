@@ -34,6 +34,10 @@ export interface User {
     name: string;
     avatar?: string;
     joinedAt: string;
+    whatsapp?: string;
+    city?: string;
+    country?: string;
+    role?: string;
 }
 
 // Re-export types from types.ts to avoid duplication or use aliases
@@ -88,7 +92,7 @@ interface AppState {
 
     // Prayer Wall
     prayerRequests: PrayerRequest[];
-    addPrayerRequest: (content: string, isAnonymous?: boolean, category?: PrayerCategory, photos?: string[]) => void;
+    addPrayerRequest: (content: string, isAnonymous?: boolean, category?: PrayerCategory, photos?: string[]) => Promise<string | null>;
     prayForRequest: (requestId: string) => void;
     removePrayerRequest: (requestId: string) => void;
 
@@ -522,7 +526,7 @@ export const useAppStore = create<AppState>()(
             prayerRequests: [],
             addPrayerRequest: async (content, isAnonymous = false, category = 'other', photos = []) => {
                 const { user } = get();
-                if (!user) return;
+                if (!user) return null;
 
                 try {
                     // Include all fields in the insert
@@ -542,10 +546,11 @@ export const useAppStore = create<AppState>()(
                         throw error;
                     }
 
-                    if (data) {
+                    if (data && data[0]) {
+                        const newId = data[0].id;
                         set((state) => ({
                             prayerRequests: [{
-                                id: data[0].id,
+                                id: newId,
                                 userId: user.id,
                                 userName: user.name,
                                 userAvatar: user.avatar,
@@ -558,7 +563,9 @@ export const useAppStore = create<AppState>()(
                                 prayedBy: [],
                             }, ...state.prayerRequests]
                         }));
+                        return newId;
                     }
+                    return null;
                 } catch (e) {
                     console.error('Failed to add prayer request:', e);
                     throw e;

@@ -10,6 +10,7 @@ import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Switch } from "@/components/ui/switch"
 import { Separator } from "@/components/ui/separator"
+import { Input } from "@/components/ui/input"
 import {
     Trophy,
     Flame,
@@ -23,7 +24,14 @@ import {
     User as UserIcon,
     MapPin,
     Camera,
-    Loader2
+    Loader2,
+    Phone,
+    Lock,
+    Eye,
+    EyeOff,
+    KeyRound,
+    Save,
+    CheckCircle,
 } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
@@ -34,6 +42,22 @@ export function ProfileView() {
     const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme, setUser } = useAppStore()
     const [isUploading, setIsUploading] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
+
+    // Password change state
+    const [showPasswordSection, setShowPasswordSection] = useState(false)
+    const [currentPassword, setCurrentPassword] = useState('')
+    const [newPassword, setNewPassword] = useState('')
+    const [confirmPassword, setConfirmPassword] = useState('')
+    const [showCurrentPw, setShowCurrentPw] = useState(false)
+    const [showNewPw, setShowNewPw] = useState(false)
+    const [isChangingPw, setIsChangingPw] = useState(false)
+    const [forgotPwSent, setForgotPwSent] = useState(false)
+    const [isSendingReset, setIsSendingReset] = useState(false)
+
+    // Phone edit state
+    const [editingPhone, setEditingPhone] = useState(false)
+    const [phoneValue, setPhoneValue] = useState(user?.whatsapp || '')
+    const [isSavingPhone, setIsSavingPhone] = useState(false)
 
     if (!user) {
         return (
@@ -71,7 +95,6 @@ export function ProfileView() {
             const fileExt = file.name.split('.').pop()?.toLowerCase() || 'jpg'
             const filePath = `avatars/${user.id}/avatar_${Date.now()}.${fileExt}`
 
-            // Upload to Supabase Storage (avatars bucket or chat-media)
             const { data: uploadData, error: uploadError } = await supabase.storage
                 .from('chat-media')
                 .upload(filePath, file, {
@@ -85,12 +108,10 @@ export function ProfileView() {
                 throw uploadError
             }
 
-            // Get public URL
             const { data: { publicUrl } } = supabase.storage
                 .from('chat-media')
                 .getPublicUrl(filePath)
 
-            // Update profile in Supabase
             const { error: profileError } = await supabase
                 .from('profiles')
                 .update({ avatar_url: publicUrl })
@@ -98,20 +119,12 @@ export function ProfileView() {
 
             if (profileError) {
                 console.error('Profile update error:', profileError)
-                // Try via admin API
-                await fetch('/api/admin/delete-content', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({}) // We just need to trigger the profile update
-                })
             }
 
-            // Update Supabase Auth user metadata
             await supabase.auth.updateUser({
                 data: { avatar_url: publicUrl }
             })
 
-            // Update local store
             setUser({
                 ...user,
                 avatar: publicUrl,
@@ -123,8 +136,91 @@ export function ProfileView() {
             toast.error('Erreur lors de l\'upload de la photo')
         } finally {
             setIsUploading(false)
-            // Reset input
             if (fileInputRef.current) fileInputRef.current.value = ''
+        }
+    }
+
+    // Handle password change
+    const handlePasswordChange = async () => {
+        if (!newPassword || !confirmPassword) {
+            toast.error('Veuillez remplir tous les champs')
+            return
+        }
+        if (newPassword.length < 6) {
+            toast.error('Le mot de passe doit contenir au moins 6 caractères')
+            return
+        }
+        if (newPassword !== confirmPassword) {
+            toast.error('Les mots de passe ne correspondent pas')
+            return
+        }
+
+        setIsChangingPw(true)
+        try {
+            const { error } = await supabase.auth.updateUser({
+                password: newPassword
+            })
+            if (error) throw error
+            toast.success('Mot de passe modifié avec succès !')
+            setCurrentPassword('')
+            setNewPassword('')
+            setConfirmPassword('')
+            setShowPasswordSection(false)
+        } catch (err: any) {
+            console.error('Password change error:', err)
+            toast.error(err.message || 'Erreur lors du changement de mot de passe')
+        } finally {
+            setIsChangingPw(false)
+        }
+    }
+
+    // Handle forgot password (send reset email)
+    const handleForgotPassword = async () => {
+        setIsSendingReset(true)
+        try {
+            // Since we use fake emails, we generate a new temporary password
+            // In a real scenario, this would send an email via supabase.auth.resetPasswordForEmail()
+            const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+                redirectTo: `${window.location.origin}/reset-password`,
+            })
+            if (error) {
+                // Fallback: since emails are fake, just show a message
+                toast.info('Contactez un administrateur pour réinitialiser votre mot de passe. Votre identifiant est : ' + (user.whatsapp || user.email))
+            } else {
+                setForgotPwSent(true)
+                toast.success('Instructions envoyées !')
+            }
+        } catch (err: any) {
+            toast.info('Contactez un administrateur pour réinitialiser votre mot de passe.')
+        } finally {
+            setIsSendingReset(false)
+        }
+    }
+
+    // Handle phone save
+    const handleSavePhone = async () => {
+        if (!phoneValue.trim()) return
+        setIsSavingPhone(true)
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ whatsapp: phoneValue.trim() })
+                .eq('id', user.id)
+
+            if (error) throw error
+
+            await supabase.auth.updateUser({
+                data: { whatsapp: phoneValue.trim() }
+            })
+
+            setUser({ ...user, whatsapp: phoneValue.trim() })
+            setEditingPhone(false)
+            toast.success('Numéro mis à jour !')
+        } catch (err: any) {
+            console.error('Phone save error:', err)
+            toast.error('Erreur lors de la mise à jour du numéro')
+        } finally {
+            setIsSavingPhone(false)
         }
     }
 
@@ -142,7 +238,6 @@ export function ProfileView() {
                 {/* Header Section */}
                 <div className="flex flex-col items-center mb-8 animate-in fade-in slide-in-from-top-4 duration-500">
                     <div className="relative mb-4 group">
-                        {/* Hidden file input */}
                         <input
                             ref={fileInputRef}
                             type="file"
@@ -156,7 +251,6 @@ export function ProfileView() {
                                 {user.name.substring(0, 2).toUpperCase()}
                             </AvatarFallback>
                         </Avatar>
-                        {/* Camera overlay - clickable */}
                         <button
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isUploading}
@@ -168,7 +262,6 @@ export function ProfileView() {
                                 <Camera className="h-8 w-8 text-white" />
                             )}
                         </button>
-                        {/* Always-visible camera icon badge */}
                         <button
                             onClick={() => fileInputRef.current?.click()}
                             disabled={isUploading}
@@ -283,6 +376,166 @@ export function ProfileView() {
                         Accéder au Backoffice Admin
                     </Button>
                 )}
+
+                {/* Connection Details Section */}
+                <div className="space-y-4 mb-8">
+                    <h3 className="font-semibold text-lg flex items-center gap-2">
+                        <KeyRound className="h-4 w-4 text-indigo-400" />
+                        Détails de connexion
+                    </h3>
+
+                    <Card className="bg-card/50 backdrop-blur-sm">
+                        <CardContent className="p-0 divide-y divide-white/5">
+                            {/* Phone Number */}
+                            <div className="p-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-green-500/10 p-2 rounded-lg text-green-500">
+                                            <Phone className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium text-sm">Numéro WhatsApp</p>
+                                            {editingPhone ? (
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <Input
+                                                        type="tel"
+                                                        value={phoneValue}
+                                                        onChange={(e) => setPhoneValue(e.target.value)}
+                                                        className="h-8 text-sm w-40 bg-white/5 border-white/10"
+                                                        placeholder="+221 77..."
+                                                    />
+                                                    <Button
+                                                        size="sm"
+                                                        className="h-8 px-2"
+                                                        onClick={handleSavePhone}
+                                                        disabled={isSavingPhone}
+                                                    >
+                                                        {isSavingPhone ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-muted-foreground">
+                                                    {user.whatsapp || 'Non renseigné'}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {!editingPhone && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-xs text-indigo-400 hover:text-indigo-300"
+                                            onClick={() => { setEditingPhone(true); setPhoneValue(user.whatsapp || ''); }}
+                                        >
+                                            Modifier
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Password Section */}
+                            <div className="p-4">
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-amber-500/10 p-2 rounded-lg text-amber-500">
+                                            <Lock className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium text-sm">Mot de passe</p>
+                                            <p className="text-xs text-muted-foreground">••••••••</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-xs text-indigo-400 hover:text-indigo-300"
+                                        onClick={() => setShowPasswordSection(!showPasswordSection)}
+                                    >
+                                        {showPasswordSection ? 'Annuler' : 'Modifier'}
+                                    </Button>
+                                </div>
+
+                                {showPasswordSection && (
+                                    <motion.div
+                                        initial={{ height: 0, opacity: 0 }}
+                                        animate={{ height: 'auto', opacity: 1 }}
+                                        className="space-y-3 mt-3 pl-12"
+                                    >
+                                        <div className="relative">
+                                            <Input
+                                                type={showNewPw ? 'text' : 'password'}
+                                                placeholder="Nouveau mot de passe"
+                                                value={newPassword}
+                                                onChange={(e) => setNewPassword(e.target.value)}
+                                                className="bg-white/5 border-white/10 pr-10 text-sm"
+                                                minLength={6}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowNewPw(!showNewPw)}
+                                                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                                            >
+                                                {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                            </button>
+                                        </div>
+                                        <Input
+                                            type="password"
+                                            placeholder="Confirmer le mot de passe"
+                                            value={confirmPassword}
+                                            onChange={(e) => setConfirmPassword(e.target.value)}
+                                            className="bg-white/5 border-white/10 text-sm"
+                                        />
+                                        <div className="flex items-center gap-2">
+                                            <Button
+                                                onClick={handlePasswordChange}
+                                                disabled={isChangingPw}
+                                                size="sm"
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                                            >
+                                                {isChangingPw ? (
+                                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                                ) : (
+                                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                                )}
+                                                Enregistrer
+                                            </Button>
+                                        </div>
+                                    </motion.div>
+                                )}
+                            </div>
+
+                            {/* Forgot Password */}
+                            <div className="p-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-red-500/10 p-2 rounded-lg text-red-500">
+                                            <KeyRound className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium text-sm">Mot de passe oublié ?</p>
+                                            <p className="text-xs text-muted-foreground">Réinitialiser via l'administrateur</p>
+                                        </div>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="text-xs text-red-400 hover:text-red-300"
+                                        onClick={handleForgotPassword}
+                                        disabled={isSendingReset || forgotPwSent}
+                                    >
+                                        {isSendingReset ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : forgotPwSent ? (
+                                            'Envoyé ✓'
+                                        ) : (
+                                            'Réinitialiser'
+                                        )}
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
 
                 {/* Settings Section */}
                 <div className="space-y-4">

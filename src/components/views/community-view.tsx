@@ -1560,14 +1560,11 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         setIsSubmitting(true);
         try {
             if (dialogType === 'prayer') {
-                await addPrayerRequest(newContent, isAnonymous, newCategory, newPhotos);
-
-                // Get the newly created prayer's ID from the store 
-                const latestPrayers = useAppStore.getState().prayerRequests;
-                const newPrayerId = latestPrayers.length > 0 ? latestPrayers[0].id : null;
+                // addPrayerRequest now returns the new prayer ID directly
+                const newPrayerId = await addPrayerRequest(newContent, isAnonymous, newCategory, newPhotos);
 
                 // If createGroupWithPrayer is toggled, also create a group
-                if (createGroupWithPrayer) {
+                if (createGroupWithPrayer && newPrayerId) {
                     try {
                         const groupName = `\u{1F64F} Prière: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`;
                         const insertData: any = {
@@ -1575,19 +1572,18 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             description: newContent.substring(0, 200),
                             created_by: user.id,
                             is_open: true,
-                            requires_approval: true,
+                            prayer_request_id: newPrayerId,
                         };
-                        // Link prayer_request_id if we have it
-                        if (newPrayerId) {
-                            insertData.prayer_request_id = newPrayerId;
-                        }
                         const { data: groupData, error: groupError } = await supabase
                             .from('prayer_groups')
                             .insert(insertData)
                             .select()
                             .single();
 
-                        if (!groupError && groupData) {
+                        if (groupError) {
+                            console.error('Error inserting linked group:', groupError);
+                            toast.success('Demande publiée! (groupe non créé: ' + groupError.message + ')');
+                        } else if (groupData) {
                             // Add creator as admin
                             await supabase.from('prayer_group_members').insert({
                                 group_id: groupData.id,
@@ -1602,9 +1598,13 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         console.error('Error creating linked group:', ge);
                         toast.success('Demande publiée! (groupe non créé)');
                     }
+                } else if (createGroupWithPrayer && !newPrayerId) {
+                    console.error('Could not link group: newPrayerId is null');
+                    toast.success('Demande publiée! (groupe non créé - ID manquant)');
                 } else {
                     toast.success('Demande de prière publiée!');
                 }
+
 
                 // Send notification to all users about new prayer
                 if (newPrayerId) {
