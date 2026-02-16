@@ -9,7 +9,7 @@ import { ArrowLeft, GripVertical, CheckCircle2, XCircle, Trophy, Clock, Pause, P
 import confetti from 'canvas-confetti';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
-import { CHRONO_EVENTS } from '@/lib/game-data';
+import { CHRONO_EVENTS, getRandomChronoEvents } from '@/lib/game-data';
 import { addGameHistory } from '@/lib/game-history';
 
 interface ChronoEvent {
@@ -21,7 +21,7 @@ interface ChronoEvent {
 interface ChronoGameProps {
     onBack: () => void;
     mode?: 'solo' | 'multiplayer';
-    events: ChronoEvent[];
+    events?: ChronoEvent[];
     players?: Player[];
     currentUserId?: string;
     onProgress?: (pct: number) => void;
@@ -34,7 +34,7 @@ interface ChronoGameProps {
 export function ChronoGame({
     onBack,
     mode = 'solo',
-    events = [],
+    events,
     players = [],
     currentUserId,
     onProgress,
@@ -43,7 +43,7 @@ export function ChronoGame({
     roundInfo,
     onNextRound
 }: ChronoGameProps) {
-    const [items, setItems] = useState<ChronoEvent[]>(events);
+    const [items, setItems] = useState<ChronoEvent[]>(events || []);
     const [gameState, setGameState] = useState<'playing' | 'finished'>('playing');
     const [startTime] = useState(Date.now());
     const [elapsedTime, setElapsedTime] = useState(0);
@@ -53,7 +53,14 @@ export function ChronoGame({
     const lastPauseRef = useRef<number | null>(null);
 
     useEffect(() => {
-        setItems(events);
+        if (events && events.length > 0) {
+            setItems(events);
+        } else {
+            // Auto-load random events if none provided
+            const randomEvents = getRandomChronoEvents(6);
+            // Shuffle for the game
+            setItems([...randomEvents].sort(() => Math.random() - 0.5));
+        }
     }, [events]);
 
     useEffect(() => {

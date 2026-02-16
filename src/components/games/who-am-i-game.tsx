@@ -9,7 +9,7 @@ import { ArrowLeft, HelpCircle, Trophy, CheckCircle2, Pause, Play } from 'lucide
 import confetti from 'canvas-confetti';
 import { cn } from '@/lib/utils';
 import { Player } from './multiplayer-lobby';
-import { WHO_AM_I_CHARACTERS } from '@/lib/game-data';
+import { WHO_AM_I_CHARACTERS, getRandomWhoAmICharacters } from '@/lib/game-data';
 import { addGameHistory } from '@/lib/game-history';
 
 interface Character {
@@ -21,7 +21,7 @@ interface Character {
 interface WhoAmIGameProps {
     onBack: () => void;
     mode?: 'solo' | 'multiplayer';
-    characters: Character[];
+    characters?: Character[];
     players?: Player[];
     currentUserId?: string;
     onProgress?: (pct: number) => void;
@@ -34,7 +34,7 @@ interface WhoAmIGameProps {
 export function WhoAmIGame({
     onBack,
     mode = 'solo',
-    characters = [],
+    characters: externalCharacters,
     players = [],
     currentUserId,
     onProgress,
@@ -43,6 +43,7 @@ export function WhoAmIGame({
     roundInfo,
     onNextRound
 }: WhoAmIGameProps) {
+    const [characters, setCharacters] = useState<Character[]>(externalCharacters || []);
     const [currentIndex, setCurrentIndex] = useState(0);
     const [gameState, setGameState] = useState<'playing' | 'finished'>('playing');
     const [startTime] = useState(Date.now());
@@ -52,6 +53,15 @@ export function WhoAmIGame({
     const [isPaused, setIsPaused] = useState(false);
     const pausedTimeRef = useRef(0);
     const lastPauseRef = useRef<number | null>(null);
+
+    useEffect(() => {
+        if (externalCharacters && externalCharacters.length > 0) {
+            setCharacters(externalCharacters);
+        } else {
+            // Auto-load random characters if none provided
+            setCharacters(getRandomWhoAmICharacters(5));
+        }
+    }, [externalCharacters]);
 
     useEffect(() => {
         if (gameState !== 'playing' || isPaused) return;
