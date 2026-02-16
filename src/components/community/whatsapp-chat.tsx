@@ -17,6 +17,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
+import { WebRTCCall, IncomingCallOverlay } from './webrtc-call';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -240,6 +241,19 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         title: string; theme: string; reference: string; passage: string;
         meditation: string; action: string; prayers: string;
     }>>([]);
+
+    // WebRTC call state
+    const [activeCall, setActiveCall] = useState<{
+        type: 'audio' | 'video';
+        mode: 'private' | 'group';
+        isIncoming?: boolean;
+    } | null>(null);
+    const [incomingCall, setIncomingCall] = useState<{
+        callerName: string;
+        callerAvatar?: string | null;
+        callType: 'audio' | 'video';
+        callerId: string;
+    } | null>(null);
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
@@ -1821,13 +1835,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
-                                onClick={() => {
-                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
-                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-                                    const link = `https://meet.google.com/${seg(3)}-${seg(4)}-${seg(3)}`;
-                                    window.open(link, '_blank');
-                                    toast.success('Appel vocal lancé via Google Meet');
-                                }}
+                                onClick={() => setActiveCall({ type: 'audio', mode: 'private' })}
                                 title="Appel vocal"
                             >
                                 <Phone className="h-5 w-5" />
@@ -1836,13 +1844,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
-                                onClick={() => {
-                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
-                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-                                    const link = `https://meet.google.com/${seg(3)}-${seg(4)}-${seg(3)}`;
-                                    window.open(link, '_blank');
-                                    toast.success('Appel vidéo lancé via Google Meet');
-                                }}
+                                onClick={() => setActiveCall({ type: 'video', mode: 'private' })}
                                 title="Appel vidéo"
                             >
                                 <Video className="h-5 w-5" />
@@ -1908,16 +1910,10 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-7 w-7 sm:h-9 sm:w-9"
-                                onClick={() => {
-                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
-                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-                                    const link = `https://meet.google.com/${seg(3)}-${seg(4)}-${seg(3)}`;
-                                    window.open(link, '_blank');
-                                    toast.success(`Appel de groupe lancé pour ${currentGroup.name}`);
-                                }}
-                                title="Appel vidéo de groupe"
+                                onClick={() => setActiveCall({ type: 'audio', mode: 'group' })}
+                                title="Appel vocal de groupe"
                             >
-                                <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                         </div>
                     </>
@@ -2530,6 +2526,44 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* WebRTC Call Overlay */}
+            {activeCall && (
+                <WebRTCCall
+                    user={{ id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar }}
+                    callType={activeCall.type}
+                    mode={activeCall.mode}
+                    remoteUser={activeCall.mode === 'private' && currentRecipient ? {
+                        id: currentRecipient.id,
+                        name: currentRecipient.full_name,
+                        avatar: currentRecipient.avatar_url
+                    } : undefined}
+                    conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
+                    groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
+                    groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
+                    groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
+                    isIncoming={activeCall.isIncoming}
+                    onEnd={() => setActiveCall(null)}
+                />
+            )}
+
+            {/* Incoming Call Notification */}
+            {incomingCall && !activeCall && (
+                <IncomingCallOverlay
+                    callerName={incomingCall.callerName}
+                    callerAvatar={incomingCall.callerAvatar}
+                    callType={incomingCall.callType}
+                    onAccept={() => {
+                        setActiveCall({
+                            type: incomingCall.callType,
+                            mode: 'private',
+                            isIncoming: true
+                        });
+                        setIncomingCall(null);
+                    }}
+                    onReject={() => setIncomingCall(null)}
+                />
+            )}
         </div>
     );
 }
