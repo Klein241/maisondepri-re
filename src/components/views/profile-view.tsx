@@ -33,7 +33,14 @@ import {
     Save,
     CheckCircle,
     Mail,
+    Users,
+    ArrowRightLeft,
+    Crown,
+    Plus,
+    X,
+    CheckCircle2,
 } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { AuthView } from "./auth-view"
@@ -65,6 +72,15 @@ export function ProfileView() {
     const [recoveryEmailValue, setRecoveryEmailValue] = useState('')
     const [isSavingRecoveryEmail, setIsSavingRecoveryEmail] = useState(false)
 
+    // Community management state
+    const [showCommunity, setShowCommunity] = useState(false)
+    const [myGroups, setMyGroups] = useState<any[]>([])
+    const [isLoadingGroups, setIsLoadingGroups] = useState(false)
+    const [showMigrateDialog, setShowMigrateDialog] = useState(false)
+    const [migrateSourceGroup, setMigrateSourceGroup] = useState<string | null>(null)
+    const [migrateTargetGroup, setMigrateTargetGroup] = useState<string | null>(null)
+    const [isMigrating, setIsMigrating] = useState(false)
+
     // Load recovery email on mount
     useEffect(() => {
         const loadRecoveryEmail = async () => {
@@ -74,6 +90,134 @@ export function ProfileView() {
         }
         loadRecoveryEmail()
     }, [user?.id])
+
+    // Load user groups for community management
+    const loadMyGroups = async () => {
+        if (!user) return
+        setIsLoadingGroups(true)
+        try {
+            // Get groups created by user
+            const { data: created } = await supabase
+                .from('prayer_groups')
+                .select('*, member_count:prayer_group_members(count)')
+                .eq('created_by', user.id)
+                .order('created_at', { ascending: false })
+
+            // Get groups user is member of
+            const { data: memberships } = await supabase
+                .from('prayer_group_members')
+                .select('group_id')
+                .eq('user_id', user.id)
+
+            const memberGroupIds = (memberships || []).map((m: any) => m.group_id)
+            let joinedGroups: any[] = []
+            if (memberGroupIds.length > 0) {
+                const { data: joined } = await supabase
+                    .from('prayer_groups')
+                    .select('*, member_count:prayer_group_members(count)')
+                    .in('id', memberGroupIds)
+                    .neq('created_by', user.id)
+                    .order('created_at', { ascending: false })
+                joinedGroups = joined || []
+            }
+
+            const all = [
+                ...(created || []).map((g: any) => ({ ...g, role: 'admin', member_count: g.member_count?.[0]?.count || 0 })),
+                ...joinedGroups.map((g: any) => ({ ...g, role: 'member', member_count: g.member_count?.[0]?.count || 0 }))
+            ]
+            setMyGroups(all)
+        } catch (err) {
+            console.error('Error loading groups:', err)
+        }
+        setIsLoadingGroups(false)
+    }
+
+    // Migrate members from one group to another
+    const handleMigrateMembers = async () => {
+        if (!migrateSourceGroup || !migrateTargetGroup || migrateSourceGroup === migrateTargetGroup) {
+            toast.error('Veuillez sélectionner deux groupes différents')
+            return
+        }
+        setIsMigrating(true)
+        try {
+            // Get all members from source group
+            const { data: sourceMembers, error: fetchErr } = await supabase
+                .from('prayer_group_members')
+                .select('user_id, role')
+                .eq('group_id', migrateSourceGroup)
+
+            if (fetchErr) throw fetchErr
+
+            // Get existing members in target
+            const { data: targetMembers } = await supabase
+                .from('prayer_group_members')
+                .select('user_id')
+                .eq('group_id', migrateTargetGroup)
+
+            const existingIds = new Set((targetMembers || []).map((m: any) => m.user_id))
+            const toMigrate = (sourceMembers || []).filter((m: any) => !existingIds.has(m.user_id))
+
+            if (toMigrate.length === 0) {
+                toast.info('Tous les membres sont déjà dans le groupe cible')
+                setIsMigrating(false)
+                return
+            }
+
+            // Insert new members into target group
+            const { error: insertErr } = await supabase
+                .from('prayer_group_members')
+                .insert(toMigrate.map((m: any) => ({
+                    group_id: migrateTargetGroup,
+                    user_id: m.user_id,
+                    role: 'member'
+                })))
+
+            if (insertErr) throw insertErr
+
+            toast.success(`${toMigrate.length} membres migrés avec succès !`)
+            setShowMigrateDialog(false)
+            setMigrateSourceGroup(null)
+            setMigrateTargetGroup(null)
+            loadMyGroups()
+        } catch (err: any) {
+            toast.error('Erreur lors de la migration: ' + (err.message || ''))
+        }
+        setIsMigrating(false)
+    }
+
+    // Mark prayer as answered — triggers 24h closure
+    const handlePrayerAnswered = async (groupId: string, groupName: string) => {
+        try {
+            // Get admin's other groups to suggest
+            const adminGroups = myGroups.filter(g => g.role === 'admin' && g.id !== groupId)
+
+            // Send announcement message
+            const suggestionList = adminGroups.length > 0
+                ? adminGroups.map((g: any) => `• ${g.name}`).join('\n')
+                : 'Aucun autre groupe disponible pour le moment.'
+
+            const announcement = `🙏 **PRIÈRE EXAUCÉE !** 🎉\n\nCe sujet de prière pour lequel nous prions a été exaucé ! Merci pour votre participation à tous !\n\nDe ce fait, ce groupe sera fermé dans 24h.\n\nVeuillez rejoindre ces groupes :\n${suggestionList}\n\n— L'administrateur`
+
+            await supabase.from('prayer_group_messages').insert({
+                group_id: groupId,
+                user_id: user!.id,
+                content: announcement,
+                type: 'text'
+            })
+
+            // Update group to schedule closure (set a closing_at timestamp)
+            const closingAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+            await supabase.from('prayer_groups').update({
+                description: `🙏 PRIÈRE EXAUCÉE — Fermeture le ${new Date(closingAt).toLocaleDateString('fr-FR')} à ${new Date(closingAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+                is_urgent: false,
+            }).eq('id', groupId)
+
+            toast.success('Prière marquée comme exaucée ! Le groupe sera fermé dans 24h.')
+            loadMyGroups()
+        } catch (err) {
+            toast.error('Erreur lors de la mise à jour')
+        }
+    }
 
     if (!user) {
         return (
@@ -378,6 +522,113 @@ export function ProfileView() {
                     </div>
                     <Progress value={nextLevelProgress} className="h-2" />
                 </div>
+
+                {/* Community Management Card */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.3 }}
+                    className="mb-8"
+                >
+                    <Card className="bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border-indigo-500/20 backdrop-blur-sm overflow-hidden">
+                        <CardContent className="p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-indigo-500/20 p-2.5 rounded-xl">
+                                        <Users className="h-5 w-5 text-indigo-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-white">Ma Communauté</h3>
+                                        <p className="text-[10px] text-slate-400">{myGroups.length} groupe{myGroups.length !== 1 ? 's' : ''}</p>
+                                    </div>
+                                </div>
+                                <Button
+                                    size="sm"
+                                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8 px-3"
+                                    onClick={() => { setShowCommunity(!showCommunity); if (!showCommunity) loadMyGroups(); }}
+                                >
+                                    {showCommunity ? 'Fermer' : 'Gérer'}
+                                    <ChevronRight className={`h-3 w-3 ml-1 transition-transform ${showCommunity ? 'rotate-90' : ''}`} />
+                                </Button>
+                            </div>
+
+                            {showCommunity && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    className="space-y-3 mt-3"
+                                >
+                                    {/* Action Buttons */}
+                                    <div className="flex gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="flex-1 border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 text-xs h-8"
+                                            onClick={() => { setShowMigrateDialog(true); }}
+                                        >
+                                            <ArrowRightLeft className="h-3 w-3 mr-1" />
+                                            Migrer les membres
+                                        </Button>
+                                    </div>
+
+                                    {isLoadingGroups ? (
+                                        <div className="flex justify-center py-4">
+                                            <Loader2 className="h-5 w-5 animate-spin text-indigo-400" />
+                                        </div>
+                                    ) : myGroups.length === 0 ? (
+                                        <p className="text-center text-xs text-slate-500 py-4">Aucun groupe trouvé</p>
+                                    ) : (
+                                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                                            {myGroups.map((group: any) => (
+                                                <div
+                                                    key={group.id}
+                                                    className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/30 transition-all"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${group.is_urgent
+                                                            ? 'bg-gradient-to-br from-red-500 to-orange-500'
+                                                            : 'bg-gradient-to-br from-indigo-500 to-purple-500'
+                                                            }`}>
+                                                            {group.avatar_url ? (
+                                                                <img src={group.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+                                                            ) : (
+                                                                <Users className="h-4 w-4 text-white" />
+                                                            )}
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <p className="text-sm font-medium text-white truncate">{group.name}</p>
+                                                                {group.role === 'admin' && (
+                                                                    <Crown className="h-3 w-3 text-amber-400 shrink-0" />
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[10px] text-slate-400">
+                                                                {group.member_count} membre{group.member_count !== 1 ? 's' : ''}
+                                                                {group.role === 'admin' ? ' • Admin' : ' • Membre'}
+                                                            </p>
+                                                        </div>
+                                                        {/* Prayer answered button for prayer request groups */}
+                                                        {group.role === 'admin' && group.prayer_request_id && (
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="h-7 text-[10px] text-green-400 hover:bg-green-500/10 hover:text-green-300 px-2"
+                                                                onClick={() => handlePrayerAnswered(group.id, group.name)}
+                                                            >
+                                                                <CheckCircle2 className="h-3 w-3 mr-1" />
+                                                                Exaucée
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </motion.div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </motion.div>
 
                 {/* Achievements Section */}
                 <div className="mb-8">
@@ -715,6 +966,83 @@ export function ProfileView() {
                 <div className="text-center mt-8 text-xs text-slate-600">
                     Version 1.0.0 • Marathon de Prière
                 </div>
+
+                {/* Migrate Members Dialog */}
+                <Dialog open={showMigrateDialog} onOpenChange={setShowMigrateDialog}>
+                    <DialogContent className="max-w-md bg-slate-900 border-white/10">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-white">
+                                <ArrowRightLeft className="h-5 w-5 text-indigo-400" />
+                                Migrer les membres
+                            </DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                            <p className="text-xs text-slate-400">Transférer tous les membres d'un groupe vers un autre groupe.</p>
+
+                            {/* Source Group */}
+                            <div>
+                                <label className="text-xs text-slate-400 mb-2 block">Groupe source (d'où migrer)</label>
+                                <div className="space-y-1 max-h-[150px] overflow-y-auto">
+                                    {myGroups.filter(g => g.role === 'admin').map((g: any) => (
+                                        <button
+                                            key={g.id}
+                                            onClick={() => setMigrateSourceGroup(g.id)}
+                                            className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-all ${migrateSourceGroup === g.id
+                                                ? 'bg-indigo-600/20 border border-indigo-500/40'
+                                                : 'hover:bg-white/5 border border-transparent'
+                                                }`}
+                                        >
+                                            <Users className="h-4 w-4 text-indigo-400 shrink-0" />
+                                            <span className="text-sm text-white truncate">{g.name}</span>
+                                            <span className="text-[10px] text-slate-500 ml-auto shrink-0">{g.member_count} mbr</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Arrow */}
+                            <div className="flex justify-center">
+                                <div className="bg-indigo-500/20 p-2 rounded-full">
+                                    <ArrowRightLeft className="h-4 w-4 text-indigo-400" />
+                                </div>
+                            </div>
+
+                            {/* Target Group */}
+                            <div>
+                                <label className="text-xs text-slate-400 mb-2 block">Groupe cible (où migrer)</label>
+                                <div className="space-y-1 max-h-[150px] overflow-y-auto">
+                                    {myGroups.filter(g => g.role === 'admin' && g.id !== migrateSourceGroup).map((g: any) => (
+                                        <button
+                                            key={g.id}
+                                            onClick={() => setMigrateTargetGroup(g.id)}
+                                            className={`w-full flex items-center gap-2 p-2 rounded-lg text-left transition-all ${migrateTargetGroup === g.id
+                                                ? 'bg-green-600/20 border border-green-500/40'
+                                                : 'hover:bg-white/5 border border-transparent'
+                                                }`}
+                                        >
+                                            <Users className="h-4 w-4 text-green-400 shrink-0" />
+                                            <span className="text-sm text-white truncate">{g.name}</span>
+                                            <span className="text-[10px] text-slate-500 ml-auto shrink-0">{g.member_count} mbr</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Migrate Button */}
+                            <Button
+                                onClick={handleMigrateMembers}
+                                disabled={!migrateSourceGroup || !migrateTargetGroup || isMigrating}
+                                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
+                            >
+                                {isMigrating ? (
+                                    <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Migration en cours...</>
+                                ) : (
+                                    <><ArrowRightLeft className="h-4 w-4 mr-2" /> Migrer tous les membres</>
+                                )}
+                            </Button>
+                        </div>
+                    </DialogContent>
+                </Dialog>
             </div>
         </div>
     )
