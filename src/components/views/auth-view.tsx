@@ -28,6 +28,7 @@ export function AuthView() {
     const [city, setCity] = useState('');
     const [whatsapp, setWhatsapp] = useState('');
     const [signupPassword, setSignupPassword] = useState('');
+    const [recoveryEmail, setRecoveryEmail] = useState('');
     const [showLoginPassword, setShowLoginPassword] = useState(false);
     const [showSignupPassword, setShowSignupPassword] = useState(false);
     const [showForgotPassword, setShowForgotPassword] = useState(false);
@@ -72,7 +73,7 @@ export function AuthView() {
         e.preventDefault();
         if (!firstName || !country || !whatsapp || !signupPassword) return;
 
-        await signUp({
+        const result = await signUp({
             firstName,
             lastName,
             country,
@@ -80,6 +81,20 @@ export function AuthView() {
             whatsapp,
             password: signupPassword
         });
+
+        // Save recovery email to profile after signup
+        if (recoveryEmail.trim() && recoveryEmail.includes('@')) {
+            try {
+                const cleanPhone = whatsapp.replace(/\D/g, '');
+                const email = `${cleanPhone}@marathon.local`;
+                const { data: authData } = await supabase.auth.getUser();
+                if (authData?.user?.id) {
+                    await supabase.from('profiles').update({ recovery_email: recoveryEmail.trim() }).eq('id', authData.user.id);
+                }
+            } catch (e) {
+                console.error('Error saving recovery email:', e);
+            }
+        }
     };
 
     return (
@@ -287,6 +302,19 @@ export function AuthView() {
                                             >
                                                 {showSignupPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                             </button>
+                                        </div>
+
+                                        {/* Recovery Email */}
+                                        <div className="relative">
+                                            <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground w-4 h-4" />
+                                            <Input
+                                                type="email"
+                                                placeholder="Email de récupération (optionnel)"
+                                                value={recoveryEmail}
+                                                onChange={(e) => setRecoveryEmail(e.target.value)}
+                                                className="pl-10"
+                                            />
+                                            <p className="text-[10px] text-muted-foreground mt-1 pl-1">Pour réinitialiser votre mot de passe si oublié</p>
                                         </div>
 
                                         <Button

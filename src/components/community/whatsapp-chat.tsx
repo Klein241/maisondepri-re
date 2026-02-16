@@ -54,6 +54,7 @@ interface ChatGroup {
     prayer_request_id?: string;
     avatar_url?: string | null;
     created_by?: string;
+    created_at?: string;
 }
 
 interface GroupMember {
@@ -585,6 +586,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                         prayer_request_id: g.prayer_request_id,
                         avatar_url: g.avatar_url || null,
                         created_by: g.created_by,
+                        created_at: g.created_at,
                     };
 
                     if (g.prayer_request_id) {
@@ -994,7 +996,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         loadMessages('group', group.id);
         loadGroupMembers(group.id);
 
-        // Start polling fallback for group messages (every 5s)
+        // Start polling fallback for group messages (every 3s for reliability)
         if (groupPollRef.current) clearInterval(groupPollRef.current);
         groupPollRef.current = setInterval(async () => {
             try {
@@ -1005,7 +1007,10 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     .order('created_at', { ascending: true });
                 if (!error && data) {
                     setMessages(prev => {
-                        if (data.length === prev.length) return prev;
+                        // Compare by last message ID to detect new messages reliably
+                        const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
+                        const newLastId = data.length > 0 ? data[data.length - 1].id : null;
+                        if (prevLastId === newLastId && data.length === prev.length) return prev;
                         return data.map((m: any) => ({
                             ...m,
                             sender_id: m.user_id,
@@ -1014,7 +1019,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     });
                 }
             } catch { }
-        }, 5000);
+        }, 3000);
     };
 
     // Cleanup polling when going back
@@ -1412,7 +1417,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             )}
                         </div>
                     ) : activeTab === 'groups' ? (
-                        <div className="divide-y divide-white/5">
+                        <div className="p-3 space-y-4">
                             {groups.length === 0 ? (
                                 <div className="text-center py-12 text-muted-foreground">
                                     <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
@@ -1420,71 +1425,160 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                     <p className="text-xs mt-1">Rejoignez un groupe depuis une demande de prière</p>
                                 </div>
                             ) : (
-                                groups.map(group => (
-                                    <button
-                                        key={group.id}
-                                        onClick={() => openGroup(group)}
-                                        className="w-full p-3 sm:p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left overflow-hidden"
-                                    >
-                                        <div className={cn(
-                                            "w-12 h-12 rounded-full flex items-center justify-center",
-                                            group.is_urgent
-                                                ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                                : "bg-gradient-to-br from-green-500 to-teal-500"
-                                        )}>
-                                            <Users className="h-6 w-6 text-white" />
-                                        </div>
-                                        <div className="flex-1 min-w-0 overflow-hidden">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium text-white truncate text-sm sm:text-base">{group.name}</span>
-                                                {group.is_urgent && (
-                                                    <Badge className="bg-red-500/20 text-red-400 text-[10px] sm:text-xs shrink-0">URGENT</Badge>
+                                <>
+                                    {/* Groups created by user */}
+                                    {groups.filter(g => g.created_by === user.id).length > 0 && (
+                                        <div>
+                                            <h3 className="text-sm font-bold text-white mb-2 px-1">
+                                                📌 Les groupes créés par vous
+                                                {groups.filter(g => g.created_by === user.id)[0]?.created_at && (
+                                                    <span className="text-slate-500 font-normal text-xs ml-1">
+                                                        le {new Date(groups.filter(g => g.created_by === user.id)[0].created_at!).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                    </span>
                                                 )}
+                                            </h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {groups.filter(g => g.created_by === user.id).map(group => (
+                                                    <button
+                                                        key={group.id}
+                                                        onClick={() => openGroup(group)}
+                                                        className="w-full p-3 rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-green-500/30 hover:bg-white/10 transition-all text-left group/card"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn(
+                                                                "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden",
+                                                                group.is_urgent
+                                                                    ? "bg-gradient-to-br from-red-500 to-orange-500"
+                                                                    : "bg-gradient-to-br from-green-500 to-teal-500"
+                                                            )}>
+                                                                {group.avatar_url ? (
+                                                                    <img src={group.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <Users className="h-6 w-6 text-white" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-semibold text-white truncate text-sm">{group.name}</span>
+                                                                    {group.is_urgent && (
+                                                                        <Badge className="bg-red-500/20 text-red-400 text-[9px] shrink-0">URGENT</Badge>
+                                                                    )}
+                                                                    <Crown className="h-3 w-3 text-amber-400 shrink-0" />
+                                                                </div>
+                                                                <p className="text-xs text-slate-400 truncate">{group.description || 'Groupe de prière'}</p>
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                                                        <Users className="h-2.5 w-2.5" /> {group.member_count} membres
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))}
                                             </div>
-                                            <p className="text-xs sm:text-sm text-slate-400 truncate">
-                                                {group.description || 'Groupe de prière'}
-                                            </p>
-                                            <p className="text-[10px] text-slate-500 mt-0.5">{group.member_count} membres</p>
                                         </div>
-                                    </button>
-                                ))
+                                    )}
+
+                                    {/* Groups joined by user */}
+                                    {groups.filter(g => g.created_by !== user.id).length > 0 && (
+                                        <div>
+                                            <h3 className="text-sm font-bold text-white mb-2 px-1">
+                                                🤝 Les groupes rejoints par vous
+                                            </h3>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {groups.filter(g => g.created_by !== user.id).map(group => (
+                                                    <button
+                                                        key={group.id}
+                                                        onClick={() => openGroup(group)}
+                                                        className="w-full p-3 rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-indigo-500/30 hover:bg-white/10 transition-all text-left"
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            <div className={cn(
+                                                                "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden",
+                                                                group.is_urgent
+                                                                    ? "bg-gradient-to-br from-red-500 to-orange-500"
+                                                                    : "bg-gradient-to-br from-indigo-500 to-blue-500"
+                                                            )}>
+                                                                {group.avatar_url ? (
+                                                                    <img src={group.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    <Users className="h-6 w-6 text-white" />
+                                                                )}
+                                                            </div>
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <span className="font-semibold text-white truncate text-sm">{group.name}</span>
+                                                                    {group.is_urgent && (
+                                                                        <Badge className="bg-red-500/20 text-red-400 text-[9px] shrink-0">URGENT</Badge>
+                                                                    )}
+                                                                </div>
+                                                                <p className="text-xs text-slate-400 truncate">{group.description || 'Groupe de prière'}</p>
+                                                                <div className="flex items-center gap-2 mt-1">
+                                                                    <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                                                        <Users className="h-2.5 w-2.5" /> {group.member_count} membres
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     ) : (
-                        <div className="divide-y divide-white/5">
+                        <div className="p-3 space-y-4">
                             {adminGroups.length === 0 ? (
                                 <div className="text-center py-12 text-muted-foreground">
                                     <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
                                     <p>Aucun groupe officiel</p>
                                 </div>
                             ) : (
-                                adminGroups.map(group => (
-                                    <button
-                                        key={group.id}
-                                        onClick={() => openGroup(group)}
-                                        className="w-full p-3 sm:p-4 flex items-center gap-3 hover:bg-white/5 transition-colors text-left overflow-hidden"
-                                    >
-                                        <div className={cn(
-                                            "w-12 h-12 rounded-full flex items-center justify-center",
-                                            group.is_urgent
-                                                ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                                : "bg-gradient-to-br from-purple-500 to-indigo-500"
-                                        )}>
-                                            <Users className="h-6 w-6 text-white" />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <span className="font-medium text-white truncate">{group.name}</span>
-                                                {group.is_urgent && (
-                                                    <Badge className="bg-red-500/20 text-red-400 text-xs">URGENT</Badge>
-                                                )}
-                                            </div>
-                                            <p className="text-sm text-slate-400 truncate">
-                                                {group.description || 'Groupe officiel'}
-                                            </p>
-                                        </div>
-                                    </button>
-                                ))
+                                <>
+                                    <h3 className="text-sm font-bold text-white px-1">
+                                        🏛️ Groupes Officiels
+                                    </h3>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {adminGroups.map(group => (
+                                            <button
+                                                key={group.id}
+                                                onClick={() => openGroup(group)}
+                                                className="w-full p-3 rounded-xl bg-gradient-to-br from-purple-500/10 to-indigo-500/5 border border-purple-500/20 hover:border-purple-400/40 hover:bg-purple-500/10 transition-all text-left"
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className={cn(
+                                                        "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden",
+                                                        group.is_urgent
+                                                            ? "bg-gradient-to-br from-red-500 to-orange-500"
+                                                            : "bg-gradient-to-br from-purple-500 to-indigo-500"
+                                                    )}>
+                                                        {group.avatar_url ? (
+                                                            <img src={group.avatar_url} alt="" className="w-full h-full object-cover" />
+                                                        ) : (
+                                                            <Shield className="h-6 w-6 text-white" />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="font-semibold text-white truncate text-sm">{group.name}</span>
+                                                            {group.is_urgent && (
+                                                                <Badge className="bg-red-500/20 text-red-400 text-[9px] shrink-0">URGENT</Badge>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-xs text-slate-400 truncate">{group.description || 'Groupe officiel'}</p>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                                                <Users className="h-2.5 w-2.5" /> {group.member_count} membres
+                                                            </span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
                             )}
                         </div>
                     )}

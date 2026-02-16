@@ -1710,7 +1710,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         onClick={() => requireAuth(() => setViewState('friends'))}
                                     >
                                         <UserPlus className="h-3.5 w-3.5" />
-                                        Amis
+                                        Retrouver vos Amis
                                     </Button>
                                     <Button
                                         size="sm"
@@ -1718,7 +1718,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         onClick={() => requireAuth(() => { loadGroups(); setViewState('groups'); })}
                                     >
                                         <Users className="h-3.5 w-3.5" />
-                                        Groupes
+                                        Rejoindre les groupes
                                         {Object.values(pendingRequestCounts).reduce((a, b) => a + b, 0) > 0 && (
                                             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold w-4.5 h-4.5 min-w-[18px] min-h-[18px] rounded-full flex items-center justify-center shadow-lg animate-pulse">
                                                 {Object.values(pendingRequestCounts).reduce((a, b) => a + b, 0)}

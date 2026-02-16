@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import { useAppStore } from "@/lib/store"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
@@ -32,6 +32,7 @@ import {
     KeyRound,
     Save,
     CheckCircle,
+    Mail,
 } from "lucide-react"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
@@ -58,6 +59,21 @@ export function ProfileView() {
     const [editingPhone, setEditingPhone] = useState(false)
     const [phoneValue, setPhoneValue] = useState(user?.whatsapp || '')
     const [isSavingPhone, setIsSavingPhone] = useState(false)
+
+    // Recovery email state
+    const [editingRecoveryEmail, setEditingRecoveryEmail] = useState(false)
+    const [recoveryEmailValue, setRecoveryEmailValue] = useState('')
+    const [isSavingRecoveryEmail, setIsSavingRecoveryEmail] = useState(false)
+
+    // Load recovery email on mount
+    useEffect(() => {
+        const loadRecoveryEmail = async () => {
+            if (!user) return
+            const { data } = await supabase.from('profiles').select('recovery_email').eq('id', user.id).single()
+            if (data?.recovery_email) setRecoveryEmailValue(data.recovery_email)
+        }
+        loadRecoveryEmail()
+    }, [user?.id])
 
     if (!user) {
         return (
@@ -178,17 +194,24 @@ export function ProfileView() {
     const handleForgotPassword = async () => {
         setIsSendingReset(true)
         try {
-            // Since we use fake emails, we generate a new temporary password
-            // In a real scenario, this would send an email via supabase.auth.resetPasswordForEmail()
-            const { error } = await supabase.auth.resetPasswordForEmail(user.email, {
+            // Check if user has a recovery email
+            const { data: profile } = await supabase.from('profiles').select('recovery_email').eq('id', user.id).single()
+            const email = profile?.recovery_email
+
+            if (!email) {
+                toast.error('Aucun email de récupération configuré. Ajoutez-en un dans votre profil pour pouvoir réinitialiser votre mot de passe.')
+                setIsSendingReset(false)
+                return
+            }
+
+            const { error } = await supabase.auth.resetPasswordForEmail(email, {
                 redirectTo: `${window.location.origin}/reset-password`,
             })
             if (error) {
-                // Fallback: since emails are fake, just show a message
                 toast.info('Contactez un administrateur pour réinitialiser votre mot de passe. Votre identifiant est : ' + (user.whatsapp || user.email))
             } else {
                 setForgotPwSent(true)
-                toast.success('Instructions envoyées !')
+                toast.success(`Instructions de réinitialisation envoyées à ${email} !`)
             }
         } catch (err: any) {
             toast.info('Contactez un administrateur pour réinitialiser votre mot de passe.')
@@ -221,6 +244,31 @@ export function ProfileView() {
             toast.error('Erreur lors de la mise à jour du numéro')
         } finally {
             setIsSavingPhone(false)
+        }
+    }
+
+    // Handle recovery email save
+    const handleSaveRecoveryEmail = async () => {
+        if (!recoveryEmailValue.trim() || !recoveryEmailValue.includes('@')) {
+            toast.error('Veuillez entrer un email valide')
+            return
+        }
+        setIsSavingRecoveryEmail(true)
+        try {
+            const { error } = await supabase
+                .from('profiles')
+                .update({ recovery_email: recoveryEmailValue.trim() })
+                .eq('id', user.id)
+
+            if (error) throw error
+
+            setEditingRecoveryEmail(false)
+            toast.success('Email de récupération mis à jour !')
+        } catch (err: any) {
+            console.error('Recovery email save error:', err)
+            toast.error('Erreur lors de la mise à jour de l\'email')
+        } finally {
+            setIsSavingRecoveryEmail(false)
         }
     }
 
@@ -428,6 +476,53 @@ export function ProfileView() {
                                             onClick={() => { setEditingPhone(true); setPhoneValue(user.whatsapp || ''); }}
                                         >
                                             Modifier
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Recovery Email Section */}
+                            <div className="p-4">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <div className="bg-blue-500/10 p-2 rounded-lg text-blue-500">
+                                            <Mail className="h-4 w-4" />
+                                        </div>
+                                        <div>
+                                            <p className="font-medium text-sm">Email de récupération</p>
+                                            {editingRecoveryEmail ? (
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <Input
+                                                        type="email"
+                                                        value={recoveryEmailValue}
+                                                        onChange={(e) => setRecoveryEmailValue(e.target.value)}
+                                                        className="h-8 text-sm w-48 bg-white/5 border-white/10"
+                                                        placeholder="votre@email.com"
+                                                    />
+                                                    <Button
+                                                        size="sm"
+                                                        className="h-8 px-2"
+                                                        onClick={handleSaveRecoveryEmail}
+                                                        disabled={isSavingRecoveryEmail}
+                                                    >
+                                                        {isSavingRecoveryEmail ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                                                    </Button>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-muted-foreground">
+                                                    {recoveryEmailValue || 'Non renseigné — Ajoutez un email pour réinitialiser votre mot de passe'}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {!editingRecoveryEmail && (
+                                        <Button
+                                            variant="ghost"
+                                            size="sm"
+                                            className="text-xs text-blue-400 hover:text-blue-300"
+                                            onClick={() => setEditingRecoveryEmail(true)}
+                                        >
+                                            {recoveryEmailValue ? 'Modifier' : 'Ajouter'}
                                         </Button>
                                     )}
                                 </div>
