@@ -113,16 +113,45 @@ export function PrayerGroupManager({
     const loadGroup = useCallback(async () => {
         setIsLoading(true);
         try {
-            // Check if group exists for this prayer
-            const { data: groupData, error: groupError } = await supabase
+            console.log('[PrayerGroupManager] Loading group for prayerId:', prayerId);
+
+            // Primary: Check if group exists for this prayer by prayer_request_id
+            let { data: groupData, error: groupError } = await supabase
                 .from('prayer_groups')
                 .select('*')
                 .eq('prayer_request_id', prayerId)
                 .maybeSingle();
 
             if (groupError) {
-                console.error('Error querying group:', groupError);
+                console.error('[PrayerGroupManager] Error querying group by prayer_request_id:', groupError);
             }
+
+            // Fallback: if no group found by prayer_request_id, try searching by prayer content in group name
+            if (!groupData && prayerContent) {
+                console.log('[PrayerGroupManager] No group found by prayer_request_id, trying fallback by content...');
+                const searchKey = prayerContent.substring(0, 30);
+                const { data: fallbackGroups } = await supabase
+                    .from('prayer_groups')
+                    .select('*')
+                    .ilike('name', `%${searchKey}%`)
+                    .limit(1);
+
+                if (fallbackGroups && fallbackGroups.length > 0) {
+                    groupData = fallbackGroups[0];
+                    console.log('[PrayerGroupManager] Found group via fallback:', groupData.name);
+
+                    // Auto-fix: update the prayer_request_id on the group if it's missing
+                    if (!groupData.prayer_request_id) {
+                        await supabase
+                            .from('prayer_groups')
+                            .update({ prayer_request_id: prayerId })
+                            .eq('id', groupData.id);
+                        console.log('[PrayerGroupManager] Auto-fixed prayer_request_id link');
+                    }
+                }
+            }
+
+            console.log('[PrayerGroupManager] Group data found:', !!groupData, groupData?.name);
 
             if (groupData) {
                 // Get member count and member IDs
@@ -181,13 +210,14 @@ export function PrayerGroupManager({
                     pending_request: pendingRequest
                 });
             } else {
+                console.log('[PrayerGroupManager] No group found for prayer:', prayerId);
                 setExistingGroup(null);
             }
         } catch (e) {
-            console.error('Error loading group:', e);
+            console.error('[PrayerGroupManager] Error loading group:', e);
         }
         setIsLoading(false);
-    }, [prayerId, currentUserId]);
+    }, [prayerId, prayerContent, currentUserId]);
 
     const loadJoinRequests = async () => {
         if (!existingGroup) return;

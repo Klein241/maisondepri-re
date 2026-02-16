@@ -84,12 +84,30 @@ export function PrayerCard({
     useEffect(() => {
         const checkGroup = async () => {
             try {
+                // Primary check by prayer_request_id
                 const { data, error } = await supabase
                     .from('prayer_groups')
                     .select('id')
                     .eq('prayer_request_id', prayerId)
                     .limit(1);
-                setHasLinkedGroup(!error && !!data && data.length > 0);
+
+                if (!error && data && data.length > 0) {
+                    setHasLinkedGroup(true);
+                    return;
+                }
+
+                // Fallback: check by prayer content in group name
+                if (contentText) {
+                    const searchKey = contentText.substring(0, 30);
+                    const { data: fallback } = await supabase
+                        .from('prayer_groups')
+                        .select('id')
+                        .ilike('name', `%${searchKey}%`)
+                        .limit(1);
+                    setHasLinkedGroup(!!fallback && fallback.length > 0);
+                } else {
+                    setHasLinkedGroup(false);
+                }
             } catch (e) {
                 // Silently fail
             }

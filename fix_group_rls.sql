@@ -42,19 +42,15 @@ DROP POLICY IF EXISTS "Auth users can create groups" ON prayer_groups;
 DROP POLICY IF EXISTS "Group creator can update" ON prayer_groups;
 DROP POLICY IF EXISTS "Group creator can delete" ON prayer_groups;
 
--- Anyone authenticated can see all groups
 CREATE POLICY "prayer_groups_select" ON prayer_groups
   FOR SELECT USING (true);
 
--- Authenticated users can create groups
 CREATE POLICY "prayer_groups_insert" ON prayer_groups
   FOR INSERT WITH CHECK (auth.uid() = created_by);
 
--- Creator can update their groups
 CREATE POLICY "prayer_groups_update" ON prayer_groups
   FOR UPDATE USING (auth.uid() = created_by);
 
--- Creator can delete their groups
 CREATE POLICY "prayer_groups_delete" ON prayer_groups
   FOR DELETE USING (auth.uid() = created_by);
 
@@ -70,19 +66,15 @@ DROP POLICY IF EXISTS "Auth users can join groups" ON prayer_group_members;
 DROP POLICY IF EXISTS "Members can leave groups" ON prayer_group_members;
 DROP POLICY IF EXISTS "Admins can manage members" ON prayer_group_members;
 
--- ANYONE authenticated can see all group members (needed for member lists)
 CREATE POLICY "prayer_group_members_select" ON prayer_group_members
   FOR SELECT USING (true);
 
--- Authenticated users can insert (join groups, admins add members)
 CREATE POLICY "prayer_group_members_insert" ON prayer_group_members
   FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
 
--- Members can update their own role / admins can update others
 CREATE POLICY "prayer_group_members_update" ON prayer_group_members
   FOR UPDATE USING (auth.uid() IS NOT NULL);
 
--- Members can leave (delete own) or admins can remove
 CREATE POLICY "prayer_group_members_delete" ON prayer_group_members
   FOR DELETE USING (auth.uid() IS NOT NULL);
 
@@ -97,20 +89,15 @@ DROP POLICY IF EXISTS "Group members can view messages" ON prayer_group_messages
 DROP POLICY IF EXISTS "Group members can send messages" ON prayer_group_messages;
 DROP POLICY IF EXISTS "Users can delete own messages" ON prayer_group_messages;
 
--- ALL authenticated users can read group messages
--- (We use a permissive policy to avoid RLS blocking realtime subscriptions)
 CREATE POLICY "prayer_group_messages_select" ON prayer_group_messages
   FOR SELECT USING (true);
 
--- Authenticated users can insert messages (they must be members, enforced by app logic)
 CREATE POLICY "prayer_group_messages_insert" ON prayer_group_messages
   FOR INSERT WITH CHECK (auth.uid() = user_id);
 
--- Users can update their own messages
 CREATE POLICY "prayer_group_messages_update" ON prayer_group_messages
   FOR UPDATE USING (auth.uid() = user_id);
 
--- Users can delete their own messages
 CREATE POLICY "prayer_group_messages_delete" ON prayer_group_messages
   FOR DELETE USING (auth.uid() = user_id);
 
@@ -143,7 +130,6 @@ DROP POLICY IF EXISTS "Users can view own messages" ON direct_messages;
 DROP POLICY IF EXISTS "Users can send messages" ON direct_messages;
 DROP POLICY IF EXISTS "Users can update messages" ON direct_messages;
 
--- Users can see messages in their conversations
 CREATE POLICY "direct_messages_select" ON direct_messages
   FOR SELECT USING (
     EXISTS (
@@ -166,14 +152,37 @@ CREATE POLICY "direct_messages_update" ON direct_messages
   );
 
 -- =====================================================
--- 8. ENABLE REALTIME FOR GROUP MESSAGES
+-- 8. ENABLE REALTIME (safe - skip if already added)
 -- =====================================================
-ALTER PUBLICATION supabase_realtime ADD TABLE prayer_group_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE prayer_groups;
-ALTER PUBLICATION supabase_realtime ADD TABLE direct_messages;
+DO $$
+BEGIN
+  -- Add prayer_group_messages to realtime if not already
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'prayer_group_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE prayer_group_messages;
+  END IF;
+
+  -- Add prayer_groups to realtime if not already
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'prayer_groups'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE prayer_groups;
+  END IF;
+
+  -- Add direct_messages to realtime if not already
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'direct_messages'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE direct_messages;
+  END IF;
+END $$;
 
 -- =====================================================
--- 9. ADD prayer_request_id column IF MISSING
+-- 9. ADD MISSING COLUMNS (safe - IF NOT EXISTS)
 -- =====================================================
 ALTER TABLE prayer_groups ADD COLUMN IF NOT EXISTS prayer_request_id UUID;
 ALTER TABLE prayer_groups ADD COLUMN IF NOT EXISTS avatar_url TEXT;
