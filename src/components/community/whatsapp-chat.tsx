@@ -6,10 +6,12 @@ import {
     Send, ArrowLeft, Users, Search, MoreVertical, Phone, Video,
     Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
-    Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign
+    Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
+    BookOpen, CalendarDays
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -222,6 +224,22 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     // @mention state
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
+
+    // Bible sharing tool state
+    const [showBibleTool, setShowBibleTool] = useState(false);
+    const [bibleReference, setBibleReference] = useState('');
+    const [bibleContent, setBibleContent] = useState('');
+    const [bibleVersion, setBibleVersion] = useState('LSG');
+    const [isFetchingBible, setIsFetchingBible] = useState(false);
+
+    // Fasting program tool state
+    const [showFastingTool, setShowFastingTool] = useState(false);
+    const [fastingTheme, setFastingTheme] = useState('');
+    const [fastingDuration, setFastingDuration] = useState(3);
+    const [fastingDays, setFastingDays] = useState<Array<{
+        title: string; theme: string; reference: string; passage: string;
+        meditation: string; action: string; prayers: string;
+    }>>([]);
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
@@ -1274,6 +1292,115 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         setShowMentions(false);
     };
 
+    // Bible tool: fetch passage
+    const fetchBiblePassage = async () => {
+        if (!bibleReference.trim()) { toast.error('Entrez une référence (ex: Jean 3:16)'); return; }
+        setIsFetchingBible(true);
+        try {
+            const res = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&version=${bibleVersion}`);
+            if (!res.ok) throw new Error('Not found');
+            const data = await res.json();
+            setBibleContent(data.text || data.content || 'Passage non trouvé');
+        } catch {
+            // Fallback: just set the reference as content
+            setBibleContent(`📖 ${bibleReference} (${bibleVersion})\n\n[Passage à lire dans votre Bible]`);
+        }
+        setIsFetchingBible(false);
+    };
+
+    // Bible tool: share passage to group
+    const shareBiblePassage = async () => {
+        if (!bibleContent || !selectedGroup || !user) return;
+        const msgContent = `📖 **${bibleReference}** (${bibleVersion})\n\n${bibleContent}`;
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content: msgContent,
+                    type: 'text'
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            if (data) {
+                setMessages(prev => [...prev, {
+                    ...data,
+                    sender_id: data.user_id,
+                    sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                    is_read: true
+                }]);
+            }
+            setShowBibleTool(false);
+            setBibleReference('');
+            setBibleContent('');
+            toast.success('Passage partagé dans le groupe !');
+        } catch { toast.error('Erreur lors du partage'); }
+    };
+
+    // Initialize fasting days
+    const initFastingDays = (count: number) => {
+        const days = Array.from({ length: count }, (_, i) => ({
+            title: `Jour ${i + 1}`,
+            theme: '',
+            reference: '',
+            passage: '',
+            meditation: '',
+            action: '',
+            prayers: ''
+        }));
+        setFastingDays(days);
+    };
+
+    // Share fasting program to group
+    const shareFastingProgram = async () => {
+        if (!fastingTheme || !selectedGroup || !user) return;
+        let content = `🕊️ **PROGRAMME DE JEÛNE ET PRIÈRE**\n\n`;
+        content += `📌 Thème: ${fastingTheme}\n`;
+        content += `⏱️ Durée: ${fastingDuration} jours\n\n`;
+        content += `---\n\n`;
+
+        for (const day of fastingDays) {
+            if (day.theme || day.reference) {
+                content += `📅 **${day.title}**\n`;
+                if (day.theme) content += `🎯 Thème: ${day.theme}\n`;
+                if (day.reference) content += `📖 Référence: ${day.reference}\n`;
+                if (day.passage) content += `✍️ Passage: ${day.passage}\n`;
+                if (day.meditation) content += `🧘 Méditation: ${day.meditation}\n`;
+                if (day.action) content += `💪 Action pratique: ${day.action}\n`;
+                if (day.prayers) content += `🙏 Sujets de prière: ${day.prayers}\n`;
+                content += `\n`;
+            }
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content,
+                    type: 'text'
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            if (data) {
+                setMessages(prev => [...prev, {
+                    ...data,
+                    sender_id: data.user_id,
+                    sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                    is_read: true
+                }]);
+            }
+            setShowFastingTool(false);
+            setFastingTheme('');
+            setFastingDays([]);
+            toast.success('Programme de jeûne partagé !');
+        } catch { toast.error('Erreur lors du partage'); }
+    };
+
     if (!user) {
         return (
             <div className="flex items-center justify-center h-full">
@@ -2096,6 +2223,28 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 Ajouter des membres
                             </Button>
 
+                            {/* Bible Tool */}
+                            <Button
+                                variant="outline"
+                                className="w-full border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/30"
+                                onClick={() => { setShowBibleTool(true); setShowGroupTools(false); }}
+                            >
+                                <BookOpen className="h-4 w-4 mr-2" />
+                                📖 Partager un passage biblique
+                            </Button>
+
+                            {/* Fasting Program Tool (admin only) */}
+                            {isGroupAdmin && (
+                                <Button
+                                    variant="outline"
+                                    className="w-full border-purple-500/20 text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/30"
+                                    onClick={() => { setShowFastingTool(true); setShowGroupTools(false); initFastingDays(fastingDuration); }}
+                                >
+                                    <CalendarDays className="h-4 w-4 mr-2" />
+                                    🕊️ Programme de jeûne
+                                </Button>
+                            )}
+
                             {/* Members List with Admin Controls */}
                             <div className="space-y-1">
                                 <p className="text-xs text-slate-400 font-medium px-1">Membres ({groupMembers.length})</p>
@@ -2183,6 +2332,202 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             }
                         </div>
                     </ScrollArea>
+                </DialogContent>
+            </Dialog>
+
+            {/* Bible Sharing Tool Dialog */}
+            <Dialog open={showBibleTool} onOpenChange={setShowBibleTool}>
+                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <BookOpen className="h-5 w-5 text-emerald-400" />
+                            Partager un passage biblique
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {/* Version */}
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Version</label>
+                            <div className="flex gap-2">
+                                {['LSG', 'NIV', 'KJV', 'ESV'].map(v => (
+                                    <Button
+                                        key={v}
+                                        size="sm"
+                                        variant={bibleVersion === v ? 'default' : 'outline'}
+                                        className={bibleVersion === v
+                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                            : 'border-white/10 text-slate-400 hover:bg-white/5'}
+                                        onClick={() => setBibleVersion(v)}
+                                    >
+                                        {v}
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Reference Input */}
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Référence</label>
+                            <div className="flex gap-2">
+                                <Input
+                                    placeholder="Ex: Jean 3:16 ou Psaume 23"
+                                    value={bibleReference}
+                                    onChange={e => setBibleReference(e.target.value)}
+                                    className="bg-white/5 border-white/10 text-white"
+                                    onKeyPress={e => e.key === 'Enter' && fetchBiblePassage()}
+                                />
+                                <Button
+                                    onClick={fetchBiblePassage}
+                                    disabled={isFetchingBible}
+                                    className="bg-emerald-600 hover:bg-emerald-700 shrink-0"
+                                >
+                                    {isFetchingBible ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Preview */}
+                        {bibleContent && (
+                            <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/20">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <BookOpen className="h-4 w-4 text-emerald-400" />
+                                    <span className="text-emerald-400 font-semibold text-sm">{bibleReference} ({bibleVersion})</span>
+                                </div>
+                                <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{bibleContent}</p>
+                            </div>
+                        )}
+
+                        {/* Share */}
+                        {bibleContent && (
+                            <Button
+                                onClick={shareBiblePassage}
+                                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
+                            >
+                                <Send className="h-4 w-4 mr-2" />
+                                Partager dans le groupe
+                            </Button>
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Fasting Program Tool Dialog */}
+            <Dialog open={showFastingTool} onOpenChange={setShowFastingTool}>
+                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <CalendarDays className="h-5 w-5 text-purple-400" />
+                            Programme de jeûne et prière
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        {/* Theme */}
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Thème du jeûne</label>
+                            <Input
+                                placeholder="Ex: Renouvellement spirituel, Percée, etc."
+                                value={fastingTheme}
+                                onChange={e => setFastingTheme(e.target.value)}
+                                className="bg-white/5 border-white/10 text-white"
+                            />
+                        </div>
+
+                        {/* Duration */}
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Durée (jours)</label>
+                            <div className="flex gap-2">
+                                {[3, 5, 7, 10, 14, 21, 40].map(d => (
+                                    <Button
+                                        key={d}
+                                        size="sm"
+                                        variant={fastingDuration === d ? 'default' : 'outline'}
+                                        className={fastingDuration === d
+                                            ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                                            : 'border-white/10 text-slate-400 hover:bg-white/5'}
+                                        onClick={() => { setFastingDuration(d); initFastingDays(d); }}
+                                    >
+                                        {d}j
+                                    </Button>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Daily Content */}
+                        <div className="space-y-3">
+                            <p className="text-xs text-slate-400 font-medium">Contenu journalier</p>
+                            <ScrollArea className="max-h-[40vh]">
+                                <div className="space-y-3 pr-2">
+                                    {fastingDays.map((day, i) => (
+                                        <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-bold text-purple-400">📅 {day.title}</span>
+                                            </div>
+                                            <Input
+                                                placeholder="Thème du jour"
+                                                value={day.theme}
+                                                onChange={e => {
+                                                    const updated = [...fastingDays];
+                                                    updated[i] = { ...updated[i], theme: e.target.value };
+                                                    setFastingDays(updated);
+                                                }}
+                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
+                                            />
+                                            <Input
+                                                placeholder="Référence biblique (ex: Matthieu 6:16-18)"
+                                                value={day.reference}
+                                                onChange={e => {
+                                                    const updated = [...fastingDays];
+                                                    updated[i] = { ...updated[i], reference: e.target.value };
+                                                    setFastingDays(updated);
+                                                }}
+                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
+                                            />
+                                            <Textarea
+                                                placeholder="Méditation / réflexion"
+                                                value={day.meditation}
+                                                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
+                                                    const updated = [...fastingDays];
+                                                    updated[i] = { ...updated[i], meditation: e.target.value };
+                                                    setFastingDays(updated);
+                                                }}
+                                                className="bg-white/5 border-white/10 text-sm min-h-[60px] text-white"
+                                            />
+                                            <Input
+                                                placeholder="Action pratique"
+                                                value={day.action}
+                                                onChange={e => {
+                                                    const updated = [...fastingDays];
+                                                    updated[i] = { ...updated[i], action: e.target.value };
+                                                    setFastingDays(updated);
+                                                }}
+                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
+                                            />
+                                            <Input
+                                                placeholder="Sujets de prière"
+                                                value={day.prayers}
+                                                onChange={e => {
+                                                    const updated = [...fastingDays];
+                                                    updated[i] = { ...updated[i], prayers: e.target.value };
+                                                    setFastingDays(updated);
+                                                }}
+                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
+                                            />
+                                        </div>
+                                    ))}
+                                </div>
+                            </ScrollArea>
+                        </div>
+
+                        {/* Share */}
+                        <Button
+                            onClick={shareFastingProgram}
+                            disabled={!fastingTheme.trim()}
+                            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
+                        >
+                            <Send className="h-4 w-4 mr-2" />
+                            Partager le programme dans le groupe
+                        </Button>
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>
