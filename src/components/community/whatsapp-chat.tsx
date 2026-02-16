@@ -5,13 +5,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
     Send, ArrowLeft, Users, Search, MoreVertical, Phone, Video,
     Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
-    Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2
+    Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
+    Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
@@ -209,6 +211,20 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     // Debounced reload ref to avoid excessive API calls
     const reloadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+    // Group Admin & Tools State
+    const [showGroupTools, setShowGroupTools] = useState(false);
+    const [showAddMemberDialog, setShowAddMemberDialog] = useState(false);
+    const [addMemberSearch, setAddMemberSearch] = useState('');
+    const [isUploadingGroupPhoto, setIsUploadingGroupPhoto] = useState(false);
+    const groupPhotoInputRef = useRef<HTMLInputElement>(null);
+
+    // @mention state
+    const [showMentions, setShowMentions] = useState(false);
+    const [mentionFilter, setMentionFilter] = useState('');
+
+    // Group message polling fallback ref
+    const groupPollRef = useRef<NodeJS.Timeout | null>(null);
+
     // Refs to hold current values without causing re-subscriptions
     const selectedConversationRef = useRef(selectedConversation);
     const selectedGroupRef = useRef(selectedGroup);
@@ -253,6 +269,9 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             cleanup?.();
             if (reloadTimeoutRef.current) {
                 clearTimeout(reloadTimeoutRef.current);
+            }
+            if (groupPollRef.current) {
+                clearInterval(groupPollRef.current);
             }
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -971,8 +990,42 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         setSelectedGroup(group);
         setSelectedConversation(null);
         setView('group');
+        setShowGroupTools(false);
         loadMessages('group', group.id);
         loadGroupMembers(group.id);
+
+        // Start polling fallback for group messages (every 5s)
+        if (groupPollRef.current) clearInterval(groupPollRef.current);
+        groupPollRef.current = setInterval(async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('prayer_group_messages')
+                    .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                    .eq('group_id', group.id)
+                    .order('created_at', { ascending: true });
+                if (!error && data) {
+                    setMessages(prev => {
+                        if (data.length === prev.length) return prev;
+                        return data.map((m: any) => ({
+                            ...m,
+                            sender_id: m.user_id,
+                            is_read: true
+                        }));
+                    });
+                }
+            } catch { }
+        }, 5000);
+    };
+
+    // Cleanup polling when going back
+    const goBackToList = () => {
+        if (groupPollRef.current) {
+            clearInterval(groupPollRef.current);
+            groupPollRef.current = null;
+        }
+        setView('list');
+        setShowGroupTools(false);
+        setShowGroupMembers(false);
     };
 
     // Start new conversation - creates it in Supabase
@@ -1061,10 +1114,22 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     // URL regex for detecting links in messages
     const urlRegex = /(https?:\/\/[^\s]+)/gi;
 
-    // Render message content with clickable links
+    // Render message content with clickable links and @mentions
     const renderMessageContent = (content: string) => {
+        // First handle URLs
         const parts = content.split(urlRegex);
-        if (parts.length <= 1) return <p className="text-sm whitespace-pre-wrap break-words">{content}</p>;
+        const hasUrl = parts.length > 1;
+
+        // Highlight @mentions
+        const renderWithMentions = (text: string) => {
+            const mentionParts = text.split(/(@\w[\w\s]*?\s)/g);
+            if (mentionParts.length <= 1) return text;
+            return mentionParts.map((p, i) =>
+                p.startsWith('@') ? <span key={i} className="text-indigo-400 font-semibold">{p}</span> : p
+            );
+        };
+
+        if (!hasUrl) return <p className="text-sm whitespace-pre-wrap break-words">{renderWithMentions(content)}</p>;
 
         return (
             <div className="text-sm whitespace-pre-wrap break-words">
@@ -1100,6 +1165,109 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
 
     // Count online members in current group
     const onlineMembersCount = groupMembers.filter(m => m.is_online || onlineUsers[m.id]).length;
+
+    // Check if current user is admin/creator
+    const isGroupAdmin = selectedGroup && (
+        selectedGroup.created_by === user?.id ||
+        groupMembers.find(m => m.id === user?.id)?.role === 'admin'
+    );
+
+    // Upload group photo
+    const handleGroupPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file || !selectedGroup || !user) return;
+        setIsUploadingGroupPhoto(true);
+        try {
+            const ext = file.name.split('.').pop();
+            const path = `group_avatars/${selectedGroup.id}.${ext}`;
+            const { error: uploadErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true });
+            if (uploadErr) throw uploadErr;
+            const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(path);
+            const avatarUrl = urlData.publicUrl + `?t=${Date.now()}`;
+            await supabase.from('prayer_groups').update({ avatar_url: avatarUrl }).eq('id', selectedGroup.id);
+            setSelectedGroup({ ...selectedGroup, avatar_url: avatarUrl });
+            toast.success('Photo du groupe mise à jour!');
+        } catch (err) {
+            console.error('Error uploading group photo:', err);
+            toast.error('Erreur lors de l\'upload');
+        }
+        setIsUploadingGroupPhoto(false);
+    };
+
+    // Remove member from group
+    const handleRemoveMember = async (memberId: string) => {
+        if (!selectedGroup || !user) return;
+        if (memberId === user.id) { toast.error('Vous ne pouvez pas vous retirer vous-même'); return; }
+        try {
+            await supabase.from('prayer_group_members').delete()
+                .eq('group_id', selectedGroup.id).eq('user_id', memberId);
+            setGroupMembers(prev => prev.filter(m => m.id !== memberId));
+            toast.success('Membre retiré');
+        } catch (err) {
+            toast.error('Erreur lors du retrait');
+        }
+    };
+
+    // Add member to group
+    const handleAddMember = async (userId: string) => {
+        if (!selectedGroup) return;
+        try {
+            const existing = groupMembers.find(m => m.id === userId);
+            if (existing) { toast.info('Déjà membre'); return; }
+            await supabase.from('prayer_group_members').insert({
+                group_id: selectedGroup.id,
+                user_id: userId,
+                role: 'member'
+            });
+            await loadGroupMembers(selectedGroup.id);
+            toast.success('Membre ajouté!');
+        } catch (err) {
+            toast.error('Erreur lors de l\'ajout');
+        }
+    };
+
+    // Promote member to admin
+    const handlePromoteAdmin = async (memberId: string) => {
+        if (!selectedGroup) return;
+        try {
+            await supabase.from('prayer_group_members')
+                .update({ role: 'admin' })
+                .eq('group_id', selectedGroup.id).eq('user_id', memberId);
+            setGroupMembers(prev => prev.map(m => m.id === memberId ? { ...m, role: 'admin' } : m));
+            toast.success('Membre promu admin!');
+        } catch (err) {
+            toast.error('Erreur lors de la promotion');
+        }
+    };
+
+    // Insert @mention into message
+    const insertMention = (memberName: string) => {
+        const mentionText = `@${memberName} `;
+        const curVal = newMessage;
+        const atIdx = curVal.lastIndexOf('@');
+        const newVal = atIdx >= 0 ? curVal.slice(0, atIdx) + mentionText : curVal + mentionText;
+        setNewMessage(newVal);
+        setShowMentions(false);
+        inputRef.current?.focus();
+    };
+
+    // Handle message input change with @mention detection
+    const handleMessageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const val = e.target.value;
+        setNewMessage(val);
+        handleTyping();
+        // Detect @mention
+        const lastAt = val.lastIndexOf('@');
+        if (lastAt >= 0 && view === 'group') {
+            const afterAt = val.slice(lastAt + 1);
+            if (!afterAt.includes(' ') && afterAt.length <= 30) {
+                setMentionFilter(afterAt.toLowerCase());
+                setShowMentions(true);
+                return;
+            }
+        }
+        setShowMentions(false);
+    };
 
     if (!user) {
         return (
@@ -1399,9 +1567,9 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
             {/* Chat Header */}
-            <div className="p-3 border-b border-white/10 flex items-center gap-3 bg-slate-900/80 backdrop-blur-sm">
-                <Button variant="ghost" size="icon" onClick={() => setView('list')}>
-                    <ArrowLeft className="h-5 w-5" />
+            <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/80 backdrop-blur-sm">
+                <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
+                    <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
 
                 {currentRecipient && (
@@ -1465,7 +1633,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 {currentGroup && (
                     <>
                         <div className={cn(
-                            "w-10 h-10 shrink-0 rounded-full flex items-center justify-center overflow-hidden",
+                            "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center overflow-hidden",
                             currentGroup.is_urgent
                                 ? "bg-gradient-to-br from-red-500 to-orange-500"
                                 : "bg-gradient-to-br from-indigo-500 to-purple-500"
@@ -1473,20 +1641,20 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             {currentGroup.avatar_url ? (
                                 <img src={currentGroup.avatar_url} alt={currentGroup.name} className="w-full h-full object-cover" />
                             ) : (
-                                <Users className="h-5 w-5 text-white" />
+                                <Users className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                             )}
                         </div>
                         <div className="flex-1 min-w-0 overflow-hidden" onClick={() => setShowGroupMembers(!showGroupMembers)}>
-                            <p className="font-medium text-white flex items-center gap-2 text-sm sm:text-base truncate cursor-pointer">
+                            <p className="font-medium text-white flex items-center gap-1 sm:gap-2 text-xs sm:text-base truncate cursor-pointer">
                                 <span className="truncate">{currentGroup.name}</span>
                                 {currentGroup.is_urgent && (
-                                    <Badge className="bg-red-500/20 text-red-400 text-[10px] shrink-0">URGENT</Badge>
+                                    <Badge className="bg-red-500/20 text-red-400 text-[8px] sm:text-[10px] shrink-0">URGENT</Badge>
                                 )}
                             </p>
-                            <p className="text-[10px] sm:text-xs text-slate-400 flex items-center gap-1">
-                                <span>{currentGroup.member_count} membres</span>
+                            <p className="text-[9px] sm:text-xs text-slate-400 flex items-center gap-1">
+                                <span>{groupMembers.length} membres</span>
                                 {onlineMembersCount > 0 && (
-                                    <span className="flex items-center gap-1">
+                                    <span className="flex items-center gap-0.5">
                                         <span className="text-slate-500">•</span>
                                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block animate-pulse" />
                                         <span className="text-green-400">{onlineMembersCount} en ligne</span>
@@ -1494,20 +1662,31 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+                        <div className="flex items-center gap-0 sm:gap-1 shrink-0">
+                            {isGroupAdmin && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-7 w-7 sm:h-9 sm:w-9"
+                                    onClick={() => { setShowGroupTools(true); loadAllUsers(); }}
+                                    title="Outils de groupe"
+                                >
+                                    <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                </Button>
+                            )}
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-8 w-8 sm:h-9 sm:w-9"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-7 w-7 sm:h-9 sm:w-9"
                                 onClick={() => setShowGroupMembers(!showGroupMembers)}
                                 title="Voir les membres"
                             >
-                                <Users className="h-4 w-4" />
+                                <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-8 w-8 sm:h-9 sm:w-9"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-7 w-7 sm:h-9 sm:w-9"
                                 onClick={() => {
                                     const chars = 'abcdefghijklmnopqrstuvwxyz';
                                     const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -1517,7 +1696,7 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                                 }}
                                 title="Appel vidéo de groupe"
                             >
-                                <Video className="h-4 w-4" />
+                                <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                         </div>
                     </>
@@ -1651,7 +1830,38 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             </ScrollArea>
 
             {/* Input Area */}
-            <div className="p-3 border-t border-white/10 bg-slate-900/80">
+            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80">
+                {/* @Mention suggestions */}
+                <AnimatePresence>
+                    {showMentions && view === 'group' && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 10 }}
+                            className="mb-2 bg-slate-800 rounded-lg border border-white/10 max-h-32 overflow-y-auto"
+                        >
+                            {groupMembers
+                                .filter(m => m.id !== user.id && (!mentionFilter || m.full_name?.toLowerCase().includes(mentionFilter)))
+                                .slice(0, 5)
+                                .map(m => (
+                                    <button
+                                        key={m.id}
+                                        onClick={() => insertMention(m.full_name || 'Utilisateur')}
+                                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left"
+                                    >
+                                        <Avatar className="h-5 w-5">
+                                            <AvatarImage src={m.avatar_url || undefined} />
+                                            <AvatarFallback className="text-[8px] bg-slate-600">{getInitials(m.full_name)}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="text-xs text-white">{m.full_name}</span>
+                                        {(m.is_online || onlineUsers[m.id]) && <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />}
+                                    </button>
+                                ))
+                            }
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* Emoji Picker */}
                 <div className="relative">
                     <EmojiPicker
@@ -1661,20 +1871,32 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     />
                 </div>
 
-                <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="flex items-center gap-1 sm:gap-2">
                     <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        className="text-slate-400 hover:text-white"
+                        className="text-slate-400 hover:text-white h-8 w-8 shrink-0"
                     >
-                        <Smile className="h-5 w-5" />
+                        <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
                     </Button>
 
+                    {view === 'group' && (
+                        <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => { setShowMentions(!showMentions); setMentionFilter(''); }}
+                            className="text-slate-400 hover:text-indigo-400 h-8 w-8 shrink-0"
+                            title="Tagger un membre"
+                        >
+                            <AtSign className="h-4 w-4" />
+                        </Button>
+                    )}
+
                     {isRecording ? (
-                        <div className="flex-1 flex items-center gap-3 bg-red-500/20 rounded-full px-4 py-2">
+                        <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-red-500/20 rounded-full px-3 sm:px-4 py-2">
                             <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
-                            <span className="text-red-400 font-mono flex-1">
+                            <span className="text-red-400 font-mono flex-1 text-sm">
                                 {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
                             </span>
                             <Button
@@ -1695,21 +1917,18 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             </Button>
                         </div>
                     ) : isUploadingVoice ? (
-                        <div className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/20 rounded-full px-4 py-2">
+                        <div className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/20 rounded-full px-3 sm:px-4 py-2">
                             <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
-                            <span className="text-indigo-400 text-sm">Envoi du message vocal...</span>
+                            <span className="text-indigo-400 text-xs sm:text-sm">Envoi du message vocal...</span>
                         </div>
                     ) : (
                         <Input
                             ref={inputRef}
-                            placeholder="Écrire un message..."
+                            placeholder={view === 'group' ? "Message... (@ pour tagger)" : "Écrire un message..."}
                             value={newMessage}
-                            onChange={(e) => {
-                                setNewMessage(e.target.value);
-                                handleTyping();
-                            }}
+                            onChange={handleMessageChange}
                             onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                            className="flex-1 bg-white/5 border-white/10 rounded-full text-sm sm:text-base min-w-0"
+                            className="flex-1 bg-white/5 border-white/10 rounded-full text-sm min-w-0"
                         />
                     )}
 
@@ -1738,6 +1957,140 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     )}
                 </div>
             </div>
+
+            {/* Group Tools Dialog */}
+            <Dialog open={showGroupTools} onOpenChange={setShowGroupTools}>
+                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <Settings className="h-5 w-5 text-amber-400" />
+                            Outils de groupe
+                        </DialogTitle>
+                    </DialogHeader>
+
+                    {currentGroup && (
+                        <div className="space-y-4">
+                            {/* Group Photo */}
+                            <div className="flex items-center gap-4">
+                                <div
+                                    className="relative w-16 h-16 rounded-full overflow-hidden cursor-pointer group bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center"
+                                    onClick={() => groupPhotoInputRef.current?.click()}
+                                >
+                                    {currentGroup.avatar_url ? (
+                                        <img src={currentGroup.avatar_url} alt="" className="w-full h-full object-cover" />
+                                    ) : (
+                                        <Users className="h-8 w-8 text-white" />
+                                    )}
+                                    <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                        {isUploadingGroupPhoto ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : <Camera className="h-5 w-5 text-white" />}
+                                    </div>
+                                </div>
+                                <div>
+                                    <p className="text-sm font-medium text-white">{currentGroup.name}</p>
+                                    <p className="text-xs text-slate-400">Cliquez pour changer la photo</p>
+                                </div>
+                            </div>
+                            <input ref={groupPhotoInputRef} type="file" accept="image/*" className="hidden" onChange={handleGroupPhotoUpload} />
+
+                            {/* Add Member */}
+                            <Button
+                                variant="outline"
+                                className="w-full border-white/10 text-white hover:bg-white/5"
+                                onClick={() => { setShowAddMemberDialog(true); setAddMemberSearch(''); }}
+                            >
+                                <UserPlus className="h-4 w-4 mr-2" />
+                                Ajouter des membres
+                            </Button>
+
+                            {/* Members List with Admin Controls */}
+                            <div className="space-y-1">
+                                <p className="text-xs text-slate-400 font-medium px-1">Membres ({groupMembers.length})</p>
+                                {groupMembers.map(member => (
+                                    <div key={member.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
+                                        <div className="relative">
+                                            <Avatar className="h-8 w-8">
+                                                <AvatarImage src={member.avatar_url || undefined} />
+                                                <AvatarFallback className="text-xs bg-slate-600">{getInitials(member.full_name)}</AvatarFallback>
+                                            </Avatar>
+                                            {(member.is_online || onlineUsers[member.id]) && (
+                                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-900" />
+                                            )}
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-white truncate">{member.full_name || 'Utilisateur'}</p>
+                                            <p className="text-[10px] text-slate-500">
+                                                {member.role === 'admin' ? '👑 Admin' : 'Membre'}
+                                                {(member.is_online || onlineUsers[member.id]) && ' • 🟢 En ligne'}
+                                            </p>
+                                        </div>
+                                        {member.id !== user.id && member.role !== 'admin' && (
+                                            <div className="flex gap-1 shrink-0">
+                                                <Button
+                                                    variant="ghost" size="icon"
+                                                    className="h-7 w-7 text-amber-400 hover:bg-amber-500/10"
+                                                    onClick={() => handlePromoteAdmin(member.id)}
+                                                    title="Nommer admin"
+                                                >
+                                                    <Crown className="h-3.5 w-3.5" />
+                                                </Button>
+                                                <Button
+                                                    variant="ghost" size="icon"
+                                                    className="h-7 w-7 text-red-400 hover:bg-red-500/10"
+                                                    onClick={() => handleRemoveMember(member.id)}
+                                                    title="Retirer"
+                                                >
+                                                    <UserMinus className="h-3.5 w-3.5" />
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
+
+            {/* Add Member Dialog */}
+            <Dialog open={showAddMemberDialog} onOpenChange={setShowAddMemberDialog}>
+                <DialogContent className="max-w-sm max-h-[70vh] overflow-hidden bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <UserPlus className="h-5 w-5 text-green-400" />
+                            Ajouter des membres
+                        </DialogTitle>
+                    </DialogHeader>
+                    <Input
+                        placeholder="Rechercher..."
+                        value={addMemberSearch}
+                        onChange={e => setAddMemberSearch(e.target.value)}
+                        className="bg-white/5 border-white/10"
+                    />
+                    <ScrollArea className="max-h-[40vh]">
+                        <div className="space-y-1">
+                            {allUsers
+                                .filter(u => !groupMembers.find(m => m.id === u.id) && (
+                                    !addMemberSearch || u.full_name?.toLowerCase().includes(addMemberSearch.toLowerCase())
+                                ))
+                                .map(u => (
+                                    <button
+                                        key={u.id}
+                                        onClick={() => handleAddMember(u.id)}
+                                        className="w-full flex items-center gap-2 p-2 rounded-lg hover:bg-white/5 text-left"
+                                    >
+                                        <Avatar className="h-8 w-8">
+                                            <AvatarImage src={u.avatar_url || undefined} />
+                                            <AvatarFallback className="text-xs bg-slate-600">{getInitials(u.full_name)}</AvatarFallback>
+                                        </Avatar>
+                                        <span className="text-sm text-white flex-1 truncate">{u.full_name || 'Utilisateur'}</span>
+                                        <Plus className="h-4 w-4 text-green-400 shrink-0" />
+                                    </button>
+                                ))
+                            }
+                        </div>
+                    </ScrollArea>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
