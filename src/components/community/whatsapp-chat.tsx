@@ -7,7 +7,7 @@ import {
     Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
-    BookOpen, CalendarDays
+    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -254,6 +254,27 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         callType: 'audio' | 'video';
         callerId: string;
     } | null>(null);
+
+    // Announcement state
+    const [showAnnouncementTool, setShowAnnouncementTool] = useState(false);
+    const [announcementText, setAnnouncementText] = useState('');
+
+    // Pinned prayer state
+    const [pinnedPrayer, setPinnedPrayer] = useState<string | null>(null);
+    const [showPinTool, setShowPinTool] = useState(false);
+    const [pinText, setPinText] = useState('');
+
+    // Event planning state
+    const [showEventTool, setShowEventTool] = useState(false);
+    const [eventTitle, setEventTitle] = useState('');
+    const [eventDate, setEventDate] = useState('');
+    const [eventTime, setEventTime] = useState('');
+    const [eventDescription, setEventDescription] = useState('');
+
+    // Migrate members state
+    const [showMigrateTool, setShowMigrateTool] = useState(false);
+    const [migrateTargetName, setMigrateTargetName] = useState('');
+    const [isMigratingMembers, setIsMigratingMembers] = useState(false);
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
@@ -1028,6 +1049,13 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         loadMessages('group', group.id);
         loadGroupMembers(group.id);
 
+        // Load pinned prayer from group description
+        if (group.description?.startsWith('📌')) {
+            setPinnedPrayer(group.description.replace('📌 ', ''));
+        } else {
+            setPinnedPrayer(null);
+        }
+
         // Start polling fallback for group messages (every 3s for reliability)
         if (groupPollRef.current) clearInterval(groupPollRef.current);
         groupPollRef.current = setInterval(async () => {
@@ -1413,6 +1441,177 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
             setFastingDays([]);
             toast.success('Programme de jeûne partagé !');
         } catch { toast.error('Erreur lors du partage'); }
+    };
+
+    // Send announcement to group
+    const sendAnnouncement = async () => {
+        if (!announcementText.trim() || !selectedGroup || !user) return;
+        const content = `📢 **ANNONCE IMPORTANTE** 📢\n\n${announcementText.trim()}\n\n— ${user.name || 'Admin'}`;
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content,
+                    type: 'text'
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            if (data) {
+                setMessages(prev => [...prev, {
+                    ...data,
+                    sender_id: data.user_id,
+                    sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                    is_read: true
+                }]);
+            }
+            setShowAnnouncementTool(false);
+            setAnnouncementText('');
+            toast.success('Annonce envoyée !');
+        } catch { toast.error("Erreur lors de l'envoi"); }
+    };
+
+    // Pin a prayer subject
+    const setPinnedPrayerSubject = async () => {
+        if (!pinText.trim() || !selectedGroup || !user) return;
+        try {
+            await supabase.from('prayer_groups').update({
+                description: `📌 ${pinText.trim()}`
+            }).eq('id', selectedGroup.id);
+
+            setPinnedPrayer(pinText.trim());
+
+            const content = `📌 **SUJET DE PRIÈRE ÉPINGLÉ** 📌\n\n🙏 ${pinText.trim()}\n\nPriez pour ce sujet !`;
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content,
+                    type: 'text'
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            if (data) {
+                setMessages(prev => [...prev, {
+                    ...data,
+                    sender_id: data.user_id,
+                    sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                    is_read: true
+                }]);
+            }
+            setShowPinTool(false);
+            toast.success('Sujet de prière épinglé !');
+        } catch { toast.error("Erreur lors de l'épinglage"); }
+    };
+
+    // Send event to group
+    const sendEventToGroup = async () => {
+        if (!eventTitle.trim() || !eventDate || !selectedGroup || !user) return;
+        const dateStr = new Date(eventDate).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+        let content = `📅 **ÉVÉNEMENT PLANIFIÉ** 📅\n\n`;
+        content += `📌 ${eventTitle.trim()}\n`;
+        content += `🗓️ Date: ${dateStr}\n`;
+        if (eventTime) content += `🕐 Heure: ${eventTime}\n`;
+        if (eventDescription.trim()) content += `\n📝 ${eventDescription.trim()}\n`;
+        content += `\n👥 Tous les membres sont invités !`;
+
+        try {
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .insert({
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content,
+                    type: 'text'
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            if (data) {
+                setMessages(prev => [...prev, {
+                    ...data,
+                    sender_id: data.user_id,
+                    sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                    is_read: true
+                }]);
+            }
+            setShowEventTool(false);
+            toast.success('Événement planifié et partagé !');
+        } catch { toast.error("Erreur lors du partage"); }
+    };
+
+    // Migrate all members from current group to a target group
+    const migrateGroupMembers = async () => {
+        if (!migrateTargetName.trim() || !selectedGroup || !user) return;
+        setIsMigratingMembers(true);
+        try {
+            const { data: targetGroups, error: findErr } = await supabase
+                .from('prayer_groups')
+                .select('id, name')
+                .ilike('name', `%${migrateTargetName.trim()}%`)
+                .limit(1);
+
+            if (findErr || !targetGroups || targetGroups.length === 0) {
+                toast.error('Groupe cible introuvable');
+                setIsMigratingMembers(false);
+                return;
+            }
+
+            const targetGroup = targetGroups[0];
+            if (targetGroup.id === selectedGroup.id) {
+                toast.error('Impossible de migrer vers le même groupe');
+                setIsMigratingMembers(false);
+                return;
+            }
+
+            const { data: currentMembers } = await supabase
+                .from('prayer_group_members')
+                .select('user_id')
+                .eq('group_id', selectedGroup.id);
+
+            const { data: existingMembers } = await supabase
+                .from('prayer_group_members')
+                .select('user_id')
+                .eq('group_id', targetGroup.id);
+
+            const existingIds = new Set((existingMembers || []).map((m: any) => m.user_id));
+            const toMigrate = (currentMembers || []).filter((m: any) => !existingIds.has(m.user_id));
+
+            if (toMigrate.length === 0) {
+                toast.info('Tous les membres sont déjà dans le groupe cible');
+                setIsMigratingMembers(false);
+                return;
+            }
+
+            const { error: insertErr } = await supabase
+                .from('prayer_group_members')
+                .insert(toMigrate.map((m: any) => ({
+                    group_id: targetGroup.id,
+                    user_id: m.user_id,
+                    role: 'member'
+                })));
+
+            if (insertErr) throw insertErr;
+
+            const content = `🔄 **MIGRATION** 🔄\n\n${toMigrate.length} membres ont été migrés vers "${targetGroup.name}".`;
+            await supabase.from('prayer_group_messages').insert({
+                group_id: selectedGroup.id,
+                user_id: user.id,
+                content,
+                type: 'text'
+            });
+
+            setShowMigrateTool(false);
+            setMigrateTargetName('');
+            toast.success(`${toMigrate.length} membres migrés !`);
+        } catch (err: any) {
+            toast.error('Erreur: ' + (err.message || ''));
+        }
+        setIsMigratingMembers(false);
     };
 
     if (!user) {
@@ -1886,17 +2085,15 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             </p>
                         </div>
                         <div className="flex items-center gap-0 sm:gap-1 shrink-0">
-                            {isGroupAdmin && (
-                                <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-7 w-7 sm:h-9 sm:w-9"
-                                    onClick={() => { setShowGroupTools(true); loadAllUsers(); }}
-                                    title="Outils de groupe"
-                                >
-                                    <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                                </Button>
-                            )}
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-7 w-7 sm:h-9 sm:w-9"
+                                onClick={() => { setShowGroupTools(true); loadAllUsers(); loadGroupMembers(currentGroup!.id); }}
+                                title="Outils de groupe"
+                            >
+                                <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -1955,6 +2152,17 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     </motion.div>
                 )}
             </AnimatePresence>
+
+            {/* Pinned Prayer Subject Banner */}
+            {currentGroup && (pinnedPrayer || currentGroup.description?.startsWith('📌')) && (
+                <div className="mx-2 sm:mx-4 mt-2 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/20 flex items-center gap-2">
+                    <Pin className="h-4 w-4 text-amber-400 shrink-0" />
+                    <p className="text-xs text-amber-200 flex-1 truncate">
+                        <span className="font-semibold">Sujet de prière :</span>{' '}
+                        {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
+                    </p>
+                </div>
+            )}
 
             {/* Messages */}
             <ScrollArea className="flex-1 p-2 sm:p-4">
@@ -2217,6 +2425,50 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                             >
                                 <UserPlus className="h-4 w-4 mr-2" />
                                 Ajouter des membres
+                            </Button>
+
+                            {/* Migrate Members (admin only) */}
+                            {isGroupAdmin && (
+                                <Button
+                                    variant="outline"
+                                    className="w-full border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/30"
+                                    onClick={() => { setShowMigrateTool(true); setShowGroupTools(false); }}
+                                >
+                                    <ArrowRightLeft className="h-4 w-4 mr-2" />
+                                    🔄 Migrer les membres
+                                </Button>
+                            )}
+
+                            {/* Pin Prayer Subject */}
+                            <Button
+                                variant="outline"
+                                className="w-full border-amber-500/20 text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/30"
+                                onClick={() => { setShowPinTool(true); setShowGroupTools(false); setPinText(pinnedPrayer || ''); }}
+                            >
+                                <Pin className="h-4 w-4 mr-2" />
+                                📌 Épingler un sujet de prière
+                            </Button>
+
+                            {/* Send Announcement (admin only) */}
+                            {isGroupAdmin && (
+                                <Button
+                                    variant="outline"
+                                    className="w-full border-red-500/20 text-red-400 hover:bg-red-500/10 hover:border-red-500/30"
+                                    onClick={() => { setShowAnnouncementTool(true); setShowGroupTools(false); setAnnouncementText(''); }}
+                                >
+                                    <Megaphone className="h-4 w-4 mr-2" />
+                                    📢 Faire une annonce
+                                </Button>
+                            )}
+
+                            {/* Plan Event */}
+                            <Button
+                                variant="outline"
+                                className="w-full border-blue-500/20 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/30"
+                                onClick={() => { setShowEventTool(true); setShowGroupTools(false); setEventTitle(''); setEventDate(''); setEventTime(''); setEventDescription(''); }}
+                            >
+                                <Calendar className="h-4 w-4 mr-2" />
+                                📅 Planifier un événement
                             </Button>
 
                             {/* Bible Tool */}
@@ -2522,6 +2774,168 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                         >
                             <Send className="h-4 w-4 mr-2" />
                             Partager le programme dans le groupe
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Announcement Dialog */}
+            <Dialog open={showAnnouncementTool} onOpenChange={setShowAnnouncementTool}>
+                <DialogContent className="max-w-md bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <Megaphone className="h-5 w-5 text-red-400" />
+                            Faire une annonce
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-xs text-slate-400">Envoyez une annonce importante à tous les membres du groupe.</p>
+                        <Textarea
+                            placeholder="Votre annonce..."
+                            value={announcementText}
+                            onChange={e => setAnnouncementText(e.target.value)}
+                            className="bg-white/5 border-white/10 text-white min-h-[100px]"
+                        />
+                        <Button
+                            onClick={sendAnnouncement}
+                            disabled={!announcementText.trim()}
+                            className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white"
+                        >
+                            <Megaphone className="h-4 w-4 mr-2" />
+                            Envoyer l'annonce
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Pin Prayer Subject Dialog */}
+            <Dialog open={showPinTool} onOpenChange={setShowPinTool}>
+                <DialogContent className="max-w-md bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <Pin className="h-5 w-5 text-amber-400" />
+                            Épingler un sujet de prière
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-xs text-slate-400">Ce sujet sera visible en haut du chat pour tous les membres.</p>
+                        <Textarea
+                            placeholder="Sujet de prière à épingler..."
+                            value={pinText}
+                            onChange={e => setPinText(e.target.value)}
+                            className="bg-white/5 border-white/10 text-white min-h-[80px]"
+                        />
+                        <Button
+                            onClick={setPinnedPrayerSubject}
+                            disabled={!pinText.trim()}
+                            className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white"
+                        >
+                            <Pin className="h-4 w-4 mr-2" />
+                            Épingler le sujet
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Event Planning Dialog */}
+            <Dialog open={showEventTool} onOpenChange={setShowEventTool}>
+                <DialogContent className="max-w-md bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <Calendar className="h-5 w-5 text-blue-400" />
+                            Planifier un événement
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Titre de l'événement</label>
+                            <Input
+                                placeholder="Ex: Réunion de prière, Soirée louange..."
+                                value={eventTitle}
+                                onChange={e => setEventTitle(e.target.value)}
+                                className="bg-white/5 border-white/10 text-white"
+                            />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <label className="text-xs text-slate-400 mb-1 block">Date</label>
+                                <Input
+                                    type="date"
+                                    value={eventDate}
+                                    onChange={e => setEventDate(e.target.value)}
+                                    className="bg-white/5 border-white/10 text-white"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-400 mb-1 block">Heure (optionnel)</label>
+                                <Input
+                                    type="time"
+                                    value={eventTime}
+                                    onChange={e => setEventTime(e.target.value)}
+                                    className="bg-white/5 border-white/10 text-white"
+                                />
+                            </div>
+                        </div>
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Description (optionnel)</label>
+                            <Textarea
+                                placeholder="Détails de l'événement..."
+                                value={eventDescription}
+                                onChange={e => setEventDescription(e.target.value)}
+                                className="bg-white/5 border-white/10 text-white min-h-[60px]"
+                            />
+                        </div>
+                        <Button
+                            onClick={sendEventToGroup}
+                            disabled={!eventTitle.trim() || !eventDate}
+                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
+                        >
+                            <Calendar className="h-4 w-4 mr-2" />
+                            Partager l'événement
+                        </Button>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Migrate Members Dialog */}
+            <Dialog open={showMigrateTool} onOpenChange={setShowMigrateTool}>
+                <DialogContent className="max-w-md bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <ArrowRightLeft className="h-5 w-5 text-cyan-400" />
+                            Migrer les membres
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4">
+                        <p className="text-xs text-slate-400">
+                            Transférer tous les membres de ce groupe vers un autre groupe.
+                            Les membres déjà présents dans le groupe cible seront ignorés.
+                        </p>
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">Nom du groupe cible</label>
+                            <Input
+                                placeholder="Tapez le nom du groupe cible..."
+                                value={migrateTargetName}
+                                onChange={e => setMigrateTargetName(e.target.value)}
+                                className="bg-white/5 border-white/10 text-white"
+                            />
+                        </div>
+                        <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
+                            <p className="text-[10px] text-cyan-300">
+                                <strong>Groupe actuel :</strong> {currentGroup?.name}<br />
+                                <strong>Membres :</strong> {groupMembers.length}
+                            </p>
+                        </div>
+                        <Button
+                            onClick={migrateGroupMembers}
+                            disabled={!migrateTargetName.trim() || isMigratingMembers}
+                            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white"
+                        >
+                            {isMigratingMembers ? (
+                                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Migration en cours...</>
+                            ) : (
+                                <><ArrowRightLeft className="h-4 w-4 mr-2" /> Migrer tous les membres</>
+                            )}
                         </Button>
                     </div>
                 </DialogContent>
