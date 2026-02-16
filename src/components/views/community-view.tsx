@@ -101,6 +101,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [userGroups, setUserGroups] = useState<string[]>([]); // Groups user has joined
     const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
     const [userLastSeen, setUserLastSeen] = useState<Record<string, string>>({});
+    const [openChatGroupId, setOpenChatGroupId] = useState<string | null>(null);
+
+    // Open chat for a specific group
+    const handleOpenChat = (groupId: string) => {
+        requireAuth(() => {
+            setOpenChatGroupId(groupId);
+            setActiveTab('chat');
+            setViewState('main');
+        });
+    };
 
     // Search state for Messages view
     const [showMessageSearch, setShowMessageSearch] = useState(false);
@@ -168,6 +178,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             };
             if (tabMap[nav.communityTab]) {
                 setActiveTab(tabMap[nav.communityTab]);
+            }
+
+            // If it's a chat navigation with a group ID, open that group chat
+            if (nav.communityTab === 'chat' && nav.groupId) {
+                handleOpenChat(nav.groupId);
+                return; // Stop processing other viewStates if we're opening chat directly
             }
         }
 
@@ -1838,6 +1854,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 }}
                                                 getCategoryInfo={getCategoryInfo}
                                                 userId={user?.id}
+                                                onOpenChat={handleOpenChat}
                                             />
                                         ))}
 
@@ -1881,6 +1898,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 avatar: user.avatar
                                             } : null}
                                             onHideNav={onHideNav}
+                                            activeGroupId={openChatGroupId}
                                         />
                                     </div>
                                 </TabsContent>

@@ -302,7 +302,7 @@ export async function notifyGroupAccessApproved({
         actionType: 'group_access_approved',
         actionData: {
             tab: 'community',
-            viewState: 'group-detail',
+            communityTab: 'chat',
             groupId,
             groupName,
         },
@@ -335,7 +335,7 @@ export async function notifyGroupNewMessage({
         actionType: 'group_new_message',
         actionData: {
             tab: 'community',
-            viewState: 'group-detail',
+            communityTab: 'chat',
             groupId,
             groupName,
         },

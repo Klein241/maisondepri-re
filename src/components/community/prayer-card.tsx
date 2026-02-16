@@ -27,13 +27,15 @@ export function PrayerCard({
     onPray,
     onDelete,
     getCategoryInfo,
-    userId
+    userId,
+    onOpenChat
 }: {
     prayer: PrayerRequest;
     onPray: () => void;
     onDelete?: (id: string) => void;
     getCategoryInfo: (cat: PrayerCategory) => any;
     userId?: string;
+    onOpenChat?: (groupId: string, groupName: string) => void;
 }) {
     // Gestion robuste des propriétés avec valeurs par défaut
     const category = getCategoryInfo(prayer.category || 'other');
@@ -564,6 +566,7 @@ export function PrayerCard({
                         currentUserId={userId}
                         onClose={() => setShowGroupDialog(false)}
                         isDialogOpen={showGroupDialog}
+                        onOpenChat={onOpenChat}
                     />
                 </DialogContent>
             </Dialog>

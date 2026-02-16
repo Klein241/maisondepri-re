@@ -271,6 +271,26 @@ export function WebRTCCall({
             // For private call initiator, send offer to remote user
             if (mode === 'private' && !isIncoming && remoteUser) {
                 setCallState('ringing');
+
+                // Signal the remote user that they have an incoming call
+                const remoteSignalChannel = supabase.channel(`call_signal_${remoteUser.id}`, {
+                    config: { broadcast: { self: false } }
+                });
+                await remoteSignalChannel.subscribe();
+                remoteSignalChannel.send({
+                    type: 'broadcast',
+                    event: 'incoming-call',
+                    payload: {
+                        callerId: user.id,
+                        callerName: user.name,
+                        callerAvatar: user.avatar,
+                        callType,
+                        conversationId,
+                    }
+                });
+                // Keep a reference to cancel later
+                (channelRef as any).remoteSignalChannel = remoteSignalChannel;
+
                 // Wait a moment for the remote user to potentially join
                 setTimeout(async () => {
                     if (!mounted) return;
@@ -289,6 +309,31 @@ export function WebRTCCall({
                 setCallState('connecting');
             } else if (mode === 'group') {
                 setCallState('connecting');
+
+                // For group calls, notify all group members
+                if (groupMembers && groupMembers.length > 0) {
+                    for (const member of groupMembers) {
+                        if (member.id === user.id) continue;
+                        const memberSignalChannel = supabase.channel(`call_signal_${member.id}`, {
+                            config: { broadcast: { self: false } }
+                        });
+                        await memberSignalChannel.subscribe();
+                        memberSignalChannel.send({
+                            type: 'broadcast',
+                            event: 'incoming-call',
+                            payload: {
+                                callerId: user.id,
+                                callerName: user.name,
+                                callerAvatar: user.avatar,
+                                callType,
+                                groupId,
+                                groupName,
+                                mode: 'group',
+                            }
+                        });
+                        setTimeout(() => supabase.removeChannel(memberSignalChannel), 2000);
+                    }
+                }
             }
         };
 
@@ -352,6 +397,26 @@ export function WebRTCCall({
             event: 'call-end',
             payload: { from: user.id }
         });
+
+        // Send call-cancelled signal to remote user if private call
+        if (mode === 'private' && remoteUser) {
+            const cancelChannel = supabase.channel(`call_signal_${remoteUser.id}`, {
+                config: { broadcast: { self: false } }
+            });
+            cancelChannel.subscribe().then(() => {
+                cancelChannel.send({
+                    type: 'broadcast',
+                    event: 'call-cancelled',
+                    payload: { callerId: user.id }
+                });
+                setTimeout(() => supabase.removeChannel(cancelChannel), 1000);
+            });
+        }
+
+        // Cleanup remote signal channel if we created one
+        if ((channelRef as any).remoteSignalChannel) {
+            supabase.removeChannel((channelRef as any).remoteSignalChannel);
+        }
 
         // Cleanup
         peerConnectionsRef.current.forEach((pc, _) => pc.close());

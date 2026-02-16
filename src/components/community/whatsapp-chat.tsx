@@ -18,6 +18,9 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { WebRTCCall, IncomingCallOverlay } from './webrtc-call';
+import { GroupToolsPanel } from './group-tools';
+import { EventCalendarButton } from './event-calendar';
+import { CallHistory } from './call-history';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -166,15 +169,54 @@ function VoiceMessagePlayer({ voiceUrl, duration }: { voiceUrl: string; duration
     );
 }
 
-export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
+export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatProps & { activeGroupId?: string | null }) {
     // View State
-    const [view, setView] = useState<'list' | 'conversation' | 'group'>('list');
+    const [view, setView] = useState<'list' | 'conversation' | 'group' | 'call_history'>('list');
 
     // Notify parent to hide/show bottom nav based on view
     useEffect(() => {
         onHideNav?.(view !== 'list');
     }, [view, onHideNav]);
     const [activeTab, setActiveTab] = useState<'conversations' | 'groups' | 'admin_groups'>('conversations');
+
+    // Ref to track pending group to open (from external navigation)
+    const pendingGroupIdRef = useRef<string | null>(null);
+
+    // Effect to handle external group selection (stores the pending group ID)
+    useEffect(() => {
+        if (activeGroupId && (groups.length > 0 || adminGroups.length > 0)) {
+            const group = groups.find(g => g.id === activeGroupId) || adminGroups.find(g => g.id === activeGroupId);
+            if (group) {
+                if (selectedGroup?.id !== group.id || view !== 'group') {
+                    console.log('[WhatsAppChat] Pending group from activeGroupId:', group.name);
+                    pendingGroupIdRef.current = activeGroupId;
+                    setSelectedGroup(group);
+                    setSelectedConversation(null);
+                    setView('group');
+                }
+            } else {
+                // Group not in local list yet - try to fetch it directly
+                console.log('[WhatsAppChat] Group not in local list, fetching directly:', activeGroupId);
+                pendingGroupIdRef.current = activeGroupId;
+                (async () => {
+                    try {
+                        const { data } = await supabase
+                            .from('prayer_groups')
+                            .select('*')
+                            .eq('id', activeGroupId)
+                            .single();
+                        if (data) {
+                            setSelectedGroup(data);
+                            setSelectedConversation(null);
+                            setView('group');
+                        }
+                    } catch (e) {
+                        console.error('[WhatsAppChat] Error fetching group:', e);
+                    }
+                })();
+            }
+        }
+    }, [activeGroupId, groups, adminGroups]);
 
     // Data State
     const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -663,20 +705,54 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     // Load group members with online status
     const loadGroupMembers = async (groupId: string) => {
         try {
+            // Try embedded join first
             const { data, error } = await supabase
                 .from('prayer_group_members')
                 .select('user_id, role, profiles:user_id(id, full_name, avatar_url, is_online)')
                 .eq('group_id', groupId);
 
-            if (error) throw error;
+            if (!error && data && data.length > 0 && data[0]?.profiles) {
+                const members: GroupMember[] = data.map((m: any) => ({
+                    id: m.profiles?.id || m.user_id,
+                    full_name: m.profiles?.full_name || 'Utilisateur',
+                    avatar_url: m.profiles?.avatar_url || null,
+                    is_online: m.profiles?.is_online || onlineUsers[m.user_id] || false,
+                    role: m.role || 'member',
+                }));
+                setGroupMembers(members);
+                return;
+            }
 
-            const members: GroupMember[] = (data || []).map((m: any) => ({
-                id: m.profiles?.id || m.user_id,
-                full_name: m.profiles?.full_name || 'Utilisateur',
-                avatar_url: m.profiles?.avatar_url || null,
-                is_online: m.profiles?.is_online || onlineUsers[m.user_id] || false,
-                role: m.role || 'member',
-            }));
+            // Fallback: separate queries when embedded joins fail (RLS issues)
+            console.log('[loadGroupMembers] Embedded join failed or returned empty profiles, using fallback');
+            const { data: memberRows, error: memberError } = await supabase
+                .from('prayer_group_members')
+                .select('user_id, role')
+                .eq('group_id', groupId);
+
+            if (memberError) throw memberError;
+            if (!memberRows || memberRows.length === 0) {
+                setGroupMembers([]);
+                return;
+            }
+
+            const userIds = memberRows.map(m => m.user_id);
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url, is_online')
+                .in('id', userIds);
+
+            const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+            const members: GroupMember[] = memberRows.map((m: any) => {
+                const profile = profileMap.get(m.user_id);
+                return {
+                    id: profile?.id || m.user_id,
+                    full_name: profile?.full_name || 'Utilisateur',
+                    avatar_url: profile?.avatar_url || null,
+                    is_online: profile?.is_online || onlineUsers[m.user_id] || false,
+                    role: m.role || 'member',
+                };
+            });
             setGroupMembers(members);
         } catch (e) {
             console.error('Error loading group members:', e);
@@ -1082,6 +1158,80 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         }, 3000);
     };
 
+    // Effect to handle deferred group opening (runs after loadMessages/loadGroupMembers are defined)
+    useEffect(() => {
+        if (pendingGroupIdRef.current && selectedGroup && selectedGroup.id === pendingGroupIdRef.current && view === 'group') {
+            const gId = pendingGroupIdRef.current;
+            pendingGroupIdRef.current = null;
+            console.log('[WhatsAppChat] Loading messages & members for deferred group:', selectedGroup.name);
+            loadMessages('group', gId);
+            loadGroupMembers(gId);
+            setShowGroupTools(false);
+
+            // Load pinned prayer from group description
+            if (selectedGroup.description?.startsWith('📌')) {
+                setPinnedPrayer(selectedGroup.description.replace('📌 ', ''));
+            } else {
+                setPinnedPrayer(null);
+            }
+
+            // Start polling fallback for group messages
+            if (groupPollRef.current) clearInterval(groupPollRef.current);
+            groupPollRef.current = setInterval(async () => {
+                try {
+                    const { data, error } = await supabase
+                        .from('prayer_group_messages')
+                        .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                        .eq('group_id', gId)
+                        .order('created_at', { ascending: true });
+                    if (!error && data) {
+                        setMessages(prev => {
+                            const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
+                            const newLastId = data.length > 0 ? data[data.length - 1].id : null;
+                            if (prevLastId === newLastId && data.length === prev.length) return prev;
+                            return data.map((m: any) => ({
+                                ...m,
+                                sender_id: m.user_id,
+                                is_read: true
+                            }));
+                        });
+                    }
+                } catch { }
+            }, 3000);
+        }
+    }, [selectedGroup, view]);
+
+    // Incoming call listener - listen for calls from other users
+    useEffect(() => {
+        if (!user?.id) return;
+
+        const callSignalChannel = supabase.channel(`call_signal_${user.id}`, {
+            config: { broadcast: { self: false } }
+        });
+
+        callSignalChannel.on('broadcast', { event: 'incoming-call' }, ({ payload }) => {
+            console.log('[WhatsAppChat] Incoming call from:', payload.callerName);
+            setIncomingCall({
+                callerName: payload.callerName,
+                callerAvatar: payload.callerAvatar,
+                callType: payload.callType || 'audio',
+                callerId: payload.callerId,
+            });
+        });
+
+        callSignalChannel.on('broadcast', { event: 'call-cancelled' }, ({ payload }) => {
+            if (payload.callerId) {
+                setIncomingCall(null);
+            }
+        });
+
+        callSignalChannel.subscribe();
+
+        return () => {
+            supabase.removeChannel(callSignalChannel);
+        };
+    }, [user?.id]);
+
     // Cleanup polling when going back
     const goBackToList = () => {
         if (groupPollRef.current) {
@@ -1343,19 +1493,137 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
         setShowMentions(false);
     };
 
-    // Bible tool: fetch passage
+    // Bible tool: fetch passage from local /bible/ files
     const fetchBiblePassage = async () => {
         if (!bibleReference.trim()) { toast.error('Entrez une référence (ex: Jean 3:16)'); return; }
         setIsFetchingBible(true);
         try {
-            // Fix param name: version -> translation, and ensure lowercase
-            const res = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&translation=${bibleVersion.toLowerCase()}`);
-            if (!res.ok) throw new Error('Not found');
-            const data = await res.json();
-            setBibleContent(data.text || data.content || 'Passage non trouvé');
-        } catch {
-            // Fallback: just set the reference as content but cleaner
-            setBibleContent(`[Passage non trouvé ou erreur réseau. Veuillez vérifier la référence.]`);
+            // Parse reference: "Jean 3:16" => book=jean, chapter=3, verse=16
+            // Also handle "Jean 3:16-18" and "Jean 3" (whole chapter)
+            const refMatch = bibleReference.trim().match(/^(.+?)\s+(\d+)(?::(\d+)(?:-(\d+))?)?$/i);
+            if (!refMatch) {
+                setBibleContent('[Référence invalide. Utilisez le format: Livre Chapitre:Verset (ex: Jean 3:16)]');
+                setIsFetchingBible(false);
+                return;
+            }
+
+            const bookRaw = refMatch[1].trim();
+            const chapter = refMatch[2];
+            const verseStart = refMatch[3] ? parseInt(refMatch[3]) : null;
+            const verseEnd = refMatch[4] ? parseInt(refMatch[4]) : verseStart;
+
+            // Normalize book name for file lookup
+            const bookNormalized = bookRaw.toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
+                .replace(/\s+/g, '')
+                .replace(/^1er?\s*/i, '1').replace(/^2e?\s*/i, '2').replace(/^3e?\s*/i, '3');
+
+            // Common French book name mappings
+            const bookMap: Record<string, string> = {
+                'genese': 'genese', 'gen': 'genese', 'gn': 'genese',
+                'exode': 'exode', 'ex': 'exode',
+                'levitique': 'levitique', 'lv': 'levitique',
+                'nombres': 'nombres', 'nb': 'nombres',
+                'deuteronome': 'deuteronome', 'dt': 'deuteronome',
+                'josue': 'josue', 'jo': 'josue',
+                'juges': 'juges', 'jg': 'juges',
+                'ruth': 'ruth', 'rt': 'ruth',
+                '1samuel': '1samuel', '1sam': '1samuel', '1sm': '1samuel',
+                '2samuel': '2samuel', '2sam': '2samuel', '2sm': '2samuel',
+                '1rois': '1rois', '1r': '1rois',
+                '2rois': '2rois', '2r': '2rois',
+                '1chroniques': '1chroniques', '1chr': '1chroniques',
+                '2chroniques': '2chroniques', '2chr': '2chroniques',
+                'esdras': 'esdras', 'esd': 'esdras',
+                'nehemie': 'nehemie', 'ne': 'nehemie',
+                'esther': 'esther', 'est': 'esther',
+                'job': 'job', 'jb': 'job',
+                'psaumes': 'psaumes', 'psaume': 'psaumes', 'ps': 'psaumes',
+                'proverbes': 'proverbes', 'pr': 'proverbes', 'pro': 'proverbes',
+                'ecclesiaste': 'ecclesiaste', 'ecc': 'ecclesiaste',
+                'cantique': 'cantique', 'cantiques': 'cantique', 'ct': 'cantique',
+                'esaie': 'esaie', 'isaie': 'esaie', 'is': 'esaie',
+                'jeremie': 'jeremie', 'jer': 'jeremie', 'jr': 'jeremie',
+                'lamentations': 'lamentations', 'lam': 'lamentations',
+                'ezechiel': 'ezechiel', 'ez': 'ezechiel',
+                'daniel': 'daniel', 'dn': 'daniel', 'da': 'daniel',
+                'osee': 'osee', 'os': 'osee',
+                'joel': 'joel', 'jl': 'joel',
+                'amos': 'amos', 'am': 'amos',
+                'abdias': 'abdias', 'ab': 'abdias',
+                'jonas': 'jonas', 'jon': 'jonas',
+                'michee': 'michee', 'mi': 'michee',
+                'nahum': 'nahum', 'na': 'nahum',
+                'habacuc': 'habacuc', 'ha': 'habacuc',
+                'sophonie': 'sophonie', 'so': 'sophonie',
+                'aggee': 'aggee', 'ag': 'aggee',
+                'zacharie': 'zacharie', 'za': 'zacharie',
+                'malachie': 'malachie', 'ml': 'malachie', 'mal': 'malachie',
+                'matthieu': 'matthieu', 'mat': 'matthieu', 'mt': 'matthieu',
+                'marc': 'marc', 'mc': 'marc', 'mk': 'marc',
+                'luc': 'luc', 'lc': 'luc',
+                'jean': 'jean', 'jn': 'jean',
+                'actes': 'actes', 'ac': 'actes',
+                'romains': 'romains', 'ro': 'romains', 'rm': 'romains',
+                '1corinthiens': '1corinthiens', '1co': '1corinthiens', '1cor': '1corinthiens',
+                '2corinthiens': '2corinthiens', '2co': '2corinthiens', '2cor': '2corinthiens',
+                'galates': 'galates', 'ga': 'galates', 'gal': 'galates',
+                'ephesiens': 'ephesiens', 'ep': 'ephesiens', 'eph': 'ephesiens',
+                'philippiens': 'philippiens', 'ph': 'philippiens', 'phil': 'philippiens',
+                'colossiens': 'colossiens', 'col': 'colossiens',
+                '1thessaloniciens': '1thessaloniciens', '1th': '1thessaloniciens',
+                '2thessaloniciens': '2thessaloniciens', '2th': '2thessaloniciens',
+                '1timothee': '1timothee', '1tm': '1timothee', '1tim': '1timothee',
+                '2timothee': '2timothee', '2tm': '2timothee', '2tim': '2timothee',
+                'tite': 'tite', 'tt': 'tite',
+                'philemon': 'philemon', 'phm': 'philemon',
+                'hebreux': 'hebreux', 'he': 'hebreux', 'heb': 'hebreux',
+                'jacques': 'jacques', 'jc': 'jacques', 'jac': 'jacques',
+                '1pierre': '1pierre', '1pi': '1pierre', '1p': '1pierre',
+                '2pierre': '2pierre', '2pi': '2pierre', '2p': '2pierre',
+                '1jean': '1jean', '1jn': '1jean',
+                '2jean': '2jean', '2jn': '2jean',
+                '3jean': '3jean', '3jn': '3jean',
+                'jude': 'jude', 'jd': 'jude',
+                'apocalypse': 'apocalypse', 'ap': 'apocalypse', 'apo': 'apocalypse',
+            };
+
+            const bookKey = bookMap[bookNormalized] || bookNormalized;
+            const fileName = `${bookKey}_${chapter}.txt`;
+
+            const res = await fetch(`/bible/${fileName}`);
+            if (!res.ok) {
+                // Try API fallback
+                const apiRes = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&translation=${bibleVersion.toLowerCase()}`);
+                if (apiRes.ok) {
+                    const apiData = await apiRes.json();
+                    setBibleContent(apiData.text || apiData.content || 'Passage non trouvé');
+                } else {
+                    setBibleContent(`[Passage non trouvé. Vérifiez le livre "${bookRaw}" et le chapitre ${chapter}.]`);
+                }
+                setIsFetchingBible(false);
+                return;
+            }
+
+            const text = await res.text();
+            const lines = text.split('\n').filter(l => l.trim());
+
+            if (verseStart !== null && verseEnd !== null) {
+                // Extract specific verses
+                const selectedVerses = lines.filter(line => {
+                    const vMatch = line.match(/^(\d+)\s/);
+                    if (!vMatch) return false;
+                    const vNum = parseInt(vMatch[1]);
+                    return vNum >= verseStart && vNum <= verseEnd;
+                });
+                setBibleContent(selectedVerses.length > 0 ? selectedVerses.join('\n') : 'Verset(s) non trouvé(s)');
+            } else {
+                // Whole chapter
+                setBibleContent(lines.join('\n'));
+            }
+        } catch (e) {
+            console.error('Error fetching Bible passage:', e);
+            setBibleContent(`[Passage non trouvé ou erreur. Vérifiez la référence.]`);
             toast.error("Impossible de récupérer le passage. Vérifiez la référence.");
         }
         setIsFetchingBible(false);
@@ -1634,6 +1902,68 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
     }
 
     // List View (WhatsApp-style)
+    // Call history view
+    if (view === 'call_history') {
+        return (
+            <div className="flex flex-col h-full w-full max-w-full overflow-hidden">
+                <CallHistory
+                    userId={user.id}
+                    userName={user.name || 'Utilisateur'}
+                    onBack={() => setView('list')}
+                    onCall={(type, contactId, contactName, contactAvatar) => {
+                        // Find or create a conversation with this user, then start the call
+                        const conv = conversations.find(c => c.recipientId === contactId);
+                        if (conv) {
+                            setSelectedConversation(conv);
+                            const recipient = allUsers.find(u => u.id === contactId);
+                            if (recipient) setCurrentRecipient(recipient);
+                        }
+                        setActiveCall({ type, mode: 'private' });
+                        setView('conversation');
+                    }}
+                />
+
+                {/* WebRTC Call Overlay */}
+                {activeCall && (
+                    <WebRTCCall
+                        user={{ id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar }}
+                        callType={activeCall.type}
+                        mode={activeCall.mode}
+                        remoteUser={activeCall.mode === 'private' && currentRecipient ? {
+                            id: currentRecipient.id,
+                            name: currentRecipient.full_name,
+                            avatar: currentRecipient.avatar_url
+                        } : undefined}
+                        conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
+                        groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
+                        groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
+                        groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
+                        isIncoming={activeCall.isIncoming}
+                        onEnd={() => setActiveCall(null)}
+                    />
+                )}
+
+                {/* Incoming Call Notification */}
+                {incomingCall && !activeCall && (
+                    <IncomingCallOverlay
+                        callerName={incomingCall.callerName}
+                        callerAvatar={incomingCall.callerAvatar}
+                        callType={incomingCall.callType}
+                        onAccept={() => {
+                            setActiveCall({
+                                type: incomingCall.callType,
+                                mode: 'private',
+                                isIncoming: true
+                            });
+                            setIncomingCall(null);
+                        }}
+                        onReject={() => setIncomingCall(null)}
+                    />
+                )}
+            </div>
+        );
+    }
+
     if (view === 'list') {
         return (
             <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
@@ -1641,15 +1971,26 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 <div className="p-4 border-b border-white/10">
                     <div className="flex items-center justify-between mb-4">
                         <h2 className="text-xl font-bold text-white">Messages</h2>
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={handleManualRefresh}
-                            disabled={isLoading}
-                            className="text-slate-400 hover:text-white"
-                        >
-                            <Loader2 className={cn("h-5 w-5", isLoading && "animate-spin")} />
-                        </Button>
+                        <div className="flex items-center gap-1">
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => setView('call_history')}
+                                className="text-slate-400 hover:text-green-400 hover:bg-green-500/10 rounded-full"
+                                title="Historique des appels"
+                            >
+                                <Phone className="h-5 w-5" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={handleManualRefresh}
+                                disabled={isLoading}
+                                className="text-slate-400 hover:text-white"
+                            >
+                                <Loader2 className={cn("h-5 w-5", isLoading && "animate-spin")} />
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Tabs - responsive scroll on mobile */}
@@ -2394,10 +2735,10 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                 </div>
             </div>
 
-            {/* Group Tools Dialog */}
+            {/* Group Tools Dialog - Full Integration */}
             <Dialog open={showGroupTools} onOpenChange={setShowGroupTools}>
-                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10">
-                    <DialogHeader>
+                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
+                    <DialogHeader className="p-4 pb-0">
                         <DialogTitle className="flex items-center gap-2 text-white">
                             <Settings className="h-5 w-5 text-amber-400" />
                             Outils de groupe
@@ -2405,148 +2746,236 @@ export function WhatsAppChat({ user, onHideNav }: WhatsAppChatProps) {
                     </DialogHeader>
 
                     {currentGroup && (
-                        <div className="space-y-4">
-                            {/* Group Photo */}
+                        <div className="space-y-4 p-4 pt-2">
+                            {/* Group Photo & Info */}
                             <div className="flex items-center gap-4">
                                 <div
-                                    className="relative w-16 h-16 rounded-full overflow-hidden cursor-pointer group bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center"
+                                    className="relative w-14 h-14 rounded-full overflow-hidden cursor-pointer group bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0"
                                     onClick={() => groupPhotoInputRef.current?.click()}
                                 >
                                     {currentGroup.avatar_url ? (
                                         <img src={currentGroup.avatar_url} alt="" className="w-full h-full object-cover" />
                                     ) : (
-                                        <Users className="h-8 w-8 text-white" />
+                                        <Users className="h-7 w-7 text-white" />
                                     )}
                                     <div className="absolute inset-0 bg-black/50 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
                                         {isUploadingGroupPhoto ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : <Camera className="h-5 w-5 text-white" />}
                                     </div>
                                 </div>
-                                <div>
-                                    <p className="text-sm font-medium text-white">{currentGroup.name}</p>
-                                    <p className="text-xs text-slate-400">Cliquez pour changer la photo</p>
+                                <div className="min-w-0">
+                                    <p className="text-sm font-bold text-white truncate">{currentGroup.name}</p>
+                                    <p className="text-[10px] text-slate-400">{groupMembers.length} membres • Cliquez la photo pour la changer</p>
                                 </div>
                             </div>
                             <input ref={groupPhotoInputRef} type="file" accept="image/*" className="hidden" onChange={handleGroupPhotoUpload} />
 
-                            {/* Add Member */}
-                            <Button
-                                variant="outline"
-                                className="w-full border-white/10 text-white hover:bg-white/5"
-                                onClick={() => { setShowAddMemberDialog(true); setAddMemberSearch(''); }}
-                            >
-                                <UserPlus className="h-4 w-4 mr-2" />
-                                Ajouter des membres
-                            </Button>
+                            {/* ===== INTEGRATED GROUP TOOLS PANEL ===== */}
+                            <GroupToolsPanel
+                                groupId={currentGroup.id}
+                                userId={user.id}
+                                userName={user.name || 'Utilisateur'}
+                                isCreator={!!isGroupAdmin}
+                                isOpen={true}
+                                onClose={() => { }}
+                            />
 
-                            {/* Migrate Members (admin only) */}
-                            {isGroupAdmin && (
+                            {/* Google Calendar Integration */}
+                            <EventCalendarButton
+                                groupId={currentGroup.id}
+                                groupName={currentGroup.name}
+                                className="w-full"
+                            />
+
+                            {/* Separator */}
+                            <div className="border-t border-white/5 pt-3">
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Actions rapides</p>
+                            </div>
+
+                            {/* Quick Actions */}
+                            <div className="grid grid-cols-2 gap-2">
+                                {/* Add Member */}
                                 <Button
                                     variant="outline"
-                                    className="w-full border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/30"
-                                    onClick={() => { setShowMigrateTool(true); setShowGroupTools(false); }}
+                                    size="sm"
+                                    className="border-white/10 text-white hover:bg-white/5 h-9 text-xs"
+                                    onClick={() => { setShowAddMemberDialog(true); setAddMemberSearch(''); }}
                                 >
-                                    <ArrowRightLeft className="h-4 w-4 mr-2" />
-                                    🔄 Migrer les membres
+                                    <UserPlus className="h-3.5 w-3.5 mr-1.5" />
+                                    Ajouter membre
                                 </Button>
-                            )}
 
-                            {/* Pin Prayer Subject */}
-                            <Button
-                                variant="outline"
-                                className="w-full border-amber-500/20 text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/30"
-                                onClick={() => { setShowPinTool(true); setShowGroupTools(false); setPinText(pinnedPrayer || ''); }}
-                            >
-                                <Pin className="h-4 w-4 mr-2" />
-                                📌 Épingler un sujet de prière
-                            </Button>
-
-                            {/* Send Announcement (admin only) */}
-                            {isGroupAdmin && (
+                                {/* Pin Prayer Subject */}
                                 <Button
                                     variant="outline"
-                                    className="w-full border-red-500/20 text-red-400 hover:bg-red-500/10 hover:border-red-500/30"
-                                    onClick={() => { setShowAnnouncementTool(true); setShowGroupTools(false); setAnnouncementText(''); }}
+                                    size="sm"
+                                    className="border-amber-500/20 text-amber-400 hover:bg-amber-500/10 h-9 text-xs"
+                                    onClick={() => { setShowPinTool(true); setShowGroupTools(false); setPinText(pinnedPrayer || ''); }}
                                 >
-                                    <Megaphone className="h-4 w-4 mr-2" />
-                                    📢 Faire une annonce
+                                    <Pin className="h-3.5 w-3.5 mr-1.5" />
+                                    Épingler sujet
                                 </Button>
-                            )}
 
-                            {/* Plan Event */}
-                            <Button
-                                variant="outline"
-                                className="w-full border-blue-500/20 text-blue-400 hover:bg-blue-500/10 hover:border-blue-500/30"
-                                onClick={() => { setShowEventTool(true); setShowGroupTools(false); setEventTitle(''); setEventDate(''); setEventTime(''); setEventDescription(''); }}
-                            >
-                                <Calendar className="h-4 w-4 mr-2" />
-                                📅 Planifier un événement
-                            </Button>
-
-                            {/* Bible Tool */}
-                            <Button
-                                variant="outline"
-                                className="w-full border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/30"
-                                onClick={() => { setShowBibleTool(true); setShowGroupTools(false); }}
-                            >
-                                <BookOpen className="h-4 w-4 mr-2" />
-                                📖 Partager un passage biblique
-                            </Button>
-
-                            {/* Fasting Program Tool (admin only) */}
-                            {isGroupAdmin && (
+                                {/* Bible Tool */}
                                 <Button
                                     variant="outline"
-                                    className="w-full border-purple-500/20 text-purple-400 hover:bg-purple-500/10 hover:border-purple-500/30"
-                                    onClick={() => { setShowFastingTool(true); setShowGroupTools(false); initFastingDays(fastingDuration); }}
+                                    size="sm"
+                                    className="border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 h-9 text-xs"
+                                    onClick={() => { setShowBibleTool(true); setShowGroupTools(false); }}
                                 >
-                                    <CalendarDays className="h-4 w-4 mr-2" />
-                                    🕊️ Programme de jeûne
+                                    <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+                                    Passage Bible
                                 </Button>
+
+                                {/* Plan Event */}
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="border-blue-500/20 text-blue-400 hover:bg-blue-500/10 h-9 text-xs"
+                                    onClick={() => { setShowEventTool(true); setShowGroupTools(false); setEventTitle(''); setEventDate(''); setEventTime(''); setEventDescription(''); }}
+                                >
+                                    <Calendar className="h-3.5 w-3.5 mr-1.5" />
+                                    Événement
+                                </Button>
+                            </div>
+
+                            {/* Admin-only actions */}
+                            {isGroupAdmin && (
+                                <div className="space-y-2">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Admin</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="border-red-500/20 text-red-400 hover:bg-red-500/10 h-9 text-xs"
+                                            onClick={() => { setShowAnnouncementTool(true); setShowGroupTools(false); setAnnouncementText(''); }}
+                                        >
+                                            <Megaphone className="h-3.5 w-3.5 mr-1.5" />
+                                            Annonce
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="border-purple-500/20 text-purple-400 hover:bg-purple-500/10 h-9 text-xs"
+                                            onClick={() => { setShowFastingTool(true); setShowGroupTools(false); initFastingDays(fastingDuration); }}
+                                        >
+                                            <CalendarDays className="h-3.5 w-3.5 mr-1.5" />
+                                            Jeûne
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 h-9 text-xs col-span-2"
+                                            onClick={() => { setShowMigrateTool(true); setShowGroupTools(false); }}
+                                        >
+                                            <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
+                                            Migrer les membres
+                                        </Button>
+                                    </div>
+
+                                    {/* Auto-close 24h button */}
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full border-orange-500/20 text-orange-400 hover:bg-orange-500/10 h-9 text-xs"
+                                        onClick={async () => {
+                                            if (!currentGroup) return;
+                                            const confirmClose = window.confirm(
+                                                `🙏 Prière exaucée !\n\nLe groupe "${currentGroup.name}" sera archivé et supprimé automatiquement dans 24 heures.\n\nUn message sera envoyé aux membres. Continuer ?`
+                                            );
+                                            if (!confirmClose) return;
+
+                                            try {
+                                                // Send celebration message
+                                                await supabase.from('prayer_group_messages').insert({
+                                                    group_id: currentGroup.id,
+                                                    user_id: user.id,
+                                                    content: `🎉✨ **PRIÈRE EXAUCÉE !** ✨🎉\n\nGloire à Dieu ! La prière de ce groupe a été exaucée !\n\n⏰ Ce groupe sera automatiquement archivé dans 24 heures.\nMerci à tous pour vos prières fidèles ! 🙏`,
+                                                    type: 'text'
+                                                });
+
+                                                // Mark group for auto-deletion in 24h
+                                                const closeAt = new Date();
+                                                closeAt.setHours(closeAt.getHours() + 24);
+
+                                                await supabase
+                                                    .from('prayer_groups')
+                                                    .update({
+                                                        description: `📌 🎉 PRIÈRE EXAUCÉE - Fermeture auto le ${closeAt.toLocaleDateString('fr-FR')} à ${closeAt.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}`,
+                                                        is_open: false
+                                                    })
+                                                    .eq('id', currentGroup.id);
+
+                                                // Schedule deletion via a scheduled_deletions table or flag
+                                                await supabase.from('scheduled_group_deletions').upsert({
+                                                    group_id: currentGroup.id,
+                                                    delete_at: closeAt.toISOString(),
+                                                    reason: 'prayer_answered'
+                                                }, { onConflict: 'group_id' }).then(res => {
+                                                    if (res.error) {
+                                                        // Table may not exist — fallback: just update the group
+                                                        console.log('scheduled_group_deletions table not found, using description flag');
+                                                    }
+                                                });
+
+                                                toast.success('🎉 Prière exaucée ! Le groupe sera archivé dans 24h.');
+                                                setShowGroupTools(false);
+                                                loadMessages('group', currentGroup.id);
+                                            } catch (e: any) {
+                                                console.error('Error marking prayer as answered:', e);
+                                                toast.error('Erreur : ' + (e.message || 'Impossible de marquer'));
+                                            }
+                                        }}
+                                    >
+                                        🎉 Prière exaucée (fermeture auto 24h)
+                                    </Button>
+                                </div>
                             )}
 
-                            {/* Members List with Admin Controls */}
-                            <div className="space-y-1">
-                                <p className="text-xs text-slate-400 font-medium px-1">Membres ({groupMembers.length})</p>
-                                {groupMembers.map(member => (
-                                    <div key={member.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
-                                        <div className="relative">
-                                            <Avatar className="h-8 w-8">
-                                                <AvatarImage src={member.avatar_url || undefined} />
-                                                <AvatarFallback className="text-xs bg-slate-600">{getInitials(member.full_name)}</AvatarFallback>
-                                            </Avatar>
-                                            {(member.is_online || onlineUsers[member.id]) && (
-                                                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-green-500 rounded-full border-2 border-slate-900" />
+                            {/* Members List */}
+                            <div className="border-t border-white/5 pt-3 space-y-1">
+                                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1 mb-2">Membres ({groupMembers.length})</p>
+                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                    {groupMembers.map(member => (
+                                        <div key={member.id} className="flex items-center gap-2 p-2 rounded-lg hover:bg-white/5">
+                                            <div className="relative">
+                                                <Avatar className="h-7 w-7">
+                                                    <AvatarImage src={member.avatar_url || undefined} />
+                                                    <AvatarFallback className="text-[9px] bg-slate-600">{getInitials(member.full_name)}</AvatarFallback>
+                                                </Avatar>
+                                                {(member.is_online || onlineUsers[member.id]) && (
+                                                    <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full border border-slate-900" />
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-xs text-white truncate">{member.full_name || 'Utilisateur'}</p>
+                                                <p className="text-[9px] text-slate-500">
+                                                    {member.role === 'admin' ? '👑 Admin' : 'Membre'}
+                                                    {(member.is_online || onlineUsers[member.id]) && ' • 🟢'}
+                                                </p>
+                                            </div>
+                                            {isGroupAdmin && member.id !== user.id && member.role !== 'admin' && (
+                                                <div className="flex gap-0.5 shrink-0">
+                                                    <Button
+                                                        variant="ghost" size="icon"
+                                                        className="h-6 w-6 text-amber-400 hover:bg-amber-500/10"
+                                                        onClick={() => handlePromoteAdmin(member.id)}
+                                                        title="Nommer admin"
+                                                    >
+                                                        <Crown className="h-3 w-3" />
+                                                    </Button>
+                                                    <Button
+                                                        variant="ghost" size="icon"
+                                                        className="h-6 w-6 text-red-400 hover:bg-red-500/10"
+                                                        onClick={() => handleRemoveMember(member.id)}
+                                                        title="Retirer"
+                                                    >
+                                                        <UserMinus className="h-3 w-3" />
+                                                    </Button>
+                                                </div>
                                             )}
                                         </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm text-white truncate">{member.full_name || 'Utilisateur'}</p>
-                                            <p className="text-[10px] text-slate-500">
-                                                {member.role === 'admin' ? '👑 Admin' : 'Membre'}
-                                                {(member.is_online || onlineUsers[member.id]) && ' • 🟢 En ligne'}
-                                            </p>
-                                        </div>
-                                        {member.id !== user.id && member.role !== 'admin' && (
-                                            <div className="flex gap-1 shrink-0">
-                                                <Button
-                                                    variant="ghost" size="icon"
-                                                    className="h-7 w-7 text-amber-400 hover:bg-amber-500/10"
-                                                    onClick={() => handlePromoteAdmin(member.id)}
-                                                    title="Nommer admin"
-                                                >
-                                                    <Crown className="h-3.5 w-3.5" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost" size="icon"
-                                                    className="h-7 w-7 text-red-400 hover:bg-red-500/10"
-                                                    onClick={() => handleRemoveMember(member.id)}
-                                                    title="Retirer"
-                                                >
-                                                    <UserMinus className="h-3.5 w-3.5" />
-                                                </Button>
-                                            </div>
-                                        )}
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
