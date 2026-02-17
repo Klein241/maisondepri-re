@@ -1946,18 +1946,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 {/* Incoming Call Notification */}
                 {incomingCall && !activeCall && (
                     <IncomingCallOverlay
-                        callerName={incomingCall.callerName}
-                        callerAvatar={incomingCall.callerAvatar}
-                        callType={incomingCall.callType}
+                        callerName={incomingCall.caller_name}
+                        callerAvatar={incomingCall.caller_avatar}
+                        callType={incomingCall.call_type}
                         onAccept={() => {
                             setActiveCall({
-                                type: incomingCall.callType,
+                                type: incomingCall.call_type,
                                 mode: 'private',
                                 isIncoming: true
                             });
                             setIncomingCall(null);
                         }}
                         onReject={() => setIncomingCall(null)}
+
                     />
                 )}
             </div>
@@ -3404,12 +3405,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             {/* Incoming Call Notification */}
             {incomingCall && !activeCall && (
                 <IncomingCallOverlay
-                    callerName={incomingCall.callerName}
-                    callerAvatar={incomingCall.callerAvatar}
-                    callType={incomingCall.callType}
+                    callerName={incomingCall.caller_name}
+                    callerAvatar={incomingCall.caller_avatar}
+                    callType={incomingCall.call_type}
                     onAccept={() => {
                         setActiveCall({
-                            type: incomingCall.callType,
+                            type: incomingCall.call_type,
                             mode: 'private',
                             isIncoming: true
                         });
