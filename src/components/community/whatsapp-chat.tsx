@@ -310,6 +310,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     } | null>(null);
     const [showGameLobby, setShowGameLobby] = useState(false);
 
+    // Active group meeting state (WhatsApp-like group calls)
+    const [activeMeeting, setActiveMeeting] = useState<{
+        id: string; creatorId: string; creatorName: string;
+        type: 'audio' | 'video'; startTime: string;
+        participants: string[]; groupId: string;
+    } | null>(null);
+    const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+
     // Refs to hold current values without causing re-subscriptions
     const selectedConversationRef = useRef(selectedConversation);
     const selectedGroupRef = useRef(selectedGroup);
@@ -900,11 +908,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     is_read: true
                 }));
                 setMessages(groupMsgs);
-                // Load reactions, comments, notifications, and game session for this group
+                // Load reactions, comments, notifications, game session, and active meeting for this group
                 loadReactions(id);
                 loadCommentCounts(id, groupMsgs.map((m: any) => m.id));
                 loadPinnedNotifications(id);
                 loadGameSession(id);
+                loadActiveMeeting(id);
             }
         } catch (e) {
             console.error('Error loading messages:', e);
@@ -1834,6 +1843,183 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         } catch { setActiveGameSession(null); }
     }, []);
 
+    // ===== WhatsApp-style Group Meeting Functions =====
+
+    // Start a group meeting (audio or video)
+    const startGroupMeeting = useCallback(async (type: 'audio' | 'video') => {
+        if (!user || !selectedGroup) return;
+        const meetingId = `meeting_${selectedGroup.id}_${Date.now()}`;
+        const meeting = {
+            id: meetingId,
+            creatorId: user.id,
+            creatorName: user.name || 'Utilisateur',
+            type,
+            startTime: new Date().toISOString(),
+            participants: [user.id],
+            groupId: selectedGroup.id,
+        };
+        setActiveMeeting(meeting);
+        localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(meeting));
+
+        // Broadcast meeting to all group members via Supabase channel
+        const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
+            config: { broadcast: { self: false } }
+        });
+        await channel.subscribe();
+        channel.send({
+            type: 'broadcast',
+            event: 'meeting-started',
+            payload: meeting
+        });
+        setTimeout(() => supabase.removeChannel(channel), 2000);
+
+        // Ring each group member individually via their signal channel
+        if (groupMembers && groupMembers.length > 0) {
+            for (const member of groupMembers) {
+                if (member.id === user.id) continue;
+                const memberSignalChannel = supabase.channel(`call_signal_${member.id}`, {
+                    config: { broadcast: { self: false } }
+                });
+                await memberSignalChannel.subscribe();
+                memberSignalChannel.send({
+                    type: 'broadcast',
+                    event: 'incoming-call',
+                    payload: {
+                        callerId: user.id,
+                        callerName: user.name,
+                        callerAvatar: user.avatar,
+                        callType: type,
+                        groupId: selectedGroup.id,
+                        groupName: selectedGroup.name,
+                        mode: 'group',
+                    }
+                });
+                setTimeout(() => supabase.removeChannel(memberSignalChannel), 2000);
+            }
+        }
+
+        // Send a system message about the meeting
+        await supabase.from('prayer_group_messages').insert({
+            group_id: selectedGroup.id,
+            user_id: user.id,
+            content: `${type === 'video' ? '📹' : '📞'} **${user.name}** a démarré une réunion ${type === 'video' ? 'vidéo' : 'vocale'} de groupe ! Cliquez sur le bouton clignotant pour rejoindre.`,
+            type: 'text'
+        });
+
+        // Start the actual WebRTC call
+        setActiveCall({ type, mode: 'group' });
+        toast.success(`${type === 'video' ? '📹' : '📞'} Réunion de groupe démarrée !`);
+    }, [user, selectedGroup, groupMembers]);
+
+    // Join an active group meeting
+    const joinGroupMeeting = useCallback(() => {
+        if (!user || !selectedGroup) return;
+        const stored = localStorage.getItem(`active_meeting_${selectedGroup.id}`);
+        if (!stored) { toast.error('Aucune réunion active'); return; }
+        try {
+            const meeting = JSON.parse(stored);
+            if (!meeting.participants.includes(user.id)) {
+                meeting.participants.push(user.id);
+                localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(meeting));
+            }
+            setActiveMeeting(meeting);
+
+            // Broadcast join
+            const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
+                config: { broadcast: { self: false } }
+            });
+            channel.subscribe().then(() => {
+                channel.send({
+                    type: 'broadcast',
+                    event: 'meeting-join',
+                    payload: { meetingId: meeting.id, userId: user.id, userName: user.name }
+                });
+                setTimeout(() => supabase.removeChannel(channel), 2000);
+            });
+
+            // Start the WebRTC call to connect
+            setActiveCall({ type: meeting.type, mode: 'group' });
+            toast.success('Vous avez rejoint la réunion ! 📞');
+        } catch { toast.error('Erreur de connexion'); }
+    }, [user, selectedGroup]);
+
+    // End a group meeting
+    const endGroupMeeting = useCallback(async () => {
+        if (!selectedGroup) return;
+        localStorage.removeItem(`active_meeting_${selectedGroup.id}`);
+
+        // Broadcast end
+        const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
+            config: { broadcast: { self: false } }
+        });
+        await channel.subscribe();
+        channel.send({
+            type: 'broadcast',
+            event: 'meeting-ended',
+            payload: { groupId: selectedGroup.id }
+        });
+        setTimeout(() => supabase.removeChannel(channel), 2000);
+
+        setActiveMeeting(null);
+        toast.success('Réunion terminée');
+    }, [selectedGroup]);
+
+    // Load active meeting for a group
+    const loadActiveMeeting = useCallback((groupId: string) => {
+        try {
+            const stored = localStorage.getItem(`active_meeting_${groupId}`);
+            if (stored) {
+                const meeting = JSON.parse(stored);
+                // Check if meeting is not too old (max 3 hours)
+                const startTime = new Date(meeting.startTime).getTime();
+                const elapsed = Date.now() - startTime;
+                if (elapsed < 3 * 60 * 60 * 1000) {
+                    setActiveMeeting(meeting);
+                } else {
+                    localStorage.removeItem(`active_meeting_${groupId}`);
+                    setActiveMeeting(null);
+                }
+            } else {
+                setActiveMeeting(null);
+            }
+        } catch { setActiveMeeting(null); }
+    }, []);
+
+    // Listen for real-time meeting broadcasts when in a group
+    useEffect(() => {
+        if (view !== 'group' || !selectedGroup) return;
+        const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
+            config: { broadcast: { self: false } }
+        });
+
+        channel.on('broadcast', { event: 'meeting-started' }, ({ payload }) => {
+            setActiveMeeting(payload);
+            localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(payload));
+            toast.info(`${payload.type === 'video' ? '📹' : '📞'} ${payload.creatorName} a démarré une réunion !`, {
+                action: { label: 'Rejoindre', onClick: () => joinGroupMeeting() }
+            });
+        });
+
+        channel.on('broadcast', { event: 'meeting-join' }, ({ payload }) => {
+            setActiveMeeting(prev => {
+                if (!prev) return prev;
+                const updated = { ...prev, participants: [...new Set([...prev.participants, payload.userId])] };
+                localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(updated));
+                return updated;
+            });
+        });
+
+        channel.on('broadcast', { event: 'meeting-ended' }, () => {
+            setActiveMeeting(null);
+            localStorage.removeItem(`active_meeting_${selectedGroup.id}`);
+            toast.info('La réunion est terminée');
+        });
+
+        channel.subscribe();
+
+        return () => { supabase.removeChannel(channel); };
+    }, [view, selectedGroup?.id, joinGroupMeeting]);
+
     const insertMention = (memberName: string) => {
         const mentionText = `@${memberName} `;
         const curVal = newMessage;
@@ -2308,7 +2494,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                         groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
                         groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
                         isIncoming={activeCall.isIncoming}
-                        onEnd={() => setActiveCall(null)}
+                        onEnd={() => { setActiveCall(null); if (activeCall?.mode === 'group') endGroupMeeting(); }}
                     />
                 )}
 
@@ -2829,10 +3015,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-7 w-7 sm:h-9 sm:w-9"
-                                onClick={() => setActiveCall({ type: 'audio', mode: 'group' })}
-                                title="Appel vocal de groupe"
+                                onClick={() => startGroupMeeting('audio')}
+                                title="Démarrer une réunion vocale"
                             >
                                 <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-7 w-7 sm:h-9 sm:w-9"
+                                onClick={() => startGroupMeeting('video')}
+                                title="Démarrer une réunion vidéo"
+                            >
+                                <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                         </div>
                     </>
@@ -2938,6 +3133,62 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                         <Gamepad2 className="h-5 w-5" />
                         🎮 Rejoindre le {activeGameSession.gameType === 'quiz' ? 'Duel Biblique' : 'Jeu'} !
                         <Badge className="bg-white/20 text-white text-[10px]">{activeGameSession.players.length} joueur{activeGameSession.players.length > 1 ? 's' : ''}</Badge>
+                    </motion.button>
+                </div>
+            )}
+
+            {/* Active Meeting Pinned Button (WhatsApp-style) */}
+            {view === 'group' && selectedGroup && activeMeeting && activeMeeting.groupId === selectedGroup.id && !activeCall && (
+                <div className="mx-2 sm:mx-4 mt-2">
+                    <motion.button
+                        animate={{
+                            scale: [1, 1.03, 1],
+                            boxShadow: activeMeeting.type === 'video'
+                                ? ['0 0 0 rgba(59,130,246,0)', '0 0 24px rgba(59,130,246,0.6)', '0 0 0 rgba(59,130,246,0)']
+                                : ['0 0 0 rgba(34,197,94,0)', '0 0 24px rgba(34,197,94,0.6)', '0 0 0 rgba(34,197,94,0)']
+                        }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        onClick={joinGroupMeeting}
+                        className={cn(
+                            "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-bold text-sm shadow-lg relative overflow-hidden",
+                            activeMeeting.type === 'video'
+                                ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500"
+                                : "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500"
+                        )}
+                    >
+                        {/* Pulsing ring animation */}
+                        <motion.div
+                            animate={{ scale: [1, 2.5], opacity: [0.3, 0] }}
+                            transition={{ repeat: Infinity, duration: 1.5 }}
+                            className={cn(
+                                "absolute w-4 h-4 rounded-full",
+                                activeMeeting.type === 'video' ? "bg-blue-400" : "bg-green-400"
+                            )}
+                        />
+                        {activeMeeting.type === 'video' ? (
+                            <Video className="h-5 w-5 relative z-10" />
+                        ) : (
+                            <Phone className="h-5 w-5 relative z-10" />
+                        )}
+                        <span className="relative z-10">
+                            {activeMeeting.participants.includes(user.id)
+                                ? `${activeMeeting.type === 'video' ? '📹' : '📞'} Réunion en cours`
+                                : `Cliquer pour rejoindre la réunion`
+                            }
+                        </span>
+                        <Badge className="bg-white/20 text-white text-[10px] relative z-10">
+                            {activeMeeting.participants.length} participant{activeMeeting.participants.length > 1 ? 's' : ''}
+                        </Badge>
+                        {/* End meeting button (for creator only) */}
+                        {activeMeeting.creatorId === user.id && (
+                            <button
+                                onClick={(e) => { e.stopPropagation(); endGroupMeeting(); }}
+                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-red-600/80 hover:bg-red-600 text-white z-20"
+                                title="Terminer la réunion"
+                            >
+                                <X className="h-3.5 w-3.5" />
+                            </button>
+                        )}
                     </motion.button>
                 </div>
             )}
@@ -4130,7 +4381,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
                     groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
                     isIncoming={activeCall.isIncoming}
-                    onEnd={() => setActiveCall(null)}
+                    onEnd={() => { setActiveCall(null); if (activeCall?.mode === 'group') endGroupMeeting(); }}
                 />
             )}
 

@@ -369,6 +369,35 @@ export function WebRTCCall({
         }
     }, [callState]);
 
+    // Outgoing ringtone (soft beep when calling someone)
+    useEffect(() => {
+        if (callState !== 'ringing' && callState !== 'connecting') return;
+        let ctx: AudioContext | null = null;
+        let interval: NodeJS.Timeout | null = null;
+        try {
+            ctx = new AudioContext();
+            const playBeep = () => {
+                if (!ctx || ctx.state === 'closed') return;
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.type = 'sine';
+                osc.frequency.value = 425;
+                gain.gain.setValueAtTime(0.08, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.8);
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.start(ctx.currentTime);
+                osc.stop(ctx.currentTime + 0.8);
+            };
+            playBeep();
+            interval = setInterval(playBeep, 3000);
+        } catch { /* ignore */ }
+        return () => {
+            if (interval) clearInterval(interval);
+            ctx?.close();
+        };
+    }, [callState]);
+
     // Toggle mute
     const toggleMute = () => {
         if (localStreamRef.current) {
@@ -607,47 +636,155 @@ interface IncomingCallProps {
 }
 
 export function IncomingCallOverlay({ callerName, callerAvatar, callType, onAccept, onReject }: IncomingCallProps) {
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const ringtoneIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Play WhatsApp-style ringtone using Web Audio API
+    useEffect(() => {
+        const playRingtone = () => {
+            try {
+                const ctx = new AudioContext();
+                audioContextRef.current = ctx;
+
+                const playTone = (freq: number, start: number, dur: number) => {
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.15, ctx.currentTime + start);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start(ctx.currentTime + start);
+                    osc.stop(ctx.currentTime + start + dur);
+                };
+
+                // Double ring pattern
+                const ring = () => {
+                    playTone(440, 0, 0.25);
+                    playTone(523, 0, 0.25);
+                    playTone(440, 0.35, 0.25);
+                    playTone(523, 0.35, 0.25);
+                };
+
+                ring();
+                ringtoneIntervalRef.current = setInterval(ring, 2000);
+            } catch (e) {
+                console.warn('Ringtone failed:', e);
+            }
+        };
+
+        playRingtone();
+
+        // Vibrate on mobile
+        if ('vibrate' in navigator) {
+            const vibratePattern = () => navigator.vibrate([300, 200, 300, 1200]);
+            vibratePattern();
+            const vibInterval = setInterval(vibratePattern, 2000);
+            return () => {
+                clearInterval(vibInterval);
+                navigator.vibrate(0);
+                if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
+                audioContextRef.current?.close();
+            };
+        }
+
+        return () => {
+            if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
+            audioContextRef.current?.close();
+        };
+    }, []);
+
+    const handleAccept = () => {
+        if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
+        audioContextRef.current?.close();
+        if ('vibrate' in navigator) navigator.vibrate(0);
+        onAccept();
+    };
+
+    const handleReject = () => {
+        if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
+        audioContextRef.current?.close();
+        if ('vibrate' in navigator) navigator.vibrate(0);
+        onReject();
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: -50 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -50 }}
-            className="fixed top-4 left-1/2 -translate-x-1/2 z-[110] w-80 bg-slate-900/95 backdrop-blur-xl border border-white/10 rounded-2xl p-4 shadow-2xl"
+            className="fixed inset-0 z-[110] bg-gradient-to-b from-slate-900/98 via-slate-800/98 to-slate-900/98 backdrop-blur-2xl flex flex-col items-center justify-between p-6"
         >
-            <div className="flex items-center gap-3 mb-3">
-                <Avatar className="h-12 w-12">
-                    <AvatarImage src={callerAvatar || undefined} />
-                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
-                        {callerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                    </AvatarFallback>
-                </Avatar>
-                <div>
-                    <p className="font-semibold text-white text-sm">{callerName}</p>
-                    <motion.p
-                        animate={{ opacity: [0.5, 1, 0.5] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                        className="text-xs text-slate-400"
+            {/* Top label */}
+            <div className="text-center mt-12">
+                <p className="text-xs text-slate-400 uppercase tracking-widest mb-2">
+                    {callType === 'video' ? '📹 Appel vidéo entrant' : '📞 Appel vocal entrant'}
+                </p>
+            </div>
+
+            {/* Caller info with pulsing rings */}
+            <div className="flex-1 flex items-center justify-center">
+                <div className="text-center relative">
+                    <motion.div
+                        animate={{ scale: [1, 2], opacity: [0.3, 0] }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-green-500/30"
+                    />
+                    <motion.div
+                        animate={{ scale: [1, 1.8], opacity: [0.2, 0] }}
+                        transition={{ repeat: Infinity, duration: 1.5, delay: 0.3 }}
+                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-green-500/20"
+                    />
+                    <motion.div
+                        animate={{ scale: [0.95, 1.05, 0.95], opacity: [1, 0.8, 1] }}
+                        transition={{ duration: 2, repeat: Infinity }}
                     >
-                        {callType === 'video' ? '📹 Appel vidéo entrant...' : '📞 Appel vocal entrant...'}
+                        <Avatar className="h-32 w-32 mx-auto mb-6 ring-4 ring-green-500/30 shadow-2xl shadow-green-500/20">
+                            <AvatarImage src={callerAvatar || undefined} />
+                            <AvatarFallback className="text-3xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                                {callerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                        </Avatar>
+                    </motion.div>
+                    <h2 className="text-2xl font-bold text-white mt-4">{callerName}</h2>
+                    <motion.p
+                        animate={{ opacity: [0.4, 1, 0.4] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                        className="text-sm text-slate-400 mt-2"
+                    >
+                        {callType === 'video' ? 'Appel vidéo entrant...' : 'Appel vocal entrant...'}
                     </motion.p>
                 </div>
             </div>
-            <div className="flex gap-3">
-                <Button
-                    onClick={onReject}
-                    className="flex-1 h-10 rounded-xl bg-red-600 hover:bg-red-700 text-white"
-                >
-                    <PhoneOff className="h-4 w-4 mr-1" />
-                    Refuser
-                </Button>
-                <Button
-                    onClick={onAccept}
-                    className="flex-1 h-10 rounded-xl bg-green-600 hover:bg-green-700 text-white"
-                >
-                    <Phone className="h-4 w-4 mr-1" />
-                    Répondre
-                </Button>
+
+            {/* Accept/Reject buttons (WhatsApp-style) */}
+            <div className="flex items-center gap-12 mb-12">
+                <div className="text-center">
+                    <Button
+                        onClick={handleReject}
+                        className="h-16 w-16 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/30"
+                    >
+                        <PhoneOff className="h-7 w-7" />
+                    </Button>
+                    <p className="text-xs text-slate-400 mt-2">Refuser</p>
+                </div>
+                <div className="text-center">
+                    <motion.div
+                        animate={{ scale: [1, 1.1, 1] }}
+                        transition={{ repeat: Infinity, duration: 0.8 }}
+                    >
+                        <Button
+                            onClick={handleAccept}
+                            className="h-16 w-16 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/30"
+                        >
+                            <Phone className="h-7 w-7" />
+                        </Button>
+                    </motion.div>
+                    <p className="text-xs text-slate-400 mt-2">Répondre</p>
+                </div>
             </div>
         </motion.div>
     );
 }
+
