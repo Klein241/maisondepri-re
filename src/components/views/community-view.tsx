@@ -1718,7 +1718,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         <NotificationBell />
                                     </div>
                                 </div>
-                                {/* Row 1: Social actions */}
+                                {/* Row 1: Social actions - 2 boutons pour le mobile */}
                                 <div className="flex gap-2 pb-1.5 -mx-1 px-1">
                                     <Button
                                         size="sm"
@@ -1726,7 +1726,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         onClick={() => requireAuth(() => setViewState('friends'))}
                                     >
                                         <UserPlus className="h-3.5 w-3.5" />
-                                        Retrouver vos Amis
+                                        Amis
                                     </Button>
                                     <Button
                                         size="sm"
@@ -1741,6 +1741,9 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             </span>
                                         )}
                                     </Button>
+                                </div>
+                                {/* Row 2: Messages + Jeux */}
+                                <div className="flex gap-2 pb-2 -mx-1 px-1">
                                     <Button
                                         size="sm"
                                         className="flex-1 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
@@ -1749,9 +1752,6 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         <MessageCircle className="h-3.5 w-3.5" />
                                         Messages
                                     </Button>
-                                </div>
-                                {/* Row 2: Content actions */}
-                                <div className="flex gap-2 pb-2 -mx-1 px-1">
                                     <EventCalendarButton />
                                     <Button
                                         size="sm"

@@ -11,6 +11,8 @@
  * - Levels 21-30 (MAÎTRE 🔴): 24 words, boards 151-160 (10 boards)
  */
 
+import { BIBLE_WORDS } from './game-data';
+
 // =================== TYPES ===================
 
 export type GameType = 'word_search' | 'memory' | 'who_am_i' | 'chrono';
@@ -507,7 +509,6 @@ export function isLevelUnlocked(gameType: GameType, level: number): boolean {
 // =================== WORDS PER BOARD ===================
 
 // Deterministic word selection per board (so same board always has same words)
-import { BIBLE_WORDS } from './game-data';
 
 function seededRandom(seed: number): () => number {
     let s = seed;

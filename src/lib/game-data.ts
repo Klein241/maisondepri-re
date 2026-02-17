@@ -752,17 +752,4 @@ export async function generateGameConfig(gameType: string): Promise<any> {
     }
 }
 
-export default {
-    BIBLE_QUESTIONS,
-    BIBLE_VERSES_PAIRS,
-    BIBLE_WORDS,
-    BIBLE_CHARACTERS,
-    CHRONO_EVENTS,
-    WHO_AM_I_CHARACTERS,
-    getRandomQuestions,
-    getMemoryPairs,
-    getWordSearchWords,
-    getRandomChronoEvents,
-    getRandomWhoAmICharacters,
-    generateGameConfig
-};
+// All exports are named exports above (BIBLE_QUESTIONS, BIBLE_WORDS, etc.)

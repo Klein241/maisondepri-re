@@ -5,6 +5,8 @@
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
+  # Prevent minification issues that cause TDZ errors
+  NEXT_PRIVATE_MINIMIZE_FEATURES = "1"
 
 [[plugins]]
   package = "@netlify/plugin-nextjs"
