@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import {
     MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search, Pin, Shield, BellRing,
     Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
@@ -22,15 +23,10 @@ import { useAppStore } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import { PRAYER_CATEGORIES, PrayerCategory, PrayerRequest, Testimonial, PrayerGroup, PrayerGroupJoinRequest } from "@/lib/types";
 import { PhotoUpload, PhotoGallery } from "@/components/ui/photo-upload";
-import { WhatsAppChat } from "@/components/community/whatsapp-chat";
-import { PrayerGroupManager } from "@/components/community/prayer-group-manager";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
-import { GroupCallManager } from "@/components/community/group-call-manager";
-import { FriendSystem } from "@/components/community/friend-system";
 import { NotificationBell } from "@/components/notification-bell";
 import { IncomingCallOverlay, useCallListener, DMCallButtons } from "@/components/community/call-system";
 import { EventCalendarButton } from "@/components/community/event-calendar";
-import { GroupToolsPanel } from "@/components/community/group-tools";
 import { PrayerCard } from "@/components/community/prayer-card";
 import { TestimonyCard } from "@/components/community/testimony-card";
 import { ChatMessage } from "@/components/community/chat-message";
@@ -40,6 +36,13 @@ import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage, notifyGroupAccessRequest, notifyGroupAccessApproved, notifyDirectMessage } from "@/lib/notifications";
+
+// Dynamic imports for heavy components to prevent TDZ errors in production bundles
+const WhatsAppChat = dynamic(() => import("@/components/community/whatsapp-chat").then(m => ({ default: m.WhatsAppChat })), { ssr: false, loading: () => <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div> });
+const PrayerGroupManager = dynamic(() => import("@/components/community/prayer-group-manager").then(m => ({ default: m.PrayerGroupManager })), { ssr: false, loading: () => <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div> });
+const GroupCallManager = dynamic(() => import("@/components/community/group-call-manager").then(m => ({ default: m.GroupCallManager })), { ssr: false });
+const FriendSystem = dynamic(() => import("@/components/community/friend-system").then(m => ({ default: m.FriendSystem })), { ssr: false, loading: () => <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div> });
+const GroupToolsPanel = dynamic(() => import("@/components/community/group-tools").then(m => ({ default: m.GroupToolsPanel })), { ssr: false });
 
 type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'messages' | 'conversation' | 'group-call' | 'friends';
 

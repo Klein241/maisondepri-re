@@ -2,17 +2,21 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
+import dynamic from 'next/dynamic';
 import { BottomNav } from '@/components/bottom-nav';
-import { HomeView } from '@/components/views/home-view';
-import { ProgramView } from '@/components/views/program-view';
-import { DayDetailView } from '@/components/views/day-detail-view';
-import { BibleView } from '@/components/views/bible-view';
-import { JournalView } from '@/components/views/journal-view';
-import { CommunityView } from '@/components/views/community-view';
-import { ProfileView } from '@/components/views/profile-view';
-import { AuthView } from '@/components/views/auth-view';
 import { useAppStore } from '@/lib/store';
 import { TabType } from '@/lib/types';
+
+// Dynamic imports to prevent TDZ errors in production bundles
+// Each view loads in its own chunk, preventing circular dependency issues
+const HomeView = dynamic(() => import('@/components/views/home-view').then(m => ({ default: m.HomeView })), { ssr: false });
+const ProgramView = dynamic(() => import('@/components/views/program-view').then(m => ({ default: m.ProgramView })), { ssr: false });
+const DayDetailView = dynamic(() => import('@/components/views/day-detail-view').then(m => ({ default: m.DayDetailView })), { ssr: false });
+const BibleView = dynamic(() => import('@/components/views/bible-view').then(m => ({ default: m.BibleView })), { ssr: false });
+const JournalView = dynamic(() => import('@/components/views/journal-view').then(m => ({ default: m.JournalView })), { ssr: false });
+const CommunityView = dynamic(() => import('@/components/views/community-view').then(m => ({ default: m.CommunityView })), { ssr: false });
+const ProfileView = dynamic(() => import('@/components/views/profile-view').then(m => ({ default: m.ProfileView })), { ssr: false });
+const AuthView = dynamic(() => import('@/components/views/auth-view').then(m => ({ default: m.AuthView })), { ssr: false });
 
 // Splash screen component
 function SplashScreen() {
