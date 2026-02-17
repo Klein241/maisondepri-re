@@ -182,42 +182,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     // Ref to track pending group to open (from external navigation)
     const pendingGroupIdRef = useRef<string | null>(null);
 
-    // Effect to handle external group selection (stores the pending group ID)
-    useEffect(() => {
-        if (activeGroupId && (groups.length > 0 || adminGroups.length > 0)) {
-            const group = groups.find(g => g.id === activeGroupId) || adminGroups.find(g => g.id === activeGroupId);
-            if (group) {
-                if (selectedGroup?.id !== group.id || view !== 'group') {
-                    console.log('[WhatsAppChat] Pending group from activeGroupId:', group.name);
-                    pendingGroupIdRef.current = activeGroupId;
-                    setSelectedGroup(group);
-                    setSelectedConversation(null);
-                    setView('group');
-                }
-            } else {
-                // Group not in local list yet - try to fetch it directly
-                console.log('[WhatsAppChat] Group not in local list, fetching directly:', activeGroupId);
-                pendingGroupIdRef.current = activeGroupId;
-                (async () => {
-                    try {
-                        const { data } = await supabase
-                            .from('prayer_groups')
-                            .select('*')
-                            .eq('id', activeGroupId)
-                            .single();
-                        if (data) {
-                            setSelectedGroup(data);
-                            setSelectedConversation(null);
-                            setView('group');
-                        }
-                    } catch (e) {
-                        console.error('[WhatsAppChat] Error fetching group:', e);
-                    }
-                })();
-            }
-        }
-    }, [activeGroupId, groups, adminGroups]);
-
     // Data State
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [groups, setGroups] = useState<ChatGroup[]>([]);
@@ -333,6 +297,42 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     useEffect(() => {
         selectedGroupRef.current = selectedGroup;
     }, [selectedGroup]);
+
+    // Effect to handle external group selection
+    // IMPORTANT: Must be AFTER all useState declarations to avoid TDZ in production builds
+    useEffect(() => {
+        if (activeGroupId && (groups.length > 0 || adminGroups.length > 0)) {
+            const group = groups.find(g => g.id === activeGroupId) || adminGroups.find(g => g.id === activeGroupId);
+            if (group) {
+                if (selectedGroup?.id !== group.id || view !== 'group') {
+                    console.log('[WhatsAppChat] Pending group from activeGroupId:', group.name);
+                    pendingGroupIdRef.current = activeGroupId;
+                    setSelectedGroup(group);
+                    setSelectedConversation(null);
+                    setView('group');
+                }
+            } else {
+                console.log('[WhatsAppChat] Group not in local list, fetching directly:', activeGroupId);
+                pendingGroupIdRef.current = activeGroupId;
+                (async () => {
+                    try {
+                        const { data } = await supabase
+                            .from('prayer_groups')
+                            .select('*')
+                            .eq('id', activeGroupId)
+                            .single();
+                        if (data) {
+                            setSelectedGroup(data);
+                            setSelectedConversation(null);
+                            setView('group');
+                        }
+                    } catch (e) {
+                        console.error('[WhatsAppChat] Error fetching group:', e);
+                    }
+                })();
+            }
+        }
+    }, [activeGroupId, groups, adminGroups]);
 
     // Manual refresh function
     const handleManualRefresh = useCallback(async () => {
@@ -1946,12 +1946,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 {/* Incoming Call Notification */}
                 {incomingCall && !activeCall && (
                     <IncomingCallOverlay
-                        callerName={incomingCall.caller_name}
-                        callerAvatar={incomingCall.caller_avatar}
-                        callType={incomingCall.call_type}
+                        callerName={incomingCall.callerName}
+                        callerAvatar={incomingCall.callerAvatar}
+                        callType={incomingCall.callType}
                         onAccept={() => {
                             setActiveCall({
-                                type: incomingCall.call_type,
+                                type: incomingCall.callType,
                                 mode: 'private',
                                 isIncoming: true
                             });
@@ -3405,12 +3405,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             {/* Incoming Call Notification */}
             {incomingCall && !activeCall && (
                 <IncomingCallOverlay
-                    callerName={incomingCall.caller_name}
-                    callerAvatar={incomingCall.caller_avatar}
-                    callType={incomingCall.call_type}
+                    callerName={incomingCall.callerName}
+                    callerAvatar={incomingCall.callerAvatar}
+                    callType={incomingCall.callType}
                     onAccept={() => {
                         setActiveCall({
-                            type: incomingCall.call_type,
+                            type: incomingCall.callType,
                             mode: 'private',
                             isIncoming: true
                         });
