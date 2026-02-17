@@ -7,7 +7,8 @@ import {
     Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
-    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar
+    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar,
+    MessageCircle, Gamepad2, BarChart3, FileText, Heart, Bell
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -232,6 +233,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
 
+    // Message interaction state (click to show actions)
+    const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
+
     // Bible sharing tool state
     const [showBibleTool, setShowBibleTool] = useState(false);
     const [bibleReference, setBibleReference] = useState('');
@@ -284,6 +288,27 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Point 4: Pinned notification icons in group
+    const [pinnedNotifications, setPinnedNotifications] = useState<Array<{
+        id: string; type: 'poll' | 'announcement' | 'verse' | 'program' | 'event';
+        count: number; label: string; groupId: string;
+    }>>([]);
+
+    // Point 9: Emoji reactions + threaded comments
+    const [messageReactions, setMessageReactions] = useState<Record<string, Record<string, string[]>>>({});
+    const [threadMessages, setThreadMessages] = useState<Message[]>([]);
+    const [activeThread, setActiveThread] = useState<{ messageId: string; content: string; senderName: string } | null>(null);
+    const [threadInput, setThreadInput] = useState('');
+    const [messageCommentCounts, setMessageCommentCounts] = useState<Record<string, number>>({});
+
+    // Point 11: Live group Bible games
+    const [activeGameSession, setActiveGameSession] = useState<{
+        id: string; creatorId: string; creatorName: string;
+        gameType: string; players: Array<{ id: string; name: string; score: number }>;
+        status: 'waiting' | 'playing' | 'finished';
+    } | null>(null);
+    const [showGameLobby, setShowGameLobby] = useState(false);
 
     // Refs to hold current values without causing re-subscriptions
     const selectedConversationRef = useRef(selectedConversation);
@@ -351,15 +376,49 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         const initData = async () => {
             setIsLoading(true);
             await Promise.all([loadConversations(), loadGroups(), loadAllUsers()]);
+
+            // Restore previous group/view from sessionStorage (Point 2: persist on refresh)
+            const savedGroupId = sessionStorage.getItem('chat_selectedGroupId');
+            const savedView = sessionStorage.getItem('chat_view') as typeof view;
+            if (savedGroupId && (!activeGroupId)) {
+                try {
+                    const { data } = await supabase
+                        .from('prayer_groups')
+                        .select('*')
+                        .eq('id', savedGroupId)
+                        .single();
+                    if (data) {
+                        const { count } = await supabase
+                            .from('prayer_group_members')
+                            .select('*', { count: 'exact', head: true })
+                            .eq('group_id', data.id);
+                        setSelectedGroup({
+                            id: data.id,
+                            name: data.name,
+                            description: data.description,
+                            is_urgent: data.is_urgent || false,
+                            member_count: count || 0,
+                            unreadCount: 0,
+                            is_admin_created: !data.prayer_request_id,
+                            prayer_request_id: data.prayer_request_id,
+                            avatar_url: data.avatar_url || null,
+                            created_by: data.created_by,
+                            created_at: data.created_at,
+                        });
+                        setView('group');
+                    }
+                } catch (e) {
+                    console.log('Could not restore group from session');
+                }
+            } else if (savedView && savedView === 'list') {
+                setView('list');
+            }
+
             setIsLoading(false);
         };
         initData();
 
         const cleanup = setupPresenceChannel();
-
-        // Disable polling - rely on realtime subscriptions only
-        // This was causing the continuous refresh issue
-        // const pollInterval = setInterval(...)
 
         return () => {
             cleanup?.();
@@ -372,6 +431,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only re-run if user ID changes, not user object
+
+    // Persist view + selectedGroup to sessionStorage (Point 2)
+    useEffect(() => {
+        sessionStorage.setItem('chat_view', view);
+    }, [view]);
+    useEffect(() => {
+        if (selectedGroup) {
+            sessionStorage.setItem('chat_selectedGroupId', selectedGroup.id);
+        } else {
+            sessionStorage.removeItem('chat_selectedGroupId');
+        }
+    }, [selectedGroup]);
+
 
     // RLS workaround: listen for DM refresh signals from the notification system
     const dmRefreshSignal = useAppStore(s => s.dmRefreshSignal);
@@ -822,11 +894,17 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     .order('created_at', { ascending: true });
 
                 if (error) throw error;
-                setMessages((data || []).map((m: any) => ({
+                const groupMsgs = (data || []).map((m: any) => ({
                     ...m,
                     sender_id: m.user_id,
                     is_read: true
-                })));
+                }));
+                setMessages(groupMsgs);
+                // Load reactions, comments, notifications, and game session for this group
+                loadReactions(id);
+                loadCommentCounts(id, groupMsgs.map((m: any) => m.id));
+                loadPinnedNotifications(id);
+                loadGameSession(id);
             }
         } catch (e) {
             console.error('Error loading messages:', e);
@@ -1464,7 +1542,298 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         }
     };
 
-    // Insert @mention into message
+    // Check if current user is creator or admin of the selected group
+    const isCreatorOrAdmin = selectedGroup && user ? (
+        selectedGroup.created_by === user.id ||
+        groupMembers.some(m => m.id === user.id && m.role === 'admin')
+    ) : false;
+
+    // Delete entire group (creator only)
+    const handleDeleteGroup = async () => {
+        if (!selectedGroup || !user) return;
+        if (selectedGroup.created_by !== user.id) {
+            toast.error('Seul le créateur peut supprimer le groupe');
+            return;
+        }
+        if (!confirm(`Supprimer le groupe "${selectedGroup.name}" définitivement ? Tous les messages et membres seront supprimés.`)) return;
+        try {
+            // Delete all group messages
+            await supabase.from('group_messages').delete().eq('group_id', selectedGroup.id);
+            // Delete all members
+            await supabase.from('prayer_group_members').delete().eq('group_id', selectedGroup.id);
+            // Delete polls
+            await supabase.from('group_polls').delete().eq('group_id', selectedGroup.id);
+            // Delete events
+            await supabase.from('group_events').delete().eq('group_id', selectedGroup.id);
+            // Delete the group itself
+            const { error } = await supabase.from('prayer_groups').delete().eq('id', selectedGroup.id);
+            if (error) throw error;
+            // Update local state
+            setGroups(prev => prev.filter(g => g.id !== selectedGroup.id));
+            setAdminGroups(prev => prev.filter(g => g.id !== selectedGroup.id));
+            setSelectedGroup(null);
+            setView('list');
+            toast.success('Groupe supprimé définitivement');
+        } catch (err) {
+            console.error('Error deleting group:', err);
+            toast.error('Erreur lors de la suppression du groupe');
+        }
+    };
+
+    // Delete own message (any member can delete their own messages)
+    const handleDeleteMessage = async (messageId: string, senderId: string) => {
+        if (!user || senderId !== user.id) {
+            toast.error('Vous ne pouvez supprimer que vos propres messages');
+            return;
+        }
+        try {
+            if (view === 'group' && selectedGroup) {
+                const { error } = await supabase.from('group_messages').delete().eq('id', messageId);
+                if (error) throw error;
+                setGroupMessages(prev => prev.filter(m => m.id !== messageId));
+            } else if (view === 'dm' && selectedConversation) {
+                const { error } = await supabase.from('direct_messages').delete().eq('id', messageId);
+                if (error) throw error;
+                setDirectMessages(prev => prev.filter(m => m.id !== messageId));
+            }
+            toast.success('Message supprimé');
+        } catch (err) {
+            console.error('Error deleting message:', err);
+            toast.error('Erreur lors de la suppression');
+        }
+    };
+
+    // =====================================================
+    // POINT 4: Pinned Notification Icons in Group
+    // =====================================================
+    const loadPinnedNotifications = useCallback((groupId: string) => {
+        try {
+            const stored = localStorage.getItem(`group_notifs_${groupId}_${user?.id}`);
+            if (stored) {
+                setPinnedNotifications(JSON.parse(stored));
+            } else {
+                setPinnedNotifications([]);
+            }
+        } catch { setPinnedNotifications([]); }
+    }, [user?.id]);
+
+    const dismissNotification = (notifId: string, groupId: string) => {
+        setPinnedNotifications(prev => {
+            const updated = prev.filter(n => n.id !== notifId);
+            localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
+            return updated;
+        });
+    };
+
+    // Called when admin publishes content — sends a system-type notification to all group members
+    const broadcastGroupNotification = useCallback(async (
+        groupId: string, type: 'poll' | 'announcement' | 'verse' | 'program' | 'event', label: string
+    ) => {
+        if (!user || !selectedGroup) return;
+        // Send a system notification message to the group
+        const notifId = `${type}_${Date.now()}`;
+        const notifContent = `__NOTIF__${JSON.stringify({ id: notifId, type, label })}`;
+        try {
+            await supabase.from('prayer_group_messages').insert({
+                group_id: groupId,
+                user_id: user.id,
+                content: notifContent,
+                type: 'text'
+            });
+        } catch (e) {
+            console.error('Error broadcasting notification:', e);
+        }
+    }, [user, selectedGroup]);
+
+    // Process incoming notifications from group messages
+    const processNotificationMessage = useCallback((content: string, groupId: string) => {
+        if (!content.startsWith('__NOTIF__')) return false;
+        try {
+            const data = JSON.parse(content.replace('__NOTIF__', ''));
+            setPinnedNotifications(prev => {
+                const existing = prev.find(n => n.type === data.type && n.groupId === groupId);
+                let updated;
+                if (existing) {
+                    updated = prev.map(n =>
+                        n.type === data.type && n.groupId === groupId
+                            ? { ...n, count: n.count + 1, id: data.id }
+                            : n
+                    );
+                } else {
+                    updated = [...prev, { ...data, count: 1, groupId }];
+                }
+                localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
+                return updated;
+            });
+            return true;
+        } catch { return false; }
+    }, [user?.id]);
+
+    // =====================================================
+    // POINT 9: Persistent Emoji Reactions + Threaded Comments
+    // =====================================================
+    const addReaction = useCallback((messageId: string, emoji: string) => {
+        if (!user) return;
+        setMessageReactions(prev => {
+            const msgReactions = { ...(prev[messageId] || {}) };
+            const emojiList = [...(msgReactions[emoji] || [])];
+            const userIdx = emojiList.indexOf(user.id);
+            if (userIdx >= 0) {
+                emojiList.splice(userIdx, 1);
+            } else {
+                emojiList.push(user.id);
+            }
+            if (emojiList.length === 0) {
+                delete msgReactions[emoji];
+            } else {
+                msgReactions[emoji] = emojiList;
+            }
+            const updated = { ...prev, [messageId]: msgReactions };
+            // Persist per group
+            if (selectedGroup) {
+                localStorage.setItem(`group_reactions_${selectedGroup.id}`, JSON.stringify(updated));
+            }
+            return updated;
+        });
+        setSelectedMessageId(null);
+    }, [user, selectedGroup]);
+
+    const loadReactions = useCallback((groupId: string) => {
+        try {
+            const stored = localStorage.getItem(`group_reactions_${groupId}`);
+            if (stored) setMessageReactions(JSON.parse(stored));
+            else setMessageReactions({});
+        } catch { setMessageReactions({}); }
+    }, []);
+
+    // Threaded comments
+    const openThread = useCallback((messageId: string, content: string, senderName: string) => {
+        setActiveThread({ messageId, content, senderName });
+        setSelectedMessageId(null);
+        // Load thread messages
+        try {
+            const stored = localStorage.getItem(`thread_${messageId}`);
+            const threadCount = localStorage.getItem(`thread_count_${messageId}`);
+            if (stored) setThreadMessages(JSON.parse(stored));
+            else setThreadMessages([]);
+        } catch { setThreadMessages([]); }
+    }, []);
+
+    const sendThreadReply = useCallback(async () => {
+        if (!threadInput.trim() || !activeThread || !user) return;
+        const reply: Message = {
+            id: `thread_${Date.now()}`,
+            content: threadInput.trim(),
+            type: 'text',
+            sender_id: user.id,
+            sender: { id: user.id, full_name: user.name || 'Utilisateur', avatar_url: user.avatar || null },
+            created_at: new Date().toISOString(),
+            is_read: true
+        };
+        const updatedThread = [...threadMessages, reply];
+        setThreadMessages(updatedThread);
+        localStorage.setItem(`thread_${activeThread.messageId}`, JSON.stringify(updatedThread));
+        // Update comment count
+        const newCount = updatedThread.length;
+        setMessageCommentCounts(prev => ({ ...prev, [activeThread.messageId]: newCount }));
+        localStorage.setItem(`thread_count_${activeThread.messageId}`, String(newCount));
+        setThreadInput('');
+    }, [threadInput, activeThread, user, threadMessages]);
+
+    const loadCommentCounts = useCallback((groupId: string, messageIds: string[]) => {
+        const counts: Record<string, number> = {};
+        for (const id of messageIds) {
+            const count = localStorage.getItem(`thread_count_${id}`);
+            if (count) counts[id] = parseInt(count);
+        }
+        setMessageCommentCounts(counts);
+    }, []);
+
+    // =====================================================
+    // POINT 11: Live Group Bible Games
+    // =====================================================
+    const startGroupGame = useCallback(async (gameType: string) => {
+        if (!user || !selectedGroup) return;
+        const sessionId = `game_${selectedGroup.id}_${Date.now()}`;
+        const session = {
+            id: sessionId,
+            creatorId: user.id,
+            creatorName: user.name || 'Joueur',
+            gameType,
+            players: [{ id: user.id, name: user.name || 'Joueur', score: 0 }],
+            status: 'waiting' as const
+        };
+        setActiveGameSession(session);
+        // Broadcast game session to group via Supabase channel
+        const channel = supabase.channel(`game_${selectedGroup.id}`);
+        channel.send({
+            type: 'broadcast',
+            event: 'game-session',
+            payload: session
+        });
+        // Also persist to localStorage for resilience
+        localStorage.setItem(`active_game_${selectedGroup.id}`, JSON.stringify(session));
+        // Send a system message about the game
+        await supabase.from('prayer_group_messages').insert({
+            group_id: selectedGroup.id,
+            user_id: user.id,
+            content: `🎮 **${user.name}** a lancé un **${gameType === 'quiz' ? 'Duel Biblique' : 'Jeu Biblique'}** ! Cliquez sur le bouton clignotant pour rejoindre la partie ! 🏆`,
+            type: 'text'
+        });
+        setShowGameLobby(true);
+        toast.success('Partie créée ! Les membres peuvent rejoindre 🎮');
+    }, [user, selectedGroup]);
+
+    const joinGroupGame = useCallback(async () => {
+        if (!user || !selectedGroup) return;
+        const stored = localStorage.getItem(`active_game_${selectedGroup.id}`);
+        if (!stored) { toast.error('Aucune partie active'); return; }
+        try {
+            const session = JSON.parse(stored);
+            if (session.players.find((p: any) => p.id === user.id)) {
+                // Already in the game
+                setActiveGameSession(session);
+                setShowGameLobby(true);
+                return;
+            }
+            session.players.push({ id: user.id, name: user.name || 'Joueur', score: 0 });
+            localStorage.setItem(`active_game_${selectedGroup.id}`, JSON.stringify(session));
+            setActiveGameSession(session);
+            setShowGameLobby(true);
+            // Broadcast update
+            const channel = supabase.channel(`game_${selectedGroup.id}`);
+            channel.send({
+                type: 'broadcast',
+                event: 'game-session',
+                payload: session
+            });
+            toast.success('Vous avez rejoint la partie ! 🎮');
+        } catch { toast.error('Erreur'); }
+    }, [user, selectedGroup]);
+
+    const endGroupGame = useCallback(() => {
+        if (!selectedGroup) return;
+        localStorage.removeItem(`active_game_${selectedGroup.id}`);
+        setActiveGameSession(null);
+        setShowGameLobby(false);
+        toast.success('Partie terminée ! 🏆');
+    }, [selectedGroup]);
+
+    // Load game session when opening a group
+    const loadGameSession = useCallback((groupId: string) => {
+        try {
+            const stored = localStorage.getItem(`active_game_${groupId}`);
+            if (stored) {
+                const session = JSON.parse(stored);
+                if (session.status !== 'finished') {
+                    setActiveGameSession(session);
+                }
+            } else {
+                setActiveGameSession(null);
+            }
+        } catch { setActiveGameSession(null); }
+    }, []);
+
     const insertMention = (memberName: string) => {
         const mentionText = `@${memberName} `;
         const curVal = newMessage;
@@ -2517,6 +2886,62 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 </div>
             )}
 
+            {/* Point 4: Pinned Notification Icons Bar */}
+            {view === 'group' && selectedGroup && pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).length > 0 && (
+                <div className="mx-2 sm:mx-4 mt-2 flex flex-wrap gap-1.5">
+                    {pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).map(notif => {
+                        const icons: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+                            poll: { icon: <BarChart3 className="h-3.5 w-3.5" />, color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30' },
+                            announcement: { icon: <Megaphone className="h-3.5 w-3.5" />, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
+                            verse: { icon: <BookOpen className="h-3.5 w-3.5" />, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
+                            program: { icon: <CalendarDays className="h-3.5 w-3.5" />, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/30' },
+                            event: { icon: <Calendar className="h-3.5 w-3.5" />, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
+                        };
+                        const style = icons[notif.type] || icons.announcement;
+                        return (
+                            <motion.button
+                                key={notif.id}
+                                initial={{ scale: 0 }}
+                                animate={{ scale: [1, 1.15, 1] }}
+                                transition={{ repeat: Infinity, duration: 2 }}
+                                onClick={() => {
+                                    dismissNotification(notif.id, selectedGroup!.id);
+                                    if (notif.type === 'poll') setShowGroupTools(true);
+                                    toast.info(`📢 ${notif.label}`);
+                                }}
+                                className={cn(
+                                    "flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] font-medium cursor-pointer transition-all hover:scale-105",
+                                    style.bg, style.color
+                                )}
+                            >
+                                {style.icon}
+                                <span className="truncate max-w-[80px]">{notif.label}</span>
+                                {notif.count > 1 && (
+                                    <Badge className="h-4 px-1 text-[8px] bg-white/20 text-white">{notif.count}</Badge>
+                                )}
+                                <X className="h-3 w-3 ml-0.5 opacity-50 hover:opacity-100" />
+                            </motion.button>
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Point 11: Active Game Join Button */}
+            {view === 'group' && selectedGroup && activeGameSession && activeGameSession.status === 'waiting' && (
+                <div className="mx-2 sm:mx-4 mt-2">
+                    <motion.button
+                        animate={{ scale: [1, 1.05, 1], boxShadow: ['0 0 0 rgba(99,102,241,0)', '0 0 20px rgba(99,102,241,0.5)', '0 0 0 rgba(99,102,241,0)'] }}
+                        transition={{ repeat: Infinity, duration: 1.5 }}
+                        onClick={joinGroupGame}
+                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg"
+                    >
+                        <Gamepad2 className="h-5 w-5" />
+                        🎮 Rejoindre le {activeGameSession.gameType === 'quiz' ? 'Duel Biblique' : 'Jeu'} !
+                        <Badge className="bg-white/20 text-white text-[10px]">{activeGameSession.players.length} joueur{activeGameSession.players.length > 1 ? 's' : ''}</Badge>
+                    </motion.button>
+                </div>
+            )}
+
             {/* Messages */}
             <ScrollArea className="flex-1 p-2 sm:p-4">
                 {isLoading ? (
@@ -2530,17 +2955,24 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                         <p className="text-sm">Envoyez le premier message!</p>
                     </div>
                 ) : (
-                    <div className="space-y-3">
+                    <div className="space-y-3" onClick={() => setSelectedMessageId(null)}>
                         {messages.map((msg, idx) => {
                             const isOwn = msg.sender_id === user.id;
                             const showAvatar = !isOwn && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
+                            const isSelected = selectedMessageId === msg.id;
+                            const msgReactions = messageReactions[msg.id] || {};
+                            const hasReactions = Object.keys(msgReactions).length > 0;
+                            const commentCount = messageCommentCounts[msg.id] || 0;
+
+                            // Skip notification system messages from display
+                            if (msg.content?.startsWith('__NOTIF__')) return null;
 
                             return (
                                 <motion.div
                                     key={msg.id}
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className={cn("flex", isOwn ? "justify-end" : "justify-start")}
+                                    className={cn("flex relative", isOwn ? "justify-end" : "justify-start")}
                                 >
                                     {!isOwn && showAvatar && view === 'group' && (
                                         <Avatar className="h-8 w-8 mr-2 mt-auto">
@@ -2550,42 +2982,136 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                             </AvatarFallback>
                                         </Avatar>
                                     )}
-                                    <div
-                                        className={cn(
-                                            "max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2",
-                                            isOwn
-                                                ? "bg-indigo-600 text-white rounded-br-sm"
-                                                : "bg-white/10 text-white rounded-bl-sm"
-                                        )}
-                                    >
-                                        {!isOwn && view === 'group' && showAvatar && (
-                                            <p className="text-xs text-indigo-400 font-medium mb-1">
-                                                {msg.sender?.full_name}
-                                            </p>
-                                        )}
-
-                                        {/* Voice Message */}
-                                        {msg.type === 'voice' && msg.voice_url ? (
-                                            <VoiceMessagePlayer
-                                                voiceUrl={msg.voice_url}
-                                                duration={msg.voice_duration}
-                                            />
-                                        ) : (
-                                            renderMessageContent(msg.content)
-                                        )}
-
-                                        <div className="flex items-center justify-end gap-1 mt-1">
-                                            <span className="text-[10px] opacity-70">
-                                                {formatTime(msg.created_at)}
-                                            </span>
-                                            {isOwn && (
-                                                msg.is_read ? (
-                                                    <CheckCheck className="h-3 w-3 text-blue-400" />
-                                                ) : (
-                                                    <Check className="h-3 w-3 opacity-70" />
-                                                )
+                                    <div className="relative group/msg max-w-[85%] sm:max-w-[75%]">
+                                        {/* Emoji reactions bar + Comment button - appears on click */}
+                                        <AnimatePresence>
+                                            {isSelected && (
+                                                <motion.div
+                                                    initial={{ opacity: 0, y: 5, scale: 0.9 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, y: 5, scale: 0.9 }}
+                                                    className={cn(
+                                                        "absolute -top-10 z-50 flex items-center gap-1 bg-slate-800 border border-white/10 rounded-full px-2 py-1 shadow-xl",
+                                                        isOwn ? "right-0" : "left-0"
+                                                    )}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                >
+                                                    {['🙏', '❤️', '👍', '😂', '😮'].map(emoji => (
+                                                        <button
+                                                            key={emoji}
+                                                            className={cn(
+                                                                "text-lg hover:scale-125 transition-transform px-0.5",
+                                                                msgReactions[emoji]?.includes(user.id) && "bg-white/10 rounded-full"
+                                                            )}
+                                                            onClick={() => addReaction(msg.id, emoji)}
+                                                        >
+                                                            {emoji}
+                                                        </button>
+                                                    ))}
+                                                    {/* Comment (thread) button */}
+                                                    {view === 'group' && (
+                                                        <button
+                                                            className="ml-0.5 p-1 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-full transition-colors"
+                                                            onClick={() => openThread(msg.id, msg.content, msg.sender?.full_name || 'Utilisateur')}
+                                                            title="Commenter ce message"
+                                                        >
+                                                            <MessageCircle className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    )}
+                                                    {/* Delete own message */}
+                                                    {isOwn && (
+                                                        <button
+                                                            className="ml-0.5 p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full transition-colors"
+                                                            onClick={() => {
+                                                                handleDeleteMessage(msg.id, msg.sender_id);
+                                                                setSelectedMessageId(null);
+                                                            }}
+                                                            title="Supprimer"
+                                                        >
+                                                            <Trash2 className="h-3.5 w-3.5" />
+                                                        </button>
+                                                    )}
+                                                </motion.div>
                                             )}
+                                        </AnimatePresence>
+
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setSelectedMessageId(isSelected ? null : msg.id);
+                                            }}
+                                            className={cn(
+                                                "rounded-2xl px-3 sm:px-4 py-2 cursor-pointer transition-all",
+                                                isOwn
+                                                    ? "bg-indigo-600 text-white rounded-br-sm"
+                                                    : "bg-white/10 text-white rounded-bl-sm",
+                                                isSelected && "ring-1 ring-white/30"
+                                            )}
+                                        >
+                                            {!isOwn && view === 'group' && showAvatar && (
+                                                <p className="text-xs text-indigo-400 font-medium mb-1">
+                                                    {msg.sender?.full_name}
+                                                </p>
+                                            )}
+
+                                            {/* Voice Message */}
+                                            {msg.type === 'voice' && msg.voice_url ? (
+                                                <VoiceMessagePlayer
+                                                    voiceUrl={msg.voice_url}
+                                                    duration={msg.voice_duration}
+                                                />
+                                            ) : (
+                                                renderMessageContent(msg.content)
+                                            )}
+
+                                            <div className="flex items-center justify-end gap-1 mt-1">
+                                                <span className="text-[10px] opacity-70">
+                                                    {formatTime(msg.created_at)}
+                                                </span>
+                                                {isOwn && (
+                                                    msg.is_read ? (
+                                                        <CheckCheck className="h-3 w-3 text-blue-400" />
+                                                    ) : (
+                                                        <Check className="h-3 w-3 opacity-70" />
+                                                    )
+                                                )}
+                                            </div>
                                         </div>
+
+                                        {/* Persistent Emoji Reactions Display */}
+                                        {hasReactions && (
+                                            <div className={cn("flex flex-wrap gap-0.5 mt-0.5", isOwn ? "justify-end" : "justify-start")}>
+                                                {Object.entries(msgReactions).map(([emoji, users]) => (
+                                                    <button
+                                                        key={emoji}
+                                                        onClick={(e) => { e.stopPropagation(); addReaction(msg.id, emoji); }}
+                                                        className={cn(
+                                                            "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border transition-all",
+                                                            (users as string[]).includes(user.id)
+                                                                ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
+                                                                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
+                                                        )}
+                                                    >
+                                                        <span>{emoji}</span>
+                                                        <span className="text-[10px] font-medium">{(users as string[]).length}</span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {/* Comment Count Badge */}
+                                        {commentCount > 0 && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); openThread(msg.id, msg.content, msg.sender?.full_name || 'Utilisateur'); }}
+                                                className={cn(
+                                                    "flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all hover:bg-white/10",
+                                                    isOwn ? "ml-auto text-blue-300" : "text-blue-400"
+                                                )}
+                                            >
+                                                <MessageCircle className="h-3 w-3" />
+                                                {commentCount} commentaire{commentCount > 1 ? 's' : ''}
+                                            </button>
+                                        )}
                                     </div>
                                 </motion.div>
                             );
@@ -2775,7 +3301,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                 groupId={currentGroup.id}
                                 userId={user.id}
                                 userName={user.name || 'Utilisateur'}
-                                isCreator={!!isGroupAdmin}
+                                isCreator={!!isCreatorOrAdmin}
                                 isOpen={true}
                                 onClose={() => { }}
                             />
@@ -2840,7 +3366,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                             </div>
 
                             {/* Admin-only actions */}
-                            {isGroupAdmin && (
+                            {isCreatorOrAdmin && (
                                 <div className="space-y-2">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Admin</p>
                                     <div className="grid grid-cols-2 gap-2">
@@ -2865,11 +3391,20 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            className="border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 h-9 text-xs col-span-2"
+                                            className="border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 h-9 text-xs"
+                                            onClick={() => { startGroupGame('quiz'); setShowGroupTools(false); }}
+                                        >
+                                            <Gamepad2 className="h-3.5 w-3.5 mr-1.5" />
+                                            Jeux Bibliques
+                                        </Button>
+                                        <Button
+                                            variant="outline"
+                                            size="sm"
+                                            className="border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 h-9 text-xs"
                                             onClick={() => { setShowMigrateTool(true); setShowGroupTools(false); }}
                                         >
                                             <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
-                                            Migrer les membres
+                                            Migrer membres
                                         </Button>
                                     </div>
 
@@ -2978,6 +3513,21 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                     ))}
                                 </div>
                             </div>
+
+                            {/* Delete Group - creator only */}
+                            {selectedGroup && user && selectedGroup.created_by === user.id && (
+                                <div className="border-t border-red-500/20 pt-3 mt-3">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 h-10 text-xs font-bold"
+                                        onClick={handleDeleteGroup}
+                                    >
+                                        <Trash2 className="h-4 w-4 mr-2" />
+                                        Supprimer ce groupe définitivement
+                                    </Button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </DialogContent>
@@ -3038,7 +3588,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                         <div>
                             <label className="text-xs text-slate-400 mb-1 block">Version</label>
                             <div className="flex gap-2">
-                                {['LSG', 'NIV', 'KJV', 'ESV'].map(v => (
+                                {['LSG', 'KJV'].map(v => (
                                     <Button
                                         key={v}
                                         size="sm"
@@ -3379,6 +3929,188 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                             )}
                         </Button>
                     </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Point 9: Thread Comment Dialog (Telegram-style) */}
+            <AnimatePresence>
+                {activeThread && (
+                    <motion.div
+                        initial={{ opacity: 0, x: '100%' }}
+                        animate={{ opacity: 1, x: 0 }}
+                        exit={{ opacity: 0, x: '100%' }}
+                        transition={{ type: 'spring', damping: 25 }}
+                        className="absolute inset-0 z-50 bg-slate-900 flex flex-col"
+                    >
+                        {/* Thread Header */}
+                        <div className="px-3 sm:px-4 py-3 border-b border-white/10 bg-slate-800/80 flex items-center gap-3">
+                            <Button variant="ghost" size="icon" onClick={() => setActiveThread(null)} className="text-slate-400 hover:text-white h-8 w-8">
+                                <ArrowLeft className="h-4 w-4" />
+                            </Button>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-white flex items-center gap-1">
+                                    <MessageCircle className="h-4 w-4 text-blue-400" />
+                                    Fil de discussion
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">
+                                    {threadMessages.length} réponse{threadMessages.length > 1 ? 's' : ''}
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Original message */}
+                        <div className="p-3 sm:p-4 border-b border-white/5">
+                            <div className="bg-white/5 rounded-xl p-3 border-l-2 border-indigo-500">
+                                <p className="text-[10px] text-indigo-400 font-medium mb-1">{activeThread.senderName}</p>
+                                <p className="text-sm text-slate-300 whitespace-pre-wrap">{activeThread.content}</p>
+                            </div>
+                        </div>
+
+                        {/* Thread messages */}
+                        <ScrollArea className="flex-1 p-3 sm:p-4">
+                            {threadMessages.length === 0 ? (
+                                <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
+                                    <MessageCircle className="h-8 w-8 mb-2 opacity-50" />
+                                    <p className="text-sm">Aucun commentaire encore</p>
+                                    <p className="text-xs text-slate-500">Soyez le premier à commenter !</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {threadMessages.map((reply) => {
+                                        const isOwnReply = reply.sender_id === user.id;
+                                        return (
+                                            <motion.div
+                                                key={reply.id}
+                                                initial={{ opacity: 0, y: 5 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                className={cn("flex", isOwnReply ? "justify-end" : "justify-start")}
+                                            >
+                                                <div className="flex items-start gap-2 max-w-[80%]">
+                                                    {!isOwnReply && (
+                                                        <Avatar className="h-6 w-6 mt-0.5">
+                                                            <AvatarImage src={reply.sender?.avatar_url || undefined} />
+                                                            <AvatarFallback className="text-[8px] bg-slate-600">
+                                                                {getInitials(reply.sender?.full_name ?? null)}
+                                                            </AvatarFallback>
+                                                        </Avatar>
+                                                    )}
+                                                    <div className={cn(
+                                                        "rounded-xl px-3 py-1.5",
+                                                        isOwnReply ? "bg-indigo-600/80 text-white" : "bg-white/10 text-white"
+                                                    )}>
+                                                        {!isOwnReply && (
+                                                            <p className="text-[10px] text-indigo-400 font-medium">{reply.sender?.full_name}</p>
+                                                        )}
+                                                        <p className="text-sm whitespace-pre-wrap">{reply.content}</p>
+                                                        <p className="text-[9px] opacity-50 text-right mt-0.5">{formatTime(reply.created_at)}</p>
+                                                    </div>
+                                                </div>
+                                            </motion.div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </ScrollArea>
+
+                        {/* Thread reply input */}
+                        <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80 flex items-center gap-2">
+                            <Input
+                                placeholder="Écrire un commentaire..."
+                                value={threadInput}
+                                onChange={e => setThreadInput(e.target.value)}
+                                onKeyPress={e => e.key === 'Enter' && sendThreadReply()}
+                                className="flex-1 bg-white/5 border-white/10 rounded-full text-sm"
+                            />
+                            <Button
+                                size="icon"
+                                onClick={sendThreadReply}
+                                disabled={!threadInput.trim()}
+                                className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0"
+                            >
+                                <Send className="h-4 w-4" />
+                            </Button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Point 11: Game Lobby Dialog */}
+            <Dialog open={showGameLobby} onOpenChange={setShowGameLobby}>
+                <DialogContent className="max-w-sm max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <Gamepad2 className="h-5 w-5 text-indigo-400" />
+                            {activeGameSession?.gameType === 'quiz' ? 'Duel Biblique' : 'Jeu de Groupe'} 🎮
+                        </DialogTitle>
+                    </DialogHeader>
+                    {activeGameSession && (
+                        <div className="space-y-4">
+                            {/* Status */}
+                            <div className="text-center">
+                                <motion.div
+                                    animate={{ scale: [1, 1.1, 1] }}
+                                    transition={{ repeat: Infinity, duration: 2 }}
+                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/30"
+                                >
+                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                                    <span className="text-sm text-indigo-300 font-medium">
+                                        {activeGameSession.status === 'waiting' ? 'En attente de joueurs...' : 'Partie en cours'}
+                                    </span>
+                                </motion.div>
+                            </div>
+
+                            {/* Players */}
+                            <div className="space-y-2">
+                                <p className="text-xs text-slate-400 font-medium">Joueurs ({activeGameSession.players.length})</p>
+                                <div className="space-y-1">
+                                    {activeGameSession.players.map((player, i) => (
+                                        <div key={player.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/5">
+                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-[10px] font-bold">
+                                                {i + 1}
+                                            </div>
+                                            <span className="text-sm text-white flex-1">{player.name}</span>
+                                            {player.id === activeGameSession.creatorId && (
+                                                <Badge className="bg-amber-500/20 text-amber-400 text-[9px]">Hôte</Badge>
+                                            )}
+                                            <span className="text-xs text-indigo-400 font-mono">{player.score} pts</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Actions */}
+                            <div className="flex gap-2">
+                                {activeGameSession.creatorId === user.id && activeGameSession.status === 'waiting' && (
+                                    <Button
+                                        onClick={() => {
+                                            if (activeGameSession.players.length < 1) {
+                                                toast.error('Au moins 1 joueur requis');
+                                                return;
+                                            }
+                                            toast.success('La partie commence ! 🎮');
+                                            setShowGameLobby(false);
+                                            // Navigate to quiz — the QuizDuelGame component handles the game itself
+                                        }}
+                                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold"
+                                    >
+                                        <Play className="h-4 w-4 mr-2" />
+                                        Lancer la partie
+                                    </Button>
+                                )}
+                                <Button
+                                    variant="outline"
+                                    onClick={() => {
+                                        endGroupGame();
+                                        setShowGameLobby(false);
+                                    }}
+                                    className="border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                >
+                                    <X className="h-4 w-4 mr-1" />
+                                    Quitter
+                                </Button>
+                            </div>
+                        </div>
+                    )}
                 </DialogContent>
             </Dialog>
 

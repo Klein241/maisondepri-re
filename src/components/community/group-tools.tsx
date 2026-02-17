@@ -87,6 +87,23 @@ export function GroupPollWidget({ groupId, userId, userName, isCreator }: GroupP
         loadPolls();
     }, [loadPolls]);
 
+    // Realtime subscription for poll updates (Point 3: admin sees votes in real-time)
+    useEffect(() => {
+        const channel = supabase
+            .channel(`polls_${groupId}_${Date.now()}`)
+            .on('postgres_changes', {
+                event: '*',
+                schema: 'public',
+                table: 'group_polls',
+                filter: `group_id=eq.${groupId}`,
+            }, () => {
+                loadPolls();
+            })
+            .subscribe();
+
+        return () => { channel.unsubscribe(); };
+    }, [groupId, loadPolls]);
+
     const createPoll = async () => {
         const validOptions = newOptions.filter(o => o.trim());
         if (!newQuestion.trim() || validOptions.length < 2) {
