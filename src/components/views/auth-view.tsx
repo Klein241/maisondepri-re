@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useAppStore } from '@/lib/store';
 import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 export function AuthView() {
@@ -34,6 +35,7 @@ export function AuthView() {
     const [showForgotPassword, setShowForgotPassword] = useState(false);
     const [resetPhone, setResetPhone] = useState('');
     const [isResetting, setIsResetting] = useState(false);
+    const [phoneError, setPhoneError] = useState('');
 
     // Normalize phone: strip spaces/dashes, keep digits and leading +
     const normalizePhone = (raw: string): string => {
@@ -86,6 +88,23 @@ export function AuthView() {
     const handleSignup = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!firstName || !country || !whatsapp || !signupPassword) return;
+
+        // Validate phone number starts with country code
+        const trimmedPhone = whatsapp.trim();
+        if (!trimmedPhone.startsWith('+')) {
+            setPhoneError('Le numéro doit commencer par l\'indicatif du pays (ex: +221, +225, +33)');
+            return;
+        }
+        const cleanDigits = trimmedPhone.replace(/\D/g, '');
+        if (cleanDigits.length < 8) {
+            setPhoneError('Numéro de téléphone trop court (minimum 8 chiffres)');
+            return;
+        }
+        if (cleanDigits.length > 15) {
+            setPhoneError('Numéro de téléphone trop long');
+            return;
+        }
+        setPhoneError('');
 
         const result = await signUp({
             firstName,
@@ -291,11 +310,15 @@ export function AuthView() {
                                                 type="tel"
                                                 placeholder="Numéro WhatsApp (ex: +221 77...)"
                                                 value={whatsapp}
-                                                onChange={(e) => setWhatsapp(e.target.value)}
-                                                className="pl-10"
+                                                onChange={(e) => { setWhatsapp(e.target.value); setPhoneError(''); }}
+                                                className={cn("pl-10", phoneError && "border-red-500 focus:ring-red-500")}
                                                 required
                                             />
-                                            <p className="text-[10px] text-muted-foreground mt-1 pl-1">Avec l'indicatif du pays (ex: +221, +225, +33...)</p>
+                                            {phoneError ? (
+                                                <p className="text-[10px] text-red-400 mt-1 pl-1">{phoneError}</p>
+                                            ) : (
+                                                <p className="text-[10px] text-muted-foreground mt-1 pl-1">Avec l'indicatif du pays (ex: +221, +225, +33...)</p>
+                                            )}
                                         </div>
 
                                         <div className="relative">

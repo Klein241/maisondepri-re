@@ -632,7 +632,7 @@ export const WHO_AM_I_CHARACTERS = [
     }
 ];
 
-// Get random questions for quiz
+// Get random questions for quiz - with shuffled options and deduplication
 export function getRandomQuestions(count: number, difficulty?: 'easy' | 'medium' | 'hard'): typeof BIBLE_QUESTIONS {
     let questions = [...BIBLE_QUESTIONS];
 
@@ -640,13 +640,36 @@ export function getRandomQuestions(count: number, difficulty?: 'easy' | 'medium'
         questions = questions.filter(q => q.difficulty === difficulty);
     }
 
-    // Shuffle
+    // Deduplicate by question text
+    const seen = new Set<string>();
+    questions = questions.filter(q => {
+        const key = q.question.toLowerCase().trim();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    // Shuffle question order
     for (let i = questions.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [questions[i], questions[j]] = [questions[j], questions[i]];
     }
 
-    return questions.slice(0, count);
+    // Shuffle options for each question and update the correct answer index
+    return questions.slice(0, count).map(q => {
+        const correctAnswer = q.options[q.answer]; // Save the correct option text
+        const shuffledOptions = [...q.options];
+        // Fisher-Yates shuffle on options
+        for (let i = shuffledOptions.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffledOptions[i], shuffledOptions[j]] = [shuffledOptions[j], shuffledOptions[i]];
+        }
+        return {
+            ...q,
+            options: shuffledOptions,
+            answer: shuffledOptions.indexOf(correctAnswer) // Update answer to new position
+        };
+    });
 }
 
 // Get pairs for memory game

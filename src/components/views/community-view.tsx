@@ -25,7 +25,8 @@ import { PRAYER_CATEGORIES, PrayerCategory, PrayerRequest, Testimonial, PrayerGr
 import { PhotoUpload, PhotoGallery } from "@/components/ui/photo-upload";
 import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { NotificationBell } from "@/components/notification-bell";
-import { IncomingCallOverlay, useCallListener, DMCallButtons } from "@/components/community/call-system";
+import { IncomingCallOverlay, useCallListener, DMCallButtons, CallSignal } from "@/components/community/call-system";
+import { WebRTCCall } from "@/components/community/webrtc-call";
 import { EventCalendarButton } from "@/components/community/event-calendar";
 import { PrayerCard } from "@/components/community/prayer-card";
 import { TestimonyCard } from "@/components/community/testimony-card";
@@ -130,6 +131,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const audioChunksRef = useRef<Blob[]>([]);
     const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+    // Global WebRTC Call State
+    const [activeGlobalCall, setActiveGlobalCall] = useState<{
+        type: 'audio' | 'video';
+        mode: 'private' | 'group';
+        isIncoming: boolean;
+        remoteUser?: { id: string; name: string; avatar?: string | null };
+        groupId?: string;
+        groupName?: string;
+    } | null>(null);
 
     // Create group with prayer request
     const [createGroupWithPrayer, setCreateGroupWithPrayer] = useState(false);
@@ -1682,14 +1693,53 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     // ========== CALL LISTENER ==========
     const { incomingCall, acceptCall, rejectCall } = useCallListener(user?.id);
 
+    // Handle accepting an incoming call -> open WebRTCCall
+    const handleAcceptCall = useCallback(() => {
+        if (!incomingCall || !user) return;
+        const callData = { ...incomingCall };
+        acceptCall();
+        setActiveGlobalCall({
+            type: callData.callType,
+            mode: callData.mode,
+            isIncoming: true,
+            remoteUser: {
+                id: callData.callerId,
+                name: callData.callerName,
+                avatar: callData.callerAvatar,
+            },
+            groupId: callData.groupId,
+            groupName: callData.groupName,
+        });
+    }, [incomingCall, acceptCall, user]);
+
     return (
         <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-0">
+            {/* Active WebRTC Call Overlay */}
+            <AnimatePresence>
+                {activeGlobalCall && user && (
+                    <WebRTCCall
+                        user={{ id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar }}
+                        callType={activeGlobalCall.type}
+                        mode={activeGlobalCall.mode}
+                        remoteUser={activeGlobalCall.remoteUser ? {
+                            id: activeGlobalCall.remoteUser.id,
+                            name: activeGlobalCall.remoteUser.name,
+                            avatar: activeGlobalCall.remoteUser.avatar,
+                        } : undefined}
+                        groupId={activeGlobalCall.groupId}
+                        groupName={activeGlobalCall.groupName}
+                        isIncoming={activeGlobalCall.isIncoming}
+                        onEnd={() => setActiveGlobalCall(null)}
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Incoming Call Overlay */}
             <AnimatePresence>
-                {incomingCall && (
+                {incomingCall && !activeGlobalCall && (
                     <IncomingCallOverlay
                         call={incomingCall}
-                        onAccept={acceptCall}
+                        onAccept={handleAcceptCall}
                         onReject={rejectCall}
                     />
                 )}
@@ -2741,6 +2791,15 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 user={user ? { id: user.id, name: user.name || '', avatar: user.avatar } : null}
                                 groupId={selectedGroup.id}
                                 groupName={selectedGroup.name}
+                                onStartCall={(type) => {
+                                    setActiveGlobalCall({
+                                        type,
+                                        mode: 'group',
+                                        isIncoming: false,
+                                        groupId: selectedGroup.id,
+                                        groupName: selectedGroup.name,
+                                    });
+                                }}
                             />
                         </div>
                     </motion.div>

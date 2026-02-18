@@ -16,6 +16,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
+import { initiateCall } from './call-system';
 
 // Google API configuration
 const GOOGLE_CLIENT_ID = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
@@ -26,6 +27,8 @@ interface GroupCallManagerProps {
     user: { id: string; name: string; avatar?: string } | null;
     groupId: string;
     groupName: string;
+    groupMembers?: Array<{ id: string; full_name: string; avatar_url?: string | null }>;
+    onStartCall?: (type: 'audio' | 'video') => void;
 }
 
 interface ScheduledCall {
@@ -43,7 +46,7 @@ interface ScheduledCall {
     created_at: string;
 }
 
-export function GroupCallManager({ user, groupId, groupName }: GroupCallManagerProps) {
+export function GroupCallManager({ user, groupId, groupName, groupMembers, onStartCall }: GroupCallManagerProps) {
     const [view, setView] = useState<'main' | 'schedule' | 'history'>('main');
     const [scheduledCalls, setScheduledCalls] = useState<ScheduledCall[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -164,68 +167,19 @@ export function GroupCallManager({ user, groupId, groupName }: GroupCallManagerP
         }
     };
 
-    // Generate a random Meet-style link
-    const generateMeetLink = () => {
-        const chars = 'abcdefghijklmnopqrstuvwxyz';
-        const segment = (len: number) =>
-            Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-        return `https://meet.google.com/${segment(3)}-${segment(4)}-${segment(3)}`;
-    };
-
-    // Create an instant meeting
+    // Create an instant meeting using WebRTC
     const createInstantMeeting = async () => {
         if (!user) return;
         setIsCreating(true);
 
         try {
-            let meetLink = '';
-
-            // Try to create via Google Calendar API if authenticated
-            if (isGoogleAuthed && isGoogleLoaded) {
-                try {
-                    const event = {
-                        summary: `🙏 ${groupName} - Appel de groupe`,
-                        description: `Appel de prière en groupe pour ${groupName}`,
-                        start: {
-                            dateTime: new Date().toISOString(),
-                            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                        },
-                        end: {
-                            dateTime: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-                            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                        },
-                        conferenceData: {
-                            createRequest: {
-                                requestId: `prayer-${Date.now()}`,
-                                conferenceSolutionKey: { type: 'hangoutsMeet' }
-                            }
-                        }
-                    };
-
-                    const response = await (window as any).gapi.client.calendar.events.insert({
-                        calendarId: 'primary',
-                        resource: event,
-                        conferenceDataVersion: 1,
-                    });
-
-                    meetLink = response.result.hangoutLink || response.result.conferenceData?.entryPoints?.[0]?.uri || '';
-                } catch (e) {
-                    console.error('Google Calendar API error:', e);
-                    // Fallback to generated link
-                    meetLink = generateMeetLink();
-                }
-            } else {
-                // Generate a direct meet link (user creates the actual meeting when clicking)
-                meetLink = generateMeetLink();
-            }
-
-            // Save to Supabase
+            // Save to Supabase for history
             const { error } = await supabase
                 .from('group_calls')
                 .insert({
                     group_id: groupId,
                     title: `🙏 Appel de prière - ${groupName}`,
-                    meet_link: meetLink,
+                    meet_link: 'webrtc',
                     scheduled_at: new Date().toISOString(),
                     duration_minutes: 60,
                     created_by: user.id,
@@ -234,17 +188,36 @@ export function GroupCallManager({ user, groupId, groupName }: GroupCallManagerP
 
             if (error) {
                 if (error.message.includes('does not exist') || error.code === '42P01') {
-                    toast.info('La fonctionnalité d\'appel de groupe sera disponible après la création de la table group_calls dans Supabase.');
+                    // Table doesn't exist yet — still allow the call
+                    console.warn('group_calls table not found, proceeding anyway');
                 } else {
-                    throw error;
+                    console.error('Error saving call:', error);
                 }
             } else {
-                toast.success('Appel de groupe créé !');
                 loadScheduledCalls();
             }
 
-            // Open Meet link
-            window.open(meetLink, '_blank');
+            // Signal all group members via broadcast
+            if (groupMembers && groupMembers.length > 0) {
+                for (const member of groupMembers) {
+                    if (member.id === user.id) continue;
+                    await initiateCall({
+                        callerId: user.id,
+                        callerName: user.name || 'Utilisateur',
+                        callerAvatar: user.avatar,
+                        receiverId: member.id,
+                        callType: 'video',
+                        groupId,
+                        groupName,
+                    });
+                }
+            }
+
+            // Trigger WebRTC call UI
+            if (onStartCall) {
+                onStartCall('video');
+            }
+            toast.success('📹 Appel de groupe démarré !');
         } catch (e) {
             console.error('Error creating instant meeting:', e);
             toast.error('Erreur lors de la création de l\'appel');
@@ -306,10 +279,10 @@ export function GroupCallManager({ user, groupId, groupName }: GroupCallManagerP
                     calendarEventId = response.result.id;
                 } catch (e) {
                     console.error('Google Calendar API error:', e);
-                    meetLink = generateMeetLink();
+                    meetLink = 'webrtc';
                 }
             } else {
-                meetLink = generateMeetLink();
+                meetLink = 'webrtc';
             }
 
             // Save to Supabase
@@ -356,8 +329,11 @@ export function GroupCallManager({ user, groupId, groupName }: GroupCallManagerP
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const joinCall = (meetLink: string) => {
-        window.open(meetLink, '_blank');
+    const joinCall = (_meetLink: string) => {
+        // Instead of opening an external link, trigger the WebRTC call
+        if (onStartCall) {
+            onStartCall('video');
+        }
     };
 
     const cancelCall = async (callId: string) => {

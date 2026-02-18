@@ -622,11 +622,37 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             })
             .subscribe();
 
+        // Listen for incoming call signals via broadcast
+        const callSignalChannel = supabase
+            .channel(`call_signal_${user.id}`)
+            .on('broadcast', { event: 'incoming-call' }, (payload) => {
+                const data = payload.payload as any;
+                if (data && data.callerId && data.callerId !== user.id) {
+                    setIncomingCall({
+                        callerName: data.callerName || 'Utilisateur',
+                        callerAvatar: data.callerAvatar || null,
+                        callType: data.callType || 'audio',
+                        callerId: data.callerId,
+                    });
+                }
+            })
+            .on('broadcast', { event: 'call-cancelled' }, (payload) => {
+                const data = payload.payload as any;
+                if (data?.callerId) {
+                    setIncomingCall(prev => {
+                        if (prev && prev.callerId === data.callerId) return null;
+                        return prev;
+                    });
+                }
+            })
+            .subscribe();
+
         return () => {
             dmChannel.unsubscribe();
             groupChannel.unsubscribe();
             typingChannel.unsubscribe();
             groupDeleteChannel.unsubscribe();
+            callSignalChannel.unsubscribe();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only user.id - refs are used for conversation/group
@@ -1229,30 +1255,27 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             setPinnedPrayer(null);
         }
 
-        // Start polling fallback for group messages (every 3s for reliability)
+        // Start polling fallback for group messages via API route (bypasses RLS)
         if (groupPollRef.current) clearInterval(groupPollRef.current);
         groupPollRef.current = setInterval(async () => {
             try {
-                const { data, error } = await supabase
-                    .from('prayer_group_messages')
-                    .select(`*, sender:user_id (id, full_name, avatar_url)`)
-                    .eq('group_id', group.id)
-                    .order('created_at', { ascending: true });
-                if (!error && data) {
-                    setMessages(prev => {
-                        // Compare by last message ID to detect new messages reliably
-                        const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
-                        const newLastId = data.length > 0 ? data[data.length - 1].id : null;
-                        if (prevLastId === newLastId && data.length === prev.length) return prev;
-                        return data.map((m: any) => ({
-                            ...m,
-                            sender_id: m.user_id,
-                            is_read: true
-                        }));
-                    });
-                }
+                const response = await fetch(`/api/group-messages?groupId=${group.id}`);
+                if (!response.ok) return;
+                const result = await response.json();
+                const data = result.messages || [];
+                setMessages(prev => {
+                    const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
+                    const newLastId = data.length > 0 ? data[data.length - 1].id : null;
+                    if (prevLastId === newLastId && data.length === prev.length) return prev;
+                    return data.map((m: any) => ({
+                        ...m,
+                        sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
+                        sender_id: m.user_id,
+                        is_read: true
+                    }));
+                });
             } catch { }
-        }, 3000);
+        }, 5000);
     };
 
     // Effect to handle deferred group opening (runs after loadMessages/loadGroupMembers are defined)
@@ -1649,15 +1672,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         groupId: string, type: 'poll' | 'announcement' | 'verse' | 'program' | 'event', label: string
     ) => {
         if (!user || !selectedGroup) return;
-        // Send a system notification message to the group
         const notifId = `${type}_${Date.now()}`;
         const notifContent = `__NOTIF__${JSON.stringify({ id: notifId, type, label })}`;
         try {
-            await supabase.from('prayer_group_messages').insert({
-                group_id: groupId,
-                user_id: user.id,
-                content: notifContent,
-                type: 'text'
+            // Use API route to bypass RLS
+            await fetch('/api/group-messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    groupId,
+                    userId: user.id,
+                    content: notifContent,
+                    type: 'text'
+                })
             });
         } catch (e) {
             console.error('Error broadcasting notification:', e);
@@ -1691,8 +1718,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     // =====================================================
     // POINT 9: Persistent Emoji Reactions + Threaded Comments
     // =====================================================
-    const addReaction = useCallback((messageId: string, emoji: string) => {
-        if (!user) return;
+    const addReaction = useCallback(async (messageId: string, emoji: string) => {
+        if (!user || !selectedGroup) return;
+        // Optimistic update
         setMessageReactions(prev => {
             const msgReactions = { ...(prev[messageId] || {}) };
             const emojiList = [...(msgReactions[emoji] || [])];
@@ -1707,65 +1735,193 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             } else {
                 msgReactions[emoji] = emojiList;
             }
-            const updated = { ...prev, [messageId]: msgReactions };
-            // Persist per group
-            if (selectedGroup) {
-                localStorage.setItem(`group_reactions_${selectedGroup.id}`, JSON.stringify(updated));
-            }
-            return updated;
+            return { ...prev, [messageId]: msgReactions };
         });
         setSelectedMessageId(null);
+
+        // Persist to Supabase
+        try {
+            const { data: existing } = await supabase
+                .from('group_message_reactions')
+                .select('id')
+                .eq('message_id', messageId)
+                .eq('user_id', user.id)
+                .eq('emoji', emoji)
+                .maybeSingle();
+
+            if (existing) {
+                await supabase.from('group_message_reactions').delete().eq('id', existing.id);
+            } else {
+                await supabase.from('group_message_reactions').insert({
+                    message_id: messageId,
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    emoji
+                });
+            }
+        } catch (e) {
+            console.error('Error persisting reaction:', e);
+        }
     }, [user, selectedGroup]);
 
-    const loadReactions = useCallback((groupId: string) => {
+    const loadReactions = useCallback(async (groupId: string) => {
         try {
-            const stored = localStorage.getItem(`group_reactions_${groupId}`);
-            if (stored) setMessageReactions(JSON.parse(stored));
-            else setMessageReactions({});
-        } catch { setMessageReactions({}); }
+            const { data, error } = await supabase
+                .from('group_message_reactions')
+                .select('message_id, emoji, user_id')
+                .eq('group_id', groupId);
+
+            if (error) {
+                // Table might not exist yet - fallback to localStorage
+                const stored = localStorage.getItem(`group_reactions_${groupId}`);
+                if (stored) setMessageReactions(JSON.parse(stored));
+                else setMessageReactions({});
+                return;
+            }
+
+            const reactions: Record<string, Record<string, string[]>> = {};
+            for (const row of (data || [])) {
+                if (!reactions[row.message_id]) reactions[row.message_id] = {};
+                if (!reactions[row.message_id][row.emoji]) reactions[row.message_id][row.emoji] = [];
+                reactions[row.message_id][row.emoji].push(row.user_id);
+            }
+            setMessageReactions(reactions);
+        } catch {
+            setMessageReactions({});
+        }
     }, []);
 
-    // Threaded comments
-    const openThread = useCallback((messageId: string, content: string, senderName: string) => {
+    // Threaded comments - now persisted in Supabase
+    const openThread = useCallback(async (messageId: string, content: string, senderName: string) => {
         setActiveThread({ messageId, content, senderName });
         setSelectedMessageId(null);
-        // Load thread messages
+        setThreadMessages([]);
+
         try {
-            const stored = localStorage.getItem(`thread_${messageId}`);
-            const threadCount = localStorage.getItem(`thread_count_${messageId}`);
-            if (stored) setThreadMessages(JSON.parse(stored));
-            else setThreadMessages([]);
-        } catch { setThreadMessages([]); }
+            const { data, error } = await supabase
+                .from('group_message_comments')
+                .select('id, message_id, user_id, content, created_at')
+                .eq('message_id', messageId)
+                .order('created_at', { ascending: true });
+
+            if (error) {
+                // Fallback to localStorage if table doesn't exist
+                const stored = localStorage.getItem(`thread_${messageId}`);
+                if (stored) setThreadMessages(JSON.parse(stored));
+                return;
+            }
+
+            // Fetch profiles for commenters
+            const userIds = [...new Set((data || []).map(c => c.user_id))];
+            const profileMap = new Map<string, any>();
+            if (userIds.length > 0) {
+                const { data: profiles } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, avatar_url')
+                    .in('id', userIds);
+                (profiles || []).forEach(p => profileMap.set(p.id, p));
+            }
+
+            const comments = (data || []).map(c => ({
+                id: c.id,
+                content: c.content,
+                type: 'text' as const,
+                sender_id: c.user_id,
+                sender: profileMap.get(c.user_id) || { id: c.user_id, full_name: 'Utilisateur', avatar_url: null },
+                created_at: c.created_at,
+                is_read: true
+            }));
+            setThreadMessages(comments);
+        } catch {
+            setThreadMessages([]);
+        }
     }, []);
 
     const sendThreadReply = useCallback(async () => {
-        if (!threadInput.trim() || !activeThread || !user) return;
-        const reply: Message = {
+        if (!threadInput.trim() || !activeThread || !user || !selectedGroup) return;
+        const replyContent = threadInput.trim();
+        setThreadInput('');
+
+        // Optimistic update
+        const optimisticReply: Message = {
             id: `thread_${Date.now()}`,
-            content: threadInput.trim(),
+            content: replyContent,
             type: 'text',
             sender_id: user.id,
             sender: { id: user.id, full_name: user.name || 'Utilisateur', avatar_url: user.avatar || null },
             created_at: new Date().toISOString(),
             is_read: true
         };
-        const updatedThread = [...threadMessages, reply];
-        setThreadMessages(updatedThread);
-        localStorage.setItem(`thread_${activeThread.messageId}`, JSON.stringify(updatedThread));
-        // Update comment count
-        const newCount = updatedThread.length;
-        setMessageCommentCounts(prev => ({ ...prev, [activeThread.messageId]: newCount }));
-        localStorage.setItem(`thread_count_${activeThread.messageId}`, String(newCount));
-        setThreadInput('');
-    }, [threadInput, activeThread, user, threadMessages]);
+        setThreadMessages(prev => [...prev, optimisticReply]);
+        setMessageCommentCounts(prev => ({
+            ...prev,
+            [activeThread.messageId]: (prev[activeThread.messageId] || 0) + 1
+        }));
 
-    const loadCommentCounts = useCallback((groupId: string, messageIds: string[]) => {
-        const counts: Record<string, number> = {};
-        for (const id of messageIds) {
-            const count = localStorage.getItem(`thread_count_${id}`);
-            if (count) counts[id] = parseInt(count);
+        try {
+            const { data, error } = await supabase
+                .from('group_message_comments')
+                .insert({
+                    message_id: activeThread.messageId,
+                    group_id: selectedGroup.id,
+                    user_id: user.id,
+                    content: replyContent
+                })
+                .select('id, created_at')
+                .single();
+
+            if (error) {
+                // Fallback to localStorage
+                const stored = localStorage.getItem(`thread_${activeThread.messageId}`);
+                const existing = stored ? JSON.parse(stored) : [];
+                existing.push(optimisticReply);
+                localStorage.setItem(`thread_${activeThread.messageId}`, JSON.stringify(existing));
+                localStorage.setItem(`thread_count_${activeThread.messageId}`, String(existing.length));
+                return;
+            }
+
+            // Update the optimistic reply with the real ID
+            if (data) {
+                setThreadMessages(prev => prev.map(m =>
+                    m.id === optimisticReply.id ? { ...m, id: data.id, created_at: data.created_at } : m
+                ));
+            }
+        } catch (e) {
+            console.error('Error sending thread reply:', e);
         }
-        setMessageCommentCounts(counts);
+    }, [threadInput, activeThread, user, selectedGroup]);
+
+    const loadCommentCounts = useCallback(async (groupId: string, messageIds: string[]) => {
+        if (messageIds.length === 0) {
+            setMessageCommentCounts({});
+            return;
+        }
+        try {
+            const { data, error } = await supabase
+                .from('group_message_comments')
+                .select('message_id')
+                .eq('group_id', groupId)
+                .in('message_id', messageIds);
+
+            if (error) {
+                // Fallback to localStorage
+                const counts: Record<string, number> = {};
+                for (const id of messageIds) {
+                    const count = localStorage.getItem(`thread_count_${id}`);
+                    if (count) counts[id] = parseInt(count);
+                }
+                setMessageCommentCounts(counts);
+                return;
+            }
+
+            const counts: Record<string, number> = {};
+            for (const row of (data || [])) {
+                counts[row.message_id] = (counts[row.message_id] || 0) + 1;
+            }
+            setMessageCommentCounts(counts);
+        } catch {
+            setMessageCommentCounts({});
+        }
     }, []);
 
     // =====================================================
@@ -3289,11 +3445,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                                     {/* Comment (thread) button */}
                                                     {view === 'group' && (
                                                         <button
-                                                            className="ml-0.5 p-1 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-full transition-colors"
+                                                            className="ml-1 p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-full transition-colors"
                                                             onClick={() => openThread(msg.id, msg.content, msg.sender?.full_name || 'Utilisateur')}
                                                             title="Commenter ce message"
                                                         >
-                                                            <MessageCircle className="h-3.5 w-3.5" />
+                                                            <MessageCircle className="h-5 w-5" />
                                                         </button>
                                                     )}
                                                     {/* Delete own message */}
@@ -3377,16 +3533,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                             </div>
                                         )}
 
-                                        {/* Comment Count Badge */}
                                         {commentCount > 0 && (
                                             <button
                                                 onClick={(e) => { e.stopPropagation(); openThread(msg.id, msg.content, msg.sender?.full_name || 'Utilisateur'); }}
                                                 className={cn(
-                                                    "flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all hover:bg-white/10",
-                                                    isOwn ? "ml-auto text-blue-300" : "text-blue-400"
+                                                    "flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all hover:bg-blue-500/15 border border-blue-500/20",
+                                                    isOwn ? "ml-auto text-blue-300 bg-blue-500/10" : "text-blue-400 bg-blue-500/5"
                                                 )}
                                             >
-                                                <MessageCircle className="h-3 w-3" />
+                                                <MessageCircle className="h-4 w-4" />
                                                 {commentCount} commentaire{commentCount > 1 ? 's' : ''}
                                             </button>
                                         )}
@@ -4291,21 +4446,21 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                         </ScrollArea>
 
                         {/* Thread reply input */}
-                        <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80 flex items-center gap-2">
+                        <div className="p-3 sm:p-4 border-t border-white/10 bg-slate-900/80 flex items-center gap-3">
                             <Input
                                 placeholder="Écrire un commentaire..."
                                 value={threadInput}
                                 onChange={e => setThreadInput(e.target.value)}
                                 onKeyPress={e => e.key === 'Enter' && sendThreadReply()}
-                                className="flex-1 bg-white/5 border-white/10 rounded-full text-sm"
+                                className="flex-1 bg-white/5 border-white/10 rounded-full text-sm h-11"
                             />
                             <Button
                                 size="icon"
                                 onClick={sendThreadReply}
                                 disabled={!threadInput.trim()}
-                                className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0"
+                                className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0 h-11 w-11"
                             >
-                                <Send className="h-4 w-4" />
+                                <Send className="h-5 w-5" />
                             </Button>
                         </div>
                     </motion.div>

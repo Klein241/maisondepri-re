@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Phone, PhoneOff, Video, VideoOff, Mic, MicOff,
-    X, Copy, Check, ExternalLink, Users, Loader2
+    X, Users, Loader2, Volume2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -14,91 +14,84 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
 // ========== TYPES ==========
-interface CallData {
-    id: string;
-    caller_id: string;
-    caller_name: string;
-    caller_avatar?: string;
-    receiver_id: string;
-    call_type: 'video' | 'audio';
-    meet_link: string;
-    status: 'ringing' | 'accepted' | 'rejected' | 'missed' | 'ended';
-    group_id?: string;
-    group_name?: string;
-    created_at: string;
+export interface CallSignal {
+    callerId: string;
+    callerName: string;
+    callerAvatar?: string;
+    callType: 'video' | 'audio';
+    mode: 'private' | 'group';
+    conversationId?: string;
+    groupId?: string;
+    groupName?: string;
 }
 
-// ========== GENERATE MEET LINK ==========
-function generateMeetLink(): string {
-    const chars = 'abcdefghijklmnopqrstuvwxyz';
-    const segment = (len: number) =>
-        Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-    return `https://meet.google.com/${segment(3)}-${segment(4)}-${segment(3)}`;
-}
-
-// ========== INCOMING CALL OVERLAY ==========
+// ========== INCOMING CALL OVERLAY (for community-view global listener) ==========
 export function IncomingCallOverlay({
     call,
     onAccept,
     onReject,
 }: {
-    call: CallData;
+    call: CallSignal;
     onAccept: () => void;
     onReject: () => void;
 }) {
     const [elapsedTime, setElapsedTime] = useState(0);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
 
-    // Play ringtone
+    // Play ringtone using Web Audio API
     useEffect(() => {
+        let isPlaying = true;
+        let ctx: AudioContext | null = null;
+        let interval: NodeJS.Timeout | null = null;
+
         try {
-            // Create a simple ringtone using Web Audio API
-            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-            let isPlaying = true;
+            ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
 
             const playRing = () => {
-                if (!isPlaying) return;
-                const oscillator = audioContext.createOscillator();
-                const gainNode = audioContext.createGain();
-
-                oscillator.connect(gainNode);
-                gainNode.connect(audioContext.destination);
-
-                oscillator.frequency.value = 440;
-                oscillator.type = 'sine';
-                gainNode.gain.value = 0.3;
-
-                oscillator.start();
-                gainNode.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
-                oscillator.stop(audioContext.currentTime + 0.5);
-
-                setTimeout(() => {
-                    if (isPlaying) {
-                        const osc2 = audioContext.createOscillator();
-                        const gain2 = audioContext.createGain();
-                        osc2.connect(gain2);
-                        gain2.connect(audioContext.destination);
-                        osc2.frequency.value = 554;
-                        osc2.type = 'sine';
-                        gain2.gain.value = 0.3;
-                        osc2.start();
-                        gain2.gain.exponentialRampToValueAtTime(0.001, audioContext.currentTime + 0.5);
-                        osc2.stop(audioContext.currentTime + 0.5);
-                    }
-                }, 600);
+                if (!isPlaying || !ctx || ctx.state === 'closed') return;
+                const playTone = (freq: number, start: number, dur: number) => {
+                    const osc = ctx!.createOscillator();
+                    const gain = ctx!.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(0.15, ctx!.currentTime + start);
+                    gain.gain.exponentialRampToValueAtTime(0.001, ctx!.currentTime + start + dur);
+                    osc.connect(gain);
+                    gain.connect(ctx!.destination);
+                    osc.start(ctx!.currentTime + start);
+                    osc.stop(ctx!.currentTime + start + dur);
+                };
+                // WhatsApp-style double ring
+                playTone(440, 0, 0.25);
+                playTone(523, 0, 0.25);
+                playTone(440, 0.35, 0.25);
+                playTone(523, 0.35, 0.25);
             };
 
             playRing();
-            const interval = setInterval(playRing, 2000);
-
-            return () => {
-                isPlaying = false;
-                clearInterval(interval);
-                audioContext.close();
-            };
+            interval = setInterval(playRing, 2000);
         } catch (e) {
             console.log('Could not play ringtone:', e);
         }
+
+        // Vibrate on mobile
+        if ('vibrate' in navigator) {
+            const vibratePattern = () => navigator.vibrate([300, 200, 300, 1200]);
+            vibratePattern();
+            const vibInterval = setInterval(vibratePattern, 2000);
+            return () => {
+                isPlaying = false;
+                clearInterval(vibInterval);
+                navigator.vibrate(0);
+                if (interval) clearInterval(interval);
+                ctx?.close();
+            };
+        }
+
+        return () => {
+            isPlaying = false;
+            if (interval) clearInterval(interval);
+            ctx?.close();
+        };
     }, []);
 
     // Timer
@@ -107,7 +100,7 @@ export function IncomingCallOverlay({
             setElapsedTime(prev => prev + 1);
         }, 1000);
 
-        // Auto-miss after 30 seconds
+        // Auto-reject after 30 seconds
         const timeout = setTimeout(() => {
             onReject();
         }, 30000);
@@ -130,7 +123,7 @@ export function IncomingCallOverlay({
                 {[1, 2, 3].map(i => (
                     <motion.div
                         key={i}
-                        className="absolute rounded-full border border-indigo-500/20"
+                        className="absolute rounded-full border border-green-500/20"
                         animate={{
                             width: [100, 300 + i * 80],
                             height: [100, 300 + i * 80],
@@ -154,7 +147,7 @@ export function IncomingCallOverlay({
                     className="mb-2"
                 >
                     <Badge className="bg-green-500/20 text-green-400 border-green-500/30 text-sm px-4 py-1">
-                        {call.call_type === 'video' ? (
+                        {call.callType === 'video' ? (
                             <><Video className="h-4 w-4 mr-1.5" /> Appel Vidéo</>
                         ) : (
                             <><Phone className="h-4 w-4 mr-1.5" /> Appel Vocal</>
@@ -168,27 +161,31 @@ export function IncomingCallOverlay({
                     transition={{ repeat: Infinity, duration: 2 }}
                     className="my-8"
                 >
-                    <Avatar className="h-28 w-28 border-4 border-indigo-500/30 shadow-2xl shadow-indigo-500/20">
-                        <AvatarImage src={call.caller_avatar} />
+                    <Avatar className="h-28 w-28 border-4 border-green-500/30 shadow-2xl shadow-green-500/20">
+                        <AvatarImage src={call.callerAvatar} />
                         <AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-4xl font-bold text-white">
-                            {call.caller_name?.[0] || 'U'}
+                            {call.callerName?.[0] || 'U'}
                         </AvatarFallback>
                     </Avatar>
                 </motion.div>
 
                 {/* Caller Name */}
-                <h2 className="text-2xl font-black text-white mb-1">{call.caller_name}</h2>
-                <p className="text-slate-400 text-sm mb-2">
-                    {call.call_type === 'video' ? 'Appel vidéo entrant...' : 'Appel vocal entrant...'}
-                </p>
+                <h2 className="text-2xl font-black text-white mb-1">{call.callerName}</h2>
+                <motion.p
+                    animate={{ opacity: [0.4, 1, 0.4] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                    className="text-slate-400 text-sm mb-2"
+                >
+                    {call.callType === 'video' ? 'Appel vidéo entrant...' : 'Appel vocal entrant...'}
+                </motion.p>
                 <p className="text-slate-500 text-xs font-mono">
                     {Math.floor(elapsedTime / 60).toString().padStart(2, '0')}:{(elapsedTime % 60).toString().padStart(2, '0')}
                 </p>
 
-                {call.group_name && (
+                {call.groupName && (
                     <Badge className="bg-indigo-500/20 text-indigo-400 border-none mt-3">
                         <Users className="h-3 w-3 mr-1" />
-                        {call.group_name}
+                        {call.groupName}
                     </Badge>
                 )}
             </div>
@@ -220,7 +217,7 @@ export function IncomingCallOverlay({
                         className="flex flex-col items-center gap-2"
                     >
                         <div className="h-16 w-16 rounded-full bg-green-600 flex items-center justify-center shadow-lg shadow-green-600/40 hover:bg-green-500 transition-colors">
-                            {call.call_type === 'video' ? (
+                            {call.callType === 'video' ? (
                                 <Video className="h-7 w-7 text-white" />
                             ) : (
                                 <Phone className="h-7 w-7 text-white" />
@@ -234,130 +231,71 @@ export function IncomingCallOverlay({
     );
 }
 
-// ========== CALL LISTENER HOOK ==========
+// ========== GLOBAL CALL LISTENER HOOK ==========
+// This hook listens for incoming call signals via Supabase broadcast.
+// It should be mounted AT THE TOP LEVEL (community-view) so calls ring
+// no matter which page/tab the user is on.
 export function useCallListener(userId: string | undefined) {
-    const [incomingCall, setIncomingCall] = useState<CallData | null>(null);
+    const [incomingCall, setIncomingCall] = useState<CallSignal | null>(null);
 
     useEffect(() => {
         if (!userId) return;
 
-        // Listen for incoming calls via database (private calls)
-        const channel = supabase
-            .channel(`calls_for_${userId}`)
-            .on('postgres_changes', {
-                event: 'INSERT',
-                schema: 'public',
-                table: 'calls',
-                filter: `receiver_id=eq.${userId}`
-            }, (payload) => {
-                const call = payload.new as CallData;
-                if (call.status === 'ringing') {
-                    setIncomingCall(call);
-                }
-            })
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'calls',
-                filter: `receiver_id=eq.${userId}`
-            }, (payload) => {
-                const call = payload.new as CallData;
-                if (call.status === 'ended' || call.status === 'missed') {
-                    setIncomingCall(null);
-                }
-            })
-            .subscribe();
-
-        // Listen for incoming group call signals via broadcast
+        // Listen for incoming call signals via broadcast (works for BOTH private and group calls)
         const signalChannel = supabase
             .channel(`call_signal_${userId}`)
             .on('broadcast', { event: 'incoming-call' }, (payload) => {
                 const data = payload.payload as any;
                 if (data && data.callerId && data.callerId !== userId) {
-                    // Convert broadcast signal to CallData format
-                    const syntheticCall: CallData = {
-                        id: `group_call_${Date.now()}`,
-                        caller_id: data.callerId,
-                        caller_name: data.callerName || 'Membre du groupe',
-                        caller_avatar: data.callerAvatar,
-                        receiver_id: userId,
-                        call_type: data.callType || 'audio',
-                        meet_link: '', // Group meetings use WebRTC, not Meet links
-                        status: 'ringing',
-                        group_id: data.groupId,
-                        group_name: data.groupName,
-                        created_at: new Date().toISOString(),
+                    const signal: CallSignal = {
+                        callerId: data.callerId,
+                        callerName: data.callerName || 'Utilisateur',
+                        callerAvatar: data.callerAvatar,
+                        callType: data.callType || 'audio',
+                        mode: data.mode || (data.groupId ? 'group' : 'private'),
+                        conversationId: data.conversationId,
+                        groupId: data.groupId,
+                        groupName: data.groupName,
                     };
-                    setIncomingCall(syntheticCall);
+                    setIncomingCall(signal);
+                }
+            })
+            .on('broadcast', { event: 'call-cancelled' }, (payload) => {
+                const data = payload.payload as any;
+                if (data?.callerId) {
+                    setIncomingCall(prev => {
+                        if (prev && prev.callerId === data.callerId) return null;
+                        return prev;
+                    });
+                    toast.info('Appel annulé');
                 }
             })
             .subscribe();
 
         return () => {
-            channel.unsubscribe();
             signalChannel.unsubscribe();
         };
     }, [userId]);
 
-    const acceptCall = useCallback(async () => {
+    const acceptCall = useCallback(() => {
         if (!incomingCall) return;
-
-        try {
-            // For database-tracked calls, update status
-            if (!incomingCall.id.startsWith('group_call_')) {
-                await supabase
-                    .from('calls')
-                    .update({ status: 'accepted' })
-                    .eq('id', incomingCall.id);
-            }
-
-            if (incomingCall.meet_link) {
-                // Private call: open the meet link
-                window.open(incomingCall.meet_link, '_blank');
-            } else if (incomingCall.group_id) {
-                // Group call: navigate to the group chat and join meeting
-                sessionStorage.setItem('pending_group_call', JSON.stringify({
-                    groupId: incomingCall.group_id,
-                    groupName: incomingCall.group_name,
-                    callType: incomingCall.call_type,
-                }));
-                // Trigger navigation (the community-view will pick this up)
-                window.dispatchEvent(new CustomEvent('navigate-to-group-call', {
-                    detail: { groupId: incomingCall.group_id }
-                }));
-            }
-
-            setIncomingCall(null);
-            toast.success('Appel connecté !');
-        } catch (e) {
-            console.error('Error accepting call:', e);
-            toast.error("Erreur lors de l'acceptation de l'appel");
-        }
+        // The accept action just returns the call data, the parent component
+        // will use it to open the WebRTCCall component
+        const callData = { ...incomingCall };
+        setIncomingCall(null);
+        return callData;
     }, [incomingCall]);
 
-    const rejectCall = useCallback(async () => {
-        if (!incomingCall) return;
-
-        try {
-            // Only update DB for database-tracked calls
-            if (!incomingCall.id.startsWith('group_call_')) {
-                await supabase
-                    .from('calls')
-                    .update({ status: 'rejected' })
-                    .eq('id', incomingCall.id);
-            }
-
-            setIncomingCall(null);
-        } catch (e) {
-            console.error('Error rejecting call:', e);
-            setIncomingCall(null);
-        }
-    }, [incomingCall]);
+    const rejectCall = useCallback(() => {
+        setIncomingCall(null);
+    }, []);
 
     return { incomingCall, acceptCall, rejectCall };
 }
 
 // ========== INITIATE CALL FUNCTION ==========
+// This function signals the remote user(s) via Supabase broadcast
+// that they have an incoming call. It does NOT open any external link.
 export async function initiateCall({
     callerId,
     callerName,
@@ -374,68 +312,30 @@ export async function initiateCall({
     callType: 'video' | 'audio';
     groupId?: string;
     groupName?: string;
-}): Promise<string | null> {
-    const meetLink = generateMeetLink();
-
+}): Promise<void> {
     try {
-        const { data, error } = await supabase
-            .from('calls')
-            .insert({
-                caller_id: callerId,
-                caller_name: callerName,
-                caller_avatar: callerAvatar,
-                receiver_id: receiverId,
-                call_type: callType,
-                meet_link: meetLink,
-                status: 'ringing',
-                group_id: groupId || null,
-                group_name: groupName || null,
-            })
-            .select()
-            .single();
-
-        if (error) {
-            // Table might not exist - fallback to direct meet link
-            if (error.message.includes('does not exist') || error.code === '42P01') {
-                toast.info(`Lien d'appel: ${meetLink}`);
-                window.open(meetLink, '_blank');
-                return meetLink;
+        // Signal the remote user that they have an incoming call
+        const remoteSignalChannel = supabase.channel(`call_signal_${receiverId}`, {
+            config: { broadcast: { self: false } }
+        });
+        await remoteSignalChannel.subscribe();
+        remoteSignalChannel.send({
+            type: 'broadcast',
+            event: 'incoming-call',
+            payload: {
+                callerId,
+                callerName,
+                callerAvatar,
+                callType,
+                mode: groupId ? 'group' : 'private',
+                groupId: groupId || null,
+                groupName: groupName || null,
             }
-            throw error;
-        }
-
-        // Open meet link for caller immediately
-        window.open(meetLink, '_blank');
-
-        // Set a timeout to mark as missed if not answered
-        setTimeout(async () => {
-            try {
-                const { data: callData } = await supabase
-                    .from('calls')
-                    .select('status')
-                    .eq('id', data.id)
-                    .single();
-
-                if (callData?.status === 'ringing') {
-                    await supabase
-                        .from('calls')
-                        .update({ status: 'missed' })
-                        .eq('id', data.id);
-                }
-            } catch (e) {
-                // Ignore
-            }
-        }, 30000);
-
-        toast.success(`Appel ${callType === 'video' ? 'vidéo' : 'vocal'} lancé ! En attente de réponse...`);
-        return meetLink;
+        });
+        // Remove channel after a delay to let the message send
+        setTimeout(() => supabase.removeChannel(remoteSignalChannel), 2000);
     } catch (e) {
-        console.error('Error initiating call:', e);
-        // Fallback: just open meet
-        const fallbackLink = `https://meet.google.com/new`;
-        window.open(fallbackLink, '_blank');
-        toast.info("Appel lancé via Google Meet");
-        return fallbackLink;
+        console.error('Error initiating call signal:', e);
     }
 }
 
@@ -446,17 +346,20 @@ export function DMCallButtons({
     currentUserAvatar,
     otherUserId,
     otherUserName,
+    onStartCall,
 }: {
     currentUserId: string;
     currentUserName: string;
     currentUserAvatar?: string;
     otherUserId: string;
     otherUserName: string;
+    onStartCall?: (type: 'audio' | 'video') => void;
 }) {
     const [isCalling, setIsCalling] = useState(false);
 
     const handleCall = async (type: 'video' | 'audio') => {
         setIsCalling(true);
+        // Signal the receiver
         await initiateCall({
             callerId: currentUserId,
             callerName: currentUserName,
@@ -464,6 +367,10 @@ export function DMCallButtons({
             receiverId: otherUserId,
             callType: type,
         });
+        // Trigger the WebRTC call UI in the parent component
+        if (onStartCall) {
+            onStartCall(type);
+        }
         setIsCalling(false);
     };
 
