@@ -983,23 +983,17 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         }
     };
 
-    // Load group messages
+    // Load group messages via server API (bypasses RLS)
     const loadGroupMessages = async (groupId: string) => {
         setLoadingGroupMessages(true);
         try {
-            const { data, error } = await supabase
-                .from('prayer_group_messages')
-                .select(`
-                    id, group_id, user_id, content, type, voice_url, voice_duration, created_at,
-                    profiles:user_id(full_name, avatar_url)
-                `)
-                .eq('group_id', groupId)
-                .order('created_at', { ascending: true });
+            const response = await fetch(`/api/group-messages?groupId=${groupId}`);
+            const result = await response.json();
 
-            if (error) {
-                console.error('Error loading group messages:', error);
+            if (!response.ok) {
+                console.error('Error loading group messages:', result.error);
             } else {
-                setGroupMessages(data || []);
+                setGroupMessages(result.messages || []);
             }
         } catch (e) {
             console.error('Error loading group messages:', e);
@@ -1007,7 +1001,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         setLoadingGroupMessages(false);
     };
 
-    // Send group message with optimistic update
+    // Send group message with optimistic update (via server API to bypass RLS)
     const sendGroupMessage = async () => {
         if (!newMessage.trim() || !user || !selectedGroup) return;
 
@@ -1036,23 +1030,26 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         });
 
         try {
-            const { data, error } = await supabase
-                .from('prayer_group_messages')
-                .insert({
-                    group_id: selectedGroup.id,
-                    user_id: user.id,
-                    content: messageContent
+            const response = await fetch('/api/group-messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    groupId: selectedGroup.id,
+                    userId: user.id,
+                    content: messageContent,
+                    type: 'text'
                 })
-                .select()
-                .single();
+            });
 
-            if (error) throw error;
+            const result = await response.json();
+
+            if (!response.ok) throw new Error(result.error);
 
             // Replace temp with real
-            if (data) {
+            if (result.message) {
                 setGroupMessages(prev =>
                     prev.map(m => m.id === tempId
-                        ? { ...data, profiles: optimisticMsg.profiles }
+                        ? { ...result.message, profiles: optimisticMsg.profiles }
                         : m
                     )
                 );
@@ -1232,19 +1229,22 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
             const voiceUrl = urlData.publicUrl;
 
-            // Insert message with voice data
-            const { error: insertError } = await supabase
-                .from('prayer_group_messages')
-                .insert({
-                    group_id: selectedGroup.id,
-                    user_id: user.id,
+            // Insert message with voice data via server API (bypasses RLS)
+            const response = await fetch('/api/group-messages', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    groupId: selectedGroup.id,
+                    userId: user.id,
                     content: '🎤 Message vocal',
                     type: 'voice',
-                    voice_url: voiceUrl,
-                    voice_duration: duration
-                });
+                    voiceUrl: voiceUrl,
+                    voiceDuration: duration
+                })
+            });
 
-            if (insertError) throw insertError;
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error);
 
             toast.success("Message vocal envoyé! 🎤");
             loadGroupMessages(selectedGroup.id);

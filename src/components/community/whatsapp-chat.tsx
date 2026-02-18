@@ -902,18 +902,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     .eq('is_read', false)
                     .then(() => { });
             } else {
-                const { data, error } = await supabase
-                    .from('prayer_group_messages')
-                    .select(`
-                        *,
-                        sender:user_id (id, full_name, avatar_url)
-                    `)
-                    .eq('group_id', id)
-                    .order('created_at', { ascending: true });
+                // Load group messages via server API (bypasses RLS)
+                const response = await fetch(`/api/group-messages?groupId=${id}`);
+                const result = await response.json();
 
-                if (error) throw error;
-                const groupMsgs = (data || []).map((m: any) => ({
+                if (!response.ok) throw new Error(result.error);
+
+                const groupMsgs = (result.messages || []).map((m: any) => ({
                     ...m,
+                    sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
                     sender_id: m.user_id,
                     is_read: true
                 }));
@@ -980,21 +977,24 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     conversationId: selectedConversation.id,
                 });
             } else if (view === 'group' && selectedGroup) {
-                const { data, error } = await supabase
-                    .from('prayer_group_messages')
-                    .insert({
-                        group_id: selectedGroup.id,
-                        user_id: user.id,
+                // Send group message via server API (bypasses RLS)
+                const response = await fetch('/api/group-messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        groupId: selectedGroup.id,
+                        userId: user.id,
                         content: msgContent,
                         type: 'text'
                     })
-                    .select('*')
-                    .single();
+                });
 
-                if (error) throw error;
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error);
 
                 // Optimistic local add
-                if (data) {
+                if (result.message) {
+                    const data = result.message;
                     setMessages(prev => {
                         if (prev.find(m => m.id === data.id)) return prev;
                         return [...prev, {
