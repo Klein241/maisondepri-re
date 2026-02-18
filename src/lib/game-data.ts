@@ -7,6 +7,8 @@
  * EXPANDED CONTENT: Over 300 questions/items added for "Pro" experience.
  */
 
+import { generateWordSearch } from './word-search-generator';
+
 // Extensive list of Bible questions for Quiz
 export const BIBLE_QUESTIONS = [
     // --- EASY QUESTIONS (GENESIS to REVELATION) ---
@@ -744,7 +746,13 @@ export async function generateGameConfig(gameType: string): Promise<any> {
 
         case 'quiz_duel':
             return {
-                questions: getRandomQuestions(10),
+                questions: getRandomQuestions(10).map((q, i) => ({
+                    id: `q-${i}-${Date.now()}`,
+                    question: q.question,
+                    options: q.options,
+                    correct: q.answer,
+                    difficulty: q.difficulty
+                })),
                 type: 'quiz'
             };
 
@@ -760,12 +768,20 @@ export async function generateGameConfig(gameType: string): Promise<any> {
                 type: 'chrono'
             };
 
-        case 'word_search':
+        case 'word_search': {
+            const wsWords = getWordSearchWords(10);
+            const { grid: wsGrid, placedWords: wsPlaced } = generateWordSearch(wsWords, {
+                width: 12,
+                height: 12,
+                directions: ['horizontal', 'vertical', 'diagonal-down']
+            });
             return {
-                words: getWordSearchWords(10),
+                words: wsPlaced,
+                grid: wsGrid,
                 type: 'word_search',
                 gridSize: 12
             };
+        }
 
         default:
             return {

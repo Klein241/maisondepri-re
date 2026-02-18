@@ -56,15 +56,18 @@ export function WordSearchGame({
     roundInfo,
     onNextRound
 }: WordSearchGameProps) {
+    // Determine if we have a valid initial grid for multiplayer
+    const hasValidInitialGrid = initialGrid && initialGrid.length > 0 && initialGrid[0]?.length > 0;
+
     // ============= STATE =============
-    const [viewMode, setViewMode] = useState<ViewMode>(initialGrid ? 'playing' : 'level_map');
-    const [grid, setGrid] = useState<string[][]>(initialGrid || []);
+    const [viewMode, setViewMode] = useState<ViewMode>(hasValidInitialGrid || (initialWords && initialWords.length > 0) ? 'playing' : 'level_map');
+    const [grid, setGrid] = useState<string[][]>(hasValidInitialGrid ? initialGrid! : []);
     const [wordList, setWordList] = useState<string[]>(initialWords || []);
     const [foundWords, setFoundWords] = useState<string[]>([]);
     const [foundLines, setFoundLines] = useState<{ start: { r: number, c: number }, end: { r: number, c: number }, colorIndex: number }[]>([]);
     const [selection, setSelection] = useState<{ start: { r: number, c: number } | null, end: { r: number, c: number } | null }>({ start: null, end: null });
     const [isSelecting, setIsSelecting] = useState(false);
-    const [gameState, setGameState] = useState<'loading' | 'playing' | 'finished'>('loading');
+    const [gameState, setGameState] = useState<'loading' | 'playing' | 'finished'>(hasValidInitialGrid ? 'playing' : 'loading');
     const [startTime, setStartTime] = useState(Date.now());
     const [elapsedTime, setElapsedTime] = useState(0);
     const [isPaused, setIsPaused] = useState(false);
@@ -85,6 +88,21 @@ export function WordSearchGame({
     const [resultAction, setResultAction] = useState<string | null>(null);
     const [resultLevelCompleted, setResultLevelCompleted] = useState(false);
     const [leaderboardEntries, setLeaderboardEntries] = useState<any[]>([]);
+
+    // Auto-generate grid from words if words provided but grid is empty (multiplayer fallback)
+    useEffect(() => {
+        if (initialWords && initialWords.length > 0 && !hasValidInitialGrid && gameState === 'loading') {
+            const { grid: newGrid, placedWords } = generateWordSearch(initialWords, {
+                width: 12,
+                height: 12,
+                directions: ['horizontal', 'vertical', 'diagonal-down']
+            });
+            setGrid(newGrid);
+            setWordList(placedWords);
+            setGameState('playing');
+            setStartTime(Date.now());
+        }
+    }, [initialWords, hasValidInitialGrid, gameState]);
 
     // ============= INITIALIZE BOARD =============
     const startBoard = useCallback((boardIndex: number) => {

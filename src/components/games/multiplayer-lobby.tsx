@@ -444,6 +444,20 @@ export function MultiplayerLobby({ onStartGame, onBack, initialView }: Multiplay
                     <p className="text-slate-400">Affrontez vos amis en temps réel</p>
                 </div>
 
+                {/* Join via code - prominent at top */}
+                <Card className="bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border-indigo-500/30 hover:border-indigo-500/50 transition-all">
+                    <CardContent className="p-4 flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center text-2xl shrink-0">🔑</div>
+                        <div className="flex-1">
+                            <h3 className="font-bold text-white text-sm">Rejoindre via un code</h3>
+                            <p className="text-xs text-slate-400">Entrez le code à 4 lettres d'un ami</p>
+                        </div>
+                        <Button variant="outline" className="h-10 px-4 border-indigo-500/30 bg-indigo-600/20 text-indigo-300 hover:bg-indigo-600/40 font-bold text-xs" onClick={() => setView('join')}>
+                            Rejoindre
+                        </Button>
+                    </CardContent>
+                </Card>
+
                 <div className="grid grid-cols-2 gap-3">
                     {GAMES.map(g => (
                         <div
@@ -499,18 +513,7 @@ export function MultiplayerLobby({ onStartGame, onBack, initialView }: Multiplay
                     </CardContent>
                 </Card>
 
-                <div className="relative">
-                    <div className="absolute inset-0 flex items-center"><span className="w-full border-t border-white/10"></span></div>
-                    <div className="relative flex justify-center text-xs uppercase"><span className="bg-[#0B0E14] px-2 text-slate-500">Ou rejoindre par code</span></div>
-                </div>
 
-                <Card className="bg-white/5 border-white/10">
-                    <CardContent className="p-6 pt-6">
-                        <Button variant="outline" className="w-full h-11 border-white/10 bg-transparent hover:bg-white/5" onClick={() => setView('join')}>
-                            Rejoindre via un code
-                        </Button>
-                    </CardContent>
-                </Card>
             </div>
         );
     }

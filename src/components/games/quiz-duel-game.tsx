@@ -1,6 +1,6 @@
 ﻿'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -240,6 +240,9 @@ export function QuizDuelGame({
         return () => clearInterval(interval);
     }, [gameState, startTime]);
 
+    // Keep a ref to the latest handleAnswer to avoid stale closures in timer
+    const handleAnswerRef = useRef<(optionIndex: number) => void>(() => { });
+
     // Per-question timer
     useEffect(() => {
         if (gameState !== 'playing') return;
@@ -247,8 +250,8 @@ export function QuizDuelGame({
         const interval = setInterval(() => {
             setQuestionTimer(prev => {
                 if (prev <= 1) {
-                    // Time's up - auto-select wrong
-                    handleAnswer(-1);
+                    // Time's up - auto-select wrong (use ref to avoid stale closure)
+                    setTimeout(() => handleAnswerRef.current(-1), 0);
                     return 15;
                 }
                 return prev - 1;
@@ -366,11 +369,13 @@ export function QuizDuelGame({
                         origin: { y: 0.6 }
                     });
                 }
-                const timeTaken = Math.floor((Date.now() - startTime) / 1000);
-                if (onComplete) onComplete(timeTaken);
+                if (onComplete) onComplete(finalScore);
             }
         }, 1200);
     }, [selectedOption, gameState, currentIndex, gameQuestions, questionTimer, streak, onProgress, onComplete, startTime, correctCount, score, maxStreak]);
+
+    // Keep ref in sync with latest handleAnswer
+    handleAnswerRef.current = handleAnswer;
 
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
