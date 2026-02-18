@@ -44,7 +44,7 @@ const GroupCallManager = dynamic(() => import("@/components/community/group-call
 const FriendSystem = dynamic(() => import("@/components/community/friend-system").then(m => ({ default: m.FriendSystem })), { ssr: false, loading: () => <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div> });
 const GroupToolsPanel = dynamic(() => import("@/components/community/group-tools").then(m => ({ default: m.GroupToolsPanel })), { ssr: false });
 
-type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'friends';
+type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'friends' | 'conversation' | 'messages';
 
 // VoiceMessagePlayer extracted to @/components/community/voice-message-player.tsx
 
@@ -1518,7 +1518,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 return updated;
                             }
                             // No temp found but we don't have it - add it
-                            return [...prev, { ...newMsg, sender: { id: user.id, full_name: user.name || 'Moi' } }];
+                            return [...prev, { ...newMsg, sender: { id: user!.id, full_name: user!.name || 'Moi' } }];
                         }
                         // Message from other user - add it immediately
                         return [...prev, { ...newMsg, sender: { id: newMsg.sender_id, full_name: '...' } }];
@@ -1885,7 +1885,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
                                 <TabsContent value="chat" className="mt-0 flex flex-col -mx-4">
-                                    <div className="relative flex-1" style={{ height: 'calc(100dvh - 300px)', minHeight: '400px', maxHeight: 'calc(100dvh - 200px)' }}>
+                                    <div className="relative flex-1" style={{ height: 'calc(100dvh - 240px)', minHeight: '400px' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
@@ -1902,18 +1902,58 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                         {/* Floating Add Button */}
                         <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-                            <DialogTrigger asChild>
-                                <Button
-                                    className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
-                                    onClick={() => {
-                                        if (!user) { setShowAuthPrompt(true); return; }
-                                        setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer');
-                                        setIsDialogOpen(true);
-                                    }}
-                                >
-                                    <Plus className="h-6 w-6" />
-                                </Button>
-                            </DialogTrigger>
+                            {activeTab === 'chat' ? (
+                                /* Chat tab: show dropdown with multiple options */
+                                <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                        <Button
+                                            className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                            onClick={() => {
+                                                if (!user) { setShowAuthPrompt(true); }
+                                            }}
+                                        >
+                                            <Plus className="h-6 w-6" />
+                                        </Button>
+                                    </DropdownMenuTrigger>
+                                    {user && (
+                                        <DropdownMenuContent align="end" className="bg-[#1a1f2e] border-white/10 text-white rounded-xl w-56 mb-2">
+                                            <DropdownMenuItem
+                                                onClick={() => {
+                                                    setShowCreateGroupDialog(true);
+                                                }}
+                                                className="gap-2 cursor-pointer hover:bg-white/10 focus:bg-white/10 text-white"
+                                            >
+                                                <Users className="h-4 w-4 text-emerald-400" />
+                                                Créer un Groupe
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem
+                                                onClick={() => {
+                                                    setDialogType('prayer');
+                                                    setIsDialogOpen(true);
+                                                }}
+                                                className="gap-2 cursor-pointer hover:bg-white/10 focus:bg-white/10 text-white"
+                                            >
+                                                <Heart className="h-4 w-4 text-pink-400" />
+                                                Nouvelle demande de prière
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    )}
+                                </DropdownMenu>
+                            ) : (
+                                /* Other tabs: direct dialog trigger */
+                                <DialogTrigger asChild>
+                                    <Button
+                                        className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                        onClick={() => {
+                                            if (!user) { setShowAuthPrompt(true); return; }
+                                            setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer');
+                                            setIsDialogOpen(true);
+                                        }}
+                                    >
+                                        <Plus className="h-6 w-6" />
+                                    </Button>
+                                </DialogTrigger>
+                            )}
 
                             <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem] max-h-[85vh] overflow-y-auto">
                                 <DialogHeader>

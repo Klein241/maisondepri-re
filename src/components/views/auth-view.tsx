@@ -35,11 +35,25 @@ export function AuthView() {
     const [resetPhone, setResetPhone] = useState('');
     const [isResetting, setIsResetting] = useState(false);
 
+    // Normalize phone: strip spaces/dashes, keep digits and leading +
+    const normalizePhone = (raw: string): string => {
+        const trimmed = raw.trim();
+        // Keep leading + if present, then strip non-digits
+        if (trimmed.startsWith('+')) {
+            return trimmed.replace(/\D/g, '');
+        }
+        // No + prefix — just strip non-digits
+        return trimmed.replace(/\D/g, '');
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!loginPhone || !loginPassword) return;
-        // Reconstruct fake email from phone
-        const cleanPhone = loginPhone.replace(/\D/g, '');
+        const cleanPhone = normalizePhone(loginPhone);
+        if (!cleanPhone || cleanPhone.length < 6) {
+            toast.error('Numéro de téléphone trop court');
+            return;
+        }
         const email = `${cleanPhone}@marathon.local`;
         await signIn(email, loginPassword);
     };

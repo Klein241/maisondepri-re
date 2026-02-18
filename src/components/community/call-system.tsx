@@ -241,7 +241,7 @@ export function useCallListener(userId: string | undefined) {
     useEffect(() => {
         if (!userId) return;
 
-        // Listen for incoming calls in realtime
+        // Listen for incoming calls via database (private calls)
         const channel = supabase
             .channel(`calls_for_${userId}`)
             .on('postgres_changes', {
@@ -262,15 +262,40 @@ export function useCallListener(userId: string | undefined) {
                 filter: `receiver_id=eq.${userId}`
             }, (payload) => {
                 const call = payload.new as CallData;
-                // If call was ended/cancelled by caller, dismiss
                 if (call.status === 'ended' || call.status === 'missed') {
                     setIncomingCall(null);
                 }
             })
             .subscribe();
 
+        // Listen for incoming group call signals via broadcast
+        const signalChannel = supabase
+            .channel(`call_signal_${userId}`)
+            .on('broadcast', { event: 'incoming-call' }, (payload) => {
+                const data = payload.payload as any;
+                if (data && data.callerId && data.callerId !== userId) {
+                    // Convert broadcast signal to CallData format
+                    const syntheticCall: CallData = {
+                        id: `group_call_${Date.now()}`,
+                        caller_id: data.callerId,
+                        caller_name: data.callerName || 'Membre du groupe',
+                        caller_avatar: data.callerAvatar,
+                        receiver_id: userId,
+                        call_type: data.callType || 'audio',
+                        meet_link: '', // Group meetings use WebRTC, not Meet links
+                        status: 'ringing',
+                        group_id: data.groupId,
+                        group_name: data.groupName,
+                        created_at: new Date().toISOString(),
+                    };
+                    setIncomingCall(syntheticCall);
+                }
+            })
+            .subscribe();
+
         return () => {
             channel.unsubscribe();
+            signalChannel.unsubscribe();
         };
     }, [userId]);
 
@@ -278,13 +303,30 @@ export function useCallListener(userId: string | undefined) {
         if (!incomingCall) return;
 
         try {
-            await supabase
-                .from('calls')
-                .update({ status: 'accepted' })
-                .eq('id', incomingCall.id);
+            // For database-tracked calls, update status
+            if (!incomingCall.id.startsWith('group_call_')) {
+                await supabase
+                    .from('calls')
+                    .update({ status: 'accepted' })
+                    .eq('id', incomingCall.id);
+            }
 
-            // Open the meet link
-            window.open(incomingCall.meet_link, '_blank');
+            if (incomingCall.meet_link) {
+                // Private call: open the meet link
+                window.open(incomingCall.meet_link, '_blank');
+            } else if (incomingCall.group_id) {
+                // Group call: navigate to the group chat and join meeting
+                sessionStorage.setItem('pending_group_call', JSON.stringify({
+                    groupId: incomingCall.group_id,
+                    groupName: incomingCall.group_name,
+                    callType: incomingCall.call_type,
+                }));
+                // Trigger navigation (the community-view will pick this up)
+                window.dispatchEvent(new CustomEvent('navigate-to-group-call', {
+                    detail: { groupId: incomingCall.group_id }
+                }));
+            }
+
             setIncomingCall(null);
             toast.success('Appel connecté !');
         } catch (e) {
@@ -297,14 +339,18 @@ export function useCallListener(userId: string | undefined) {
         if (!incomingCall) return;
 
         try {
-            await supabase
-                .from('calls')
-                .update({ status: 'rejected' })
-                .eq('id', incomingCall.id);
+            // Only update DB for database-tracked calls
+            if (!incomingCall.id.startsWith('group_call_')) {
+                await supabase
+                    .from('calls')
+                    .update({ status: 'rejected' })
+                    .eq('id', incomingCall.id);
+            }
 
             setIncomingCall(null);
         } catch (e) {
             console.error('Error rejecting call:', e);
+            setIncomingCall(null);
         }
     }, [incomingCall]);
 

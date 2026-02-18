@@ -19,6 +19,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { WebRTCCall, IncomingCallOverlay } from './webrtc-call';
+import { initiateCall } from './call-system';
 import { GroupToolsPanel } from './group-tools';
 import { EventCalendarButton } from './event-calendar';
 import { CallHistory } from './call-history';
@@ -366,6 +367,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             }
         }
     }, [activeGroupId, groups, adminGroups]);
+
+    // Derived state for current view and call handling
+    const currentRecipient = selectedConversation?.participant;
+    const currentGroup = selectedGroup;
 
     // Manual refresh function
     const handleManualRefresh = useCallback(async () => {
@@ -856,6 +861,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
 
     const loadMessages = async (type: 'conversation' | 'group', id: string) => {
         setMessages([]); // Clear previous messages immediately
+        setIsLoading(true);
         try {
             if (type === 'conversation') {
                 // id here is the conversation_id (from conversations table)
@@ -867,30 +873,34 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
 
                 if (error) throw error;
 
-                // Fetch sender profiles
-                const messagesWithSenders = await Promise.all(
-                    (data || []).map(async (msg: any) => {
-                        const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('id, full_name, avatar_url')
-                            .eq('id', msg.sender_id)
-                            .single();
-                        return {
-                            ...msg,
-                            sender: profile,
-                            is_read: msg.is_read || msg.sender_id === user?.id
-                        };
-                    })
-                );
+                // Batch fetch sender profiles (instead of one-by-one)
+                const msgs = data || [];
+                const uniqueSenderIds = [...new Set(msgs.map((m: any) => m.sender_id))];
+                const profileMap = new Map<string, any>();
+
+                if (uniqueSenderIds.length > 0) {
+                    const { data: profiles } = await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url')
+                        .in('id', uniqueSenderIds);
+                    (profiles || []).forEach(p => profileMap.set(p.id, p));
+                }
+
+                const messagesWithSenders = msgs.map((msg: any) => ({
+                    ...msg,
+                    sender: profileMap.get(msg.sender_id) || { id: msg.sender_id, full_name: 'Utilisateur', avatar_url: null },
+                    is_read: msg.is_read || msg.sender_id === user?.id
+                }));
                 setMessages(messagesWithSenders);
 
                 // Mark messages from others as read
-                await supabase
+                supabase
                     .from('direct_messages')
                     .update({ is_read: true })
                     .eq('conversation_id', id)
                     .neq('sender_id', user?.id)
-                    .eq('is_read', false);
+                    .eq('is_read', false)
+                    .then(() => { });
             } else {
                 const { data, error } = await supabase
                     .from('prayer_group_messages')
@@ -1599,11 +1609,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             if (view === 'group' && selectedGroup) {
                 const { error } = await supabase.from('group_messages').delete().eq('id', messageId);
                 if (error) throw error;
-                setGroupMessages(prev => prev.filter(m => m.id !== messageId));
-            } else if (view === 'dm' && selectedConversation) {
+                setMessages(prev => prev.filter(m => m.id !== messageId));
+            } else if (view === 'conversation' && selectedConversation) {
                 const { error } = await supabase.from('direct_messages').delete().eq('id', messageId);
                 if (error) throw error;
-                setDirectMessages(prev => prev.filter(m => m.id !== messageId));
+                setMessages(prev => prev.filter(m => m.id !== messageId));
             }
             toast.success('Message supprimé');
         } catch (err) {
@@ -1928,13 +1938,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
                 config: { broadcast: { self: false } }
             });
-            channel.subscribe().then(() => {
-                channel.send({
-                    type: 'broadcast',
-                    event: 'meeting-join',
-                    payload: { meetingId: meeting.id, userId: user.id, userName: user.name }
-                });
-                setTimeout(() => supabase.removeChannel(channel), 2000);
+
+            channel.subscribe(async (status) => {
+                if (status === 'SUBSCRIBED') {
+                    await channel.send({
+                        type: 'broadcast',
+                        event: 'meeting-join',
+                        payload: { meetingId: meeting.id, userId: user.id, userName: user.name }
+                    });
+                    setTimeout(() => supabase.removeChannel(channel), 2000);
+                }
             });
 
             // Start the WebRTC call to connect
@@ -2467,11 +2480,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     onBack={() => setView('list')}
                     onCall={(type, contactId, contactName, contactAvatar) => {
                         // Find or create a conversation with this user, then start the call
-                        const conv = conversations.find(c => c.recipientId === contactId);
+                        const conv = conversations.find(c => c.participantId === contactId);
                         if (conv) {
                             setSelectedConversation(conv);
-                            const recipient = allUsers.find(u => u.id === contactId);
-                            if (recipient) setCurrentRecipient(recipient);
                         }
                         setActiveCall({ type, mode: 'private' });
                         setView('conversation');
@@ -2486,13 +2497,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                         mode={activeCall.mode}
                         remoteUser={activeCall.mode === 'private' && currentRecipient ? {
                             id: currentRecipient.id,
-                            name: currentRecipient.full_name,
+                            name: currentRecipient.full_name || 'Utilisateur',
                             avatar: currentRecipient.avatar_url
                         } : undefined}
                         conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
                         groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
                         groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
-                        groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
+                        groupMembers={activeCall.mode === 'group' ? groupMembers.map(m => ({ ...m, full_name: m.full_name || 'Membre' })) : undefined}
                         isIncoming={activeCall.isIncoming}
                         onEnd={() => { setActiveCall(null); if (activeCall?.mode === 'group') endGroupMeeting(); }}
                     />
@@ -2903,8 +2914,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     }
 
     // Conversation/Group View
-    const currentRecipient = view === 'conversation' ? selectedConversation?.participant : null;
-    const currentGroup = view === 'group' ? selectedGroup : null;
 
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
@@ -2942,7 +2951,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
-                                onClick={() => setActiveCall({ type: 'audio', mode: 'private' })}
+                                onClick={async () => {
+                                    setActiveCall({ type: 'audio', mode: 'private' });
+                                    await initiateCall({
+                                        callerId: user.id,
+                                        callerName: user.name || 'Utilisateur',
+                                        callerAvatar: user.avatar,
+                                        receiverId: currentRecipient.id,
+                                        callType: 'audio',
+                                    });
+                                }}
                                 title="Appel vocal"
                             >
                                 <Phone className="h-5 w-5" />
@@ -2951,7 +2969,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
-                                onClick={() => setActiveCall({ type: 'video', mode: 'private' })}
+                                onClick={async () => {
+                                    setActiveCall({ type: 'video', mode: 'private' });
+                                    await initiateCall({
+                                        callerId: user.id,
+                                        callerName: user.name || 'Utilisateur',
+                                        callerAvatar: user.avatar,
+                                        receiverId: currentRecipient.id,
+                                        callType: 'video',
+                                    });
+                                }}
                                 title="Appel vidéo"
                             >
                                 <Video className="h-5 w-5" />
@@ -4373,13 +4400,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     mode={activeCall.mode}
                     remoteUser={activeCall.mode === 'private' && currentRecipient ? {
                         id: currentRecipient.id,
-                        name: currentRecipient.full_name,
+                        name: currentRecipient.full_name || 'Utilisateur',
                         avatar: currentRecipient.avatar_url
                     } : undefined}
                     conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
                     groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
                     groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
-                    groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
+                    groupMembers={activeCall.mode === 'group' ? groupMembers.map(m => ({ ...m, full_name: m.full_name || 'Membre' })) : undefined}
                     isIncoming={activeCall.isIncoming}
                     onEnd={() => { setActiveCall(null); if (activeCall?.mode === 'group') endGroupMeeting(); }}
                 />
