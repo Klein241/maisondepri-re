@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Send, ArrowLeft, Users, Search, MoreVertical, Phone, Video,
@@ -295,6 +295,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         id: string; type: 'poll' | 'announcement' | 'verse' | 'program' | 'event';
         count: number; label: string; groupId: string;
     }>>([]);
+    // Which section of GroupToolsPanel to open when clicking a pinned notif
+    const [groupToolsSection, setGroupToolsSection] = useState<'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | 'program' | null>(null);
 
     // Point 9: Emoji reactions + threaded comments
     const [messageReactions, setMessageReactions] = useState<Record<string, Record<string, string[]>>>({});
@@ -886,10 +888,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     };
 
     const loadMessages = async (type: 'conversation' | 'group', id: string) => {
-        setMessages([]); // Clear previous messages immediately
         setIsLoading(true);
         try {
             if (type === 'conversation') {
+                setMessages([]); // Clear for conversations (fast load)
                 // id here is the conversation_id (from conversations table)
                 const { data, error } = await supabase
                     .from('direct_messages')
@@ -928,18 +930,45 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     .eq('is_read', false)
                     .then(() => { });
             } else {
-                // Load group messages via server API (bypasses RLS)
-                const response = await fetch(`/api/group-messages?groupId=${id}`);
-                const result = await response.json();
+                // Load group messages via server API (bypasses RLS, no PostgREST joins)
+                let groupMsgs: any[] = [];
+                try {
+                    const response = await fetch(`/api/group-messages?groupId=${id}`);
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error);
+                    groupMsgs = (result.messages || []).map((m: any) => ({
+                        ...m,
+                        sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
+                        sender_id: m.user_id,
+                        is_read: true
+                    }));
+                } catch (apiErr) {
+                    console.warn('[loadMessages] API route failed, trying direct query:', apiErr);
+                    // Fallback: direct query WITHOUT PostgREST joins
+                    const { data: rawMsgs } = await supabase
+                        .from('prayer_group_messages')
+                        .select('id, group_id, user_id, content, type, voice_url, voice_duration, created_at')
+                        .eq('group_id', id)
+                        .order('created_at', { ascending: true });
 
-                if (!response.ok) throw new Error(result.error);
-
-                const groupMsgs = (result.messages || []).map((m: any) => ({
-                    ...m,
-                    sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
-                    sender_id: m.user_id,
-                    is_read: true
-                }));
+                    const msgs = rawMsgs || [];
+                    // Batch fetch profiles
+                    const uids = [...new Set(msgs.map(m => m.user_id))];
+                    const profileMap = new Map<string, any>();
+                    if (uids.length > 0) {
+                        const { data: profiles } = await supabase
+                            .from('profiles')
+                            .select('id, full_name, avatar_url')
+                            .in('id', uids);
+                        (profiles || []).forEach(p => profileMap.set(p.id, p));
+                    }
+                    groupMsgs = msgs.map(m => ({
+                        ...m,
+                        sender: profileMap.get(m.user_id) || { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
+                        sender_id: m.user_id,
+                        is_read: true
+                    }));
+                }
                 setMessages(groupMsgs);
                 // Load reactions, comments, notifications, game session, and active meeting for this group
                 loadReactions(id);
@@ -1107,18 +1136,21 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     conversationId: selectedConversation.id,
                 });
             } else if (view === 'group' && selectedGroup) {
-                const { error } = await supabase
-                    .from('prayer_group_messages')
-                    .insert({
-                        group_id: selectedGroup.id,
-                        user_id: user.id,
+                // Use API route to bypass RLS for group voice messages
+                const response = await fetch('/api/group-messages', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        groupId: selectedGroup.id,
+                        userId: user.id,
                         content: '🎤 Message vocal',
                         type: 'voice',
-                        voice_url: publicUrl,
-                        voice_duration: duration
-                    });
-
-                if (error) throw error;
+                        voiceUrl: publicUrl,
+                        voiceDuration: duration
+                    })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error);
             }
 
             toast.success('Message vocal envoyé!');
@@ -1275,7 +1307,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     }));
                 });
             } catch { }
-        }, 5000);
+        }, 8000);
     };
 
     // Effect to handle deferred group opening (runs after loadMessages/loadGroupMembers are defined)
@@ -1295,29 +1327,27 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 setPinnedPrayer(null);
             }
 
-            // Start polling fallback for group messages
+            // Start polling fallback for group messages via API (no broken joins)
             if (groupPollRef.current) clearInterval(groupPollRef.current);
             groupPollRef.current = setInterval(async () => {
                 try {
-                    const { data, error } = await supabase
-                        .from('prayer_group_messages')
-                        .select(`*, sender:user_id (id, full_name, avatar_url)`)
-                        .eq('group_id', gId)
-                        .order('created_at', { ascending: true });
-                    if (!error && data) {
-                        setMessages(prev => {
-                            const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
-                            const newLastId = data.length > 0 ? data[data.length - 1].id : null;
-                            if (prevLastId === newLastId && data.length === prev.length) return prev;
-                            return data.map((m: any) => ({
-                                ...m,
-                                sender_id: m.user_id,
-                                is_read: true
-                            }));
-                        });
-                    }
+                    const response = await fetch(`/api/group-messages?groupId=${gId}`);
+                    if (!response.ok) return;
+                    const result = await response.json();
+                    const data = result.messages || [];
+                    setMessages(prev => {
+                        const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
+                        const newLastId = data.length > 0 ? data[data.length - 1].id : null;
+                        if (prevLastId === newLastId && data.length === prev.length) return prev;
+                        return data.map((m: any) => ({
+                            ...m,
+                            sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
+                            sender_id: m.user_id,
+                            is_read: true
+                        }));
+                    });
                 } catch { }
-            }, 3000);
+            }, 8000);
         }
     }, [selectedGroup, view]);
 
@@ -1659,61 +1689,195 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         } catch { setPinnedNotifications([]); }
     }, [user?.id]);
 
-    const dismissNotification = (notifId: string, groupId: string) => {
+
+    // =====================================================
+    // POINT 4: Group Notification System (Pinned Icons)
+    // =====================================================
+
+    // Add a notification to this user's local state + localStorage
+    const addPinnedNotification = useCallback((
+        groupId: string,
+        type: 'poll' | 'announcement' | 'verse' | 'program' | 'event',
+        label: string,
+        notifId: string
+    ) => {
+        setPinnedNotifications(prev => {
+            // Check if we already have this exact notification ID (avoid duplicates)
+            if (prev.some(n => n.id === notifId)) return prev;
+            const existing = prev.find(n => n.type === type && n.groupId === groupId);
+            let updated: typeof prev;
+            if (existing) {
+                // Accumulate count for same type
+                updated = prev.map(n =>
+                    n.type === type && n.groupId === groupId
+                        ? { ...n, count: n.count + 1, label, id: notifId }
+                        : n
+                );
+            } else {
+                updated = [...prev, { id: notifId, type, label, count: 1, groupId }];
+            }
+            localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
+            return updated;
+        });
+    }, [user?.id]);
+
+    // Admin broadcasts a notification to all group members via Supabase realtime
+    const broadcastGroupNotification = useCallback(async (
+        groupId: string,
+        type: 'poll' | 'announcement' | 'verse' | 'program' | 'event',
+        label: string
+    ) => {
+        if (!user || !selectedGroup) return;
+        const notifId = `${type}_${Date.now()}`;
+        const payload = { id: notifId, type, label, groupId, publisherId: user.id };
+
+        // Broadcast to all members via Supabase channel
+        const ch = supabase.channel(`group_notifs_${groupId}`, {
+            config: { broadcast: { self: true } }
+        });
+        await ch.subscribe();
+        ch.send({ type: 'broadcast', event: 'new-notification', payload });
+        setTimeout(() => supabase.removeChannel(ch), 2000);
+
+        // Also persist to localStorage for members who are offline
+        // We store the "global" notification list (for offline members to pick up on next load)
+        try {
+            const stored = localStorage.getItem(`group_notifs_global_${groupId}`);
+            const globalList = stored ? JSON.parse(stored) : [];
+            globalList.push(payload);
+            localStorage.setItem(`group_notifs_global_${groupId}`, JSON.stringify(globalList));
+        } catch { /* ignore */ }
+    }, [user, selectedGroup]);
+
+    // Admin unpins a notification for ALL members
+    const unpinNotificationForAll = useCallback(async (
+        type: 'poll' | 'announcement' | 'verse' | 'program' | 'event',
+        groupId: string
+    ) => {
+        if (!selectedGroup) return;
+        // Remove from global list
+        try {
+            const stored = localStorage.getItem(`group_notifs_global_${groupId}`);
+            if (stored) {
+                const globalList = JSON.parse(stored).filter((n: any) => n.type !== type);
+                localStorage.setItem(`group_notifs_global_${groupId}`, JSON.stringify(globalList));
+            }
+        } catch { /* ignore */ }
+
+        // Broadcast unpin to all members
+        const ch = supabase.channel(`group_notifs_${groupId}`, {
+            config: { broadcast: { self: true } }
+        });
+        await ch.subscribe();
+        ch.send({ type: 'broadcast', event: 'unpin-notification', payload: { type, groupId } });
+        setTimeout(() => supabase.removeChannel(ch), 2000);
+    }, [selectedGroup]);
+
+    // Member dismisses a notification for themselves only
+    const dismissNotification = useCallback((notifId: string, groupId: string) => {
         setPinnedNotifications(prev => {
             const updated = prev.filter(n => n.id !== notifId);
             localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
             return updated;
         });
-    };
+    }, [user?.id]);
 
-    // Called when admin publishes content — sends a system-type notification to all group members
-    const broadcastGroupNotification = useCallback(async (
-        groupId: string, type: 'poll' | 'announcement' | 'verse' | 'program' | 'event', label: string
-    ) => {
-        if (!user || !selectedGroup) return;
-        const notifId = `${type}_${Date.now()}`;
-        const notifContent = `__NOTIF__${JSON.stringify({ id: notifId, type, label })}`;
-        try {
-            // Use API route to bypass RLS
-            await fetch('/api/group-messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    groupId,
-                    userId: user.id,
-                    content: notifContent,
-                    type: 'text'
-                })
+    // Listen for realtime notification broadcasts when in a group
+    useEffect(() => {
+        if (view !== 'group' || !selectedGroup) return;
+        const gId = selectedGroup.id;
+
+        // Load offline notifications (published while user was away)
+        const loadOfflineNotifs = () => {
+            try {
+                const dismissed = localStorage.getItem(`group_notifs_${gId}_${user?.id}`);
+                const dismissedList: any[] = dismissed ? JSON.parse(dismissed) : [];
+                const dismissedIds = new Set(dismissedList.map((n: any) => n.id));
+
+                const stored = localStorage.getItem(`group_notifs_global_${gId}`);
+                if (stored) {
+                    const globalList: any[] = JSON.parse(stored);
+                    // Only show notifications not yet dismissed by this user
+                    const toShow = globalList.filter((n: any) => !dismissedIds.has(n.id));
+                    if (toShow.length > 0) {
+                        setPinnedNotifications(prev => {
+                            let updated = [...prev];
+                            for (const n of toShow) {
+                                if (updated.some(p => p.id === n.id)) continue;
+                                const existing = updated.find(p => p.type === n.type && p.groupId === gId);
+                                if (existing) {
+                                    updated = updated.map(p =>
+                                        p.type === n.type && p.groupId === gId
+                                            ? { ...p, count: p.count + 1, label: n.label, id: n.id }
+                                            : p
+                                    );
+                                } else {
+                                    updated.push({ id: n.id, type: n.type, label: n.label, count: 1, groupId: gId });
+                                }
+                            }
+                            return updated;
+                        });
+                    }
+                }
+            } catch { /* ignore */ }
+        };
+
+        loadOfflineNotifs();
+
+        // Subscribe to realtime notifications
+        const ch = supabase.channel(`group_notifs_${gId}`, {
+            config: { broadcast: { self: false } }
+        });
+
+        ch.on('broadcast', { event: 'new-notification' }, ({ payload }) => {
+            if (payload.publisherId === user?.id) return; // Admin already sees it locally
+            addPinnedNotification(gId, payload.type, payload.label, payload.id);
+            // Show toast with action to open the tool
+            const typeLabels: Record<string, string> = {
+                poll: '📊 Nouveau sondage',
+                announcement: '📢 Nouvelle annonce',
+                verse: '📖 Verset du jour',
+                program: '📋 Programme publié',
+                event: '📅 Nouvel événement',
+            };
+            toast.info(typeLabels[payload.type] || '🔔 Nouvelle notification', {
+                description: payload.label,
+                action: {
+                    label: 'Voir',
+                    onClick: () => {
+                        const sectionMap: Record<string, any> = {
+                            poll: 'polls', announcement: 'announcement',
+                            verse: 'verse', program: 'program', event: 'events'
+                        };
+                        setGroupToolsSection(sectionMap[payload.type] || null);
+                        setShowGroupTools(true);
+                    }
+                }
             });
-        } catch (e) {
-            console.error('Error broadcasting notification:', e);
-        }
-    }, [user, selectedGroup]);
+        });
 
-    // Process incoming notifications from group messages
+        ch.on('broadcast', { event: 'unpin-notification' }, ({ payload }) => {
+            // Admin unpinned — remove from everyone's view
+            setPinnedNotifications(prev => {
+                const updated = prev.filter(n => !(n.type === payload.type && n.groupId === payload.groupId));
+                localStorage.setItem(`group_notifs_${gId}_${user?.id}`, JSON.stringify(updated));
+                return updated;
+            });
+        });
+
+        ch.subscribe();
+        return () => { supabase.removeChannel(ch); };
+    }, [view, selectedGroup?.id, user?.id, addPinnedNotification]);
+
+    // Process incoming notifications from group messages (legacy support)
     const processNotificationMessage = useCallback((content: string, groupId: string) => {
         if (!content.startsWith('__NOTIF__')) return false;
         try {
             const data = JSON.parse(content.replace('__NOTIF__', ''));
-            setPinnedNotifications(prev => {
-                const existing = prev.find(n => n.type === data.type && n.groupId === groupId);
-                let updated;
-                if (existing) {
-                    updated = prev.map(n =>
-                        n.type === data.type && n.groupId === groupId
-                            ? { ...n, count: n.count + 1, id: data.id }
-                            : n
-                    );
-                } else {
-                    updated = [...prev, { ...data, count: 1, groupId }];
-                }
-                localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
-                return updated;
-            });
+            addPinnedNotification(groupId, data.type, data.label, data.id);
             return true;
         } catch { return false; }
-    }, [user?.id]);
+    }, [addPinnedNotification]);
 
     // =====================================================
     // POINT 9: Persistent Emoji Reactions + Threaded Comments
@@ -2443,6 +2607,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             setFastingTheme('');
             setFastingDays([]);
             toast.success('Programme de jeûne partagé !');
+            broadcastGroupNotification(selectedGroup.id, 'program', `Programme: ${fastingTheme.slice(0, 40)}`);
         } catch { toast.error('Erreur lors du partage'); }
     };
 
@@ -2473,6 +2638,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             setShowAnnouncementTool(false);
             setAnnouncementText('');
             toast.success('Annonce envoyée !');
+            broadcastGroupNotification(selectedGroup.id, 'announcement', `Annonce: ${announcementText.trim().slice(0, 40)}`);
         } catch { toast.error("Erreur lors de l'envoi"); }
     };
 
@@ -2544,6 +2710,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             }
             setShowEventTool(false);
             toast.success('Événement planifié et partagé !');
+            broadcastGroupNotification(selectedGroup.id, 'event', `Événement: ${eventTitle.trim().slice(0, 40)}`);
         } catch { toast.error("Erreur lors du partage"); }
     };
 
@@ -3266,39 +3433,105 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
 
             {/* Point 4: Pinned Notification Icons Bar */}
             {view === 'group' && selectedGroup && pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).length > 0 && (
-                <div className="mx-2 sm:mx-4 mt-2 flex flex-wrap gap-1.5">
+                <div className="mx-2 sm:mx-4 mt-2 flex flex-wrap gap-2">
                     {pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).map(notif => {
-                        const icons: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
-                            poll: { icon: <BarChart3 className="h-3.5 w-3.5" />, color: 'text-purple-400', bg: 'bg-purple-500/10 border-purple-500/30' },
-                            announcement: { icon: <Megaphone className="h-3.5 w-3.5" />, color: 'text-red-400', bg: 'bg-red-500/10 border-red-500/30' },
-                            verse: { icon: <BookOpen className="h-3.5 w-3.5" />, color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/30' },
-                            program: { icon: <CalendarDays className="h-3.5 w-3.5" />, color: 'text-orange-400', bg: 'bg-orange-500/10 border-orange-500/30' },
-                            event: { icon: <Calendar className="h-3.5 w-3.5" />, color: 'text-blue-400', bg: 'bg-blue-500/10 border-blue-500/30' },
+                        const typeConfig: Record<string, {
+                            icon: React.ReactNode; color: string; bg: string; border: string;
+                            label: string; section: 'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | 'program';
+                        }> = {
+                            poll: {
+                                icon: <BarChart3 className="h-4 w-4" />,
+                                color: 'text-purple-300', bg: 'bg-purple-600/20', border: 'border-purple-500/40',
+                                label: 'Sondage', section: 'polls'
+                            },
+                            announcement: {
+                                icon: <Megaphone className="h-4 w-4" />,
+                                color: 'text-rose-300', bg: 'bg-rose-600/20', border: 'border-rose-500/40',
+                                label: 'Annonce', section: 'announcement'
+                            },
+                            verse: {
+                                icon: <BookOpen className="h-4 w-4" />,
+                                color: 'text-emerald-300', bg: 'bg-emerald-600/20', border: 'border-emerald-500/40',
+                                label: 'Verset', section: 'verse'
+                            },
+                            program: {
+                                icon: <CalendarDays className="h-4 w-4" />,
+                                color: 'text-orange-300', bg: 'bg-orange-600/20', border: 'border-orange-500/40',
+                                label: 'Programme', section: 'program'
+                            },
+                            event: {
+                                icon: <Calendar className="h-4 w-4" />,
+                                color: 'text-sky-300', bg: 'bg-sky-600/20', border: 'border-sky-500/40',
+                                label: 'Événement', section: 'events'
+                            },
                         };
-                        const style = icons[notif.type] || icons.announcement;
+                        const cfg = typeConfig[notif.type] || typeConfig.announcement;
                         return (
-                            <motion.button
+                            <motion.div
                                 key={notif.id}
-                                initial={{ scale: 0 }}
-                                animate={{ scale: [1, 1.15, 1] }}
-                                transition={{ repeat: Infinity, duration: 2 }}
-                                onClick={() => {
-                                    dismissNotification(notif.id, selectedGroup!.id);
-                                    if (notif.type === 'poll') setShowGroupTools(true);
-                                    toast.info(`📢 ${notif.label}`);
-                                }}
+                                initial={{ scale: 0, opacity: 0 }}
+                                animate={{ scale: 1, opacity: 1 }}
+                                exit={{ scale: 0, opacity: 0 }}
                                 className={cn(
-                                    "flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] font-medium cursor-pointer transition-all hover:scale-105",
-                                    style.bg, style.color
+                                    "flex items-center gap-1.5 pl-2 pr-1 py-1.5 rounded-xl border text-xs font-semibold relative group",
+                                    cfg.bg, cfg.border, cfg.color
                                 )}
                             >
-                                {style.icon}
-                                <span className="truncate max-w-[80px]">{notif.label}</span>
-                                {notif.count > 1 && (
-                                    <Badge className="h-4 px-1 text-[8px] bg-white/20 text-white">{notif.count}</Badge>
+                                {/* Pulsing dot */}
+                                <motion.div
+                                    animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
+                                    transition={{ repeat: Infinity, duration: 1.5 }}
+                                    className="w-1.5 h-1.5 rounded-full bg-current shrink-0"
+                                />
+
+                                {/* Clickable area → opens the tool section */}
+                                <button
+                                    onClick={() => {
+                                        // Dismiss for this user
+                                        dismissNotification(notif.id, selectedGroup!.id);
+                                        // Open the group settings panel at the right section
+                                        setGroupToolsSection(cfg.section);
+                                        setShowGroupTools(true);
+                                    }}
+                                    className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
+                                    title={`Ouvrir ${cfg.label}`}
+                                >
+                                    {cfg.icon}
+                                    <span>{cfg.label}</span>
+                                    {/* Count badge */}
+                                    <span className={cn(
+                                        "inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-current/20 border border-current/30"
+                                    )}>
+                                        {notif.count}
+                                    </span>
+                                </button>
+
+                                {/* Member self-dismiss (X) */}
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        dismissNotification(notif.id, selectedGroup!.id);
+                                    }}
+                                    className="ml-0.5 p-0.5 rounded-full hover:bg-white/10 opacity-50 hover:opacity-100 transition-all"
+                                    title="Masquer pour moi"
+                                >
+                                    <X className="h-3 w-3" />
+                                </button>
+
+                                {/* Admin unpin-for-all button */}
+                                {isCreatorOrAdmin && (
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            unpinNotificationForAll(notif.type, selectedGroup!.id);
+                                        }}
+                                        className="p-0.5 rounded-full hover:bg-red-500/20 opacity-0 group-hover:opacity-100 transition-all text-red-400"
+                                        title="Détacher pour tous"
+                                    >
+                                        <Pin className="h-3 w-3" />
+                                    </button>
                                 )}
-                                <X className="h-3 w-3 ml-0.5 opacity-50 hover:opacity-100" />
-                            </motion.button>
+                            </motion.div>
                         );
                     })}
                 </div>
@@ -3377,7 +3610,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             )}
 
             {/* Messages */}
-            <ScrollArea className="flex-1 p-2 sm:p-4">
+            <ScrollArea className="flex-1 p-2 sm:p-4" style={{ minHeight: 0 }}>
                 {isLoading ? (
                     <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
@@ -3696,7 +3929,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             </div>
 
             {/* Group Tools Dialog - Full Integration */}
-            <Dialog open={showGroupTools} onOpenChange={setShowGroupTools}>
+            <Dialog open={showGroupTools} onOpenChange={(open) => { setShowGroupTools(open); if (!open) setGroupToolsSection(null); }}>
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
                     <DialogHeader className="p-4 pb-0">
                         <DialogTitle className="flex items-center gap-2 text-white">
@@ -3737,6 +3970,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                 isCreator={!!isCreatorOrAdmin}
                                 isOpen={true}
                                 onClose={() => { }}
+                                onNotify={(type, label) => broadcastGroupNotification(currentGroup.id, type, label)}
+                                initialSection={groupToolsSection}
                             />
 
                             {/* Google Calendar Integration */}

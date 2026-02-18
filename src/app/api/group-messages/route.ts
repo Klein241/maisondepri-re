@@ -17,7 +17,7 @@ function getSupabaseAdmin() {
     });
 }
 
-// GET: Load group messages (bypasses RLS)
+// GET: Load group messages (bypasses RLS) - ROBUST: no PostgREST join
 export async function GET(request: NextRequest) {
     try {
         const { searchParams } = new URL(request.url);
@@ -29,22 +29,45 @@ export async function GET(request: NextRequest) {
 
         const supabaseAdmin = getSupabaseAdmin();
 
-        // Load messages with profile join - uses service_role so RLS is bypassed
-        const { data, error } = await supabaseAdmin
+        // Step 1: Load messages WITHOUT join (avoids PostgREST FK issues)
+        const { data: rawMessages, error: msgError } = await supabaseAdmin
             .from('prayer_group_messages')
-            .select(`
-                id, group_id, user_id, content, type, voice_url, voice_duration, created_at,
-                profiles:user_id(full_name, avatar_url)
-            `)
+            .select('id, group_id, user_id, content, type, voice_url, voice_duration, created_at')
             .eq('group_id', groupId)
             .order('created_at', { ascending: true });
 
-        if (error) {
-            console.error('Error loading group messages:', error);
-            return NextResponse.json({ error: error.message }, { status: 500 });
+        if (msgError) {
+            console.error('Error loading group messages:', msgError);
+            return NextResponse.json({ error: msgError.message }, { status: 500 });
         }
 
-        return NextResponse.json({ messages: data || [] });
+        const messages = rawMessages || [];
+
+        if (messages.length === 0) {
+            return NextResponse.json({ messages: [] });
+        }
+
+        // Step 2: Batch-fetch all unique user profiles
+        const uniqueUserIds = [...new Set(messages.map(m => m.user_id))];
+        const { data: profiles } = await supabaseAdmin
+            .from('profiles')
+            .select('id, full_name, avatar_url')
+            .in('id', uniqueUserIds);
+
+        const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+        // Step 3: Merge profiles into messages
+        const enrichedMessages = messages.map(m => {
+            const profile = profileMap.get(m.user_id);
+            return {
+                ...m,
+                profiles: profile
+                    ? { full_name: profile.full_name, avatar_url: profile.avatar_url }
+                    : { full_name: 'Utilisateur', avatar_url: null }
+            };
+        });
+
+        return NextResponse.json({ messages: enrichedMessages });
 
     } catch (error: any) {
         console.error('API group-messages error:', error);
@@ -55,7 +78,7 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// POST: Send group message (bypasses RLS)
+// POST: Send group message (bypasses RLS) - ROBUST: no PostgREST join
 export async function POST(request: NextRequest) {
     try {
         const body = await request.json();
@@ -77,13 +100,11 @@ export async function POST(request: NextRequest) {
         if (voiceUrl) insertData.voice_url = voiceUrl;
         if (voiceDuration) insertData.voice_duration = voiceDuration;
 
+        // Insert WITHOUT join
         const { data, error } = await supabaseAdmin
             .from('prayer_group_messages')
             .insert(insertData)
-            .select(`
-                id, group_id, user_id, content, type, voice_url, voice_duration, created_at,
-                profiles:user_id(full_name, avatar_url)
-            `)
+            .select('id, group_id, user_id, content, type, voice_url, voice_duration, created_at')
             .single();
 
         if (error) {
@@ -91,7 +112,19 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({ error: error.message }, { status: 500 });
         }
 
-        return NextResponse.json({ message: data });
+        // Fetch the sender profile separately
+        const { data: profile } = await supabaseAdmin
+            .from('profiles')
+            .select('full_name, avatar_url')
+            .eq('id', userId)
+            .single();
+
+        const enrichedMessage = {
+            ...data,
+            profiles: profile || { full_name: 'Utilisateur', avatar_url: null }
+        };
+
+        return NextResponse.json({ message: enrichedMessage });
 
     } catch (error: any) {
         console.error('API group-messages POST error:', error);

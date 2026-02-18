@@ -50,9 +50,10 @@ interface GroupPollWidgetProps {
     userId: string;
     userName: string;
     isCreator: boolean;
+    onNotify?: (type: 'poll' | 'announcement' | 'verse' | 'program' | 'event', label: string) => void;
 }
 
-export function GroupPollWidget({ groupId, userId, userName, isCreator }: GroupPollWidgetProps) {
+export function GroupPollWidget({ groupId, userId, userName, isCreator, onNotify }: GroupPollWidgetProps) {
     const [polls, setPolls] = useState<GroupPoll[]>([]);
     const [showCreatePoll, setShowCreatePoll] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -135,6 +136,7 @@ export function GroupPollWidget({ groupId, userId, userName, isCreator }: GroupP
             if (error) throw error;
 
             toast.success('Sondage créé ! 📊');
+            onNotify?.('poll', `Sondage: ${newQuestion.trim().slice(0, 40)}`);
             setNewQuestion('');
             setNewOptions(['', '']);
             setShowCreatePoll(false);
@@ -593,9 +595,10 @@ interface GroupEventsWidgetProps {
     userId: string;
     userName: string;
     isCreator: boolean;
+    onNotify?: (type: 'poll' | 'announcement' | 'verse' | 'program' | 'event', label: string) => void;
 }
 
-export function GroupEventsWidget({ groupId, userId, userName, isCreator }: GroupEventsWidgetProps) {
+export function GroupEventsWidget({ groupId, userId, userName, isCreator, onNotify }: GroupEventsWidgetProps) {
     const [events, setEvents] = useState<GroupEvent[]>([]);
     const [showCreate, setShowCreate] = useState(false);
     const [creating, setCreating] = useState(false);
@@ -650,6 +653,7 @@ export function GroupEventsWidget({ groupId, userId, userName, isCreator }: Grou
             if (error) throw error;
 
             toast.success('Événement créé ! 📅');
+            onNotify?.('event', `Événement: ${newTitle.trim().slice(0, 40)}`);
             setNewTitle('');
             setNewDescription('');
             setShowCreate(false);
@@ -860,9 +864,11 @@ interface GroupToolsPanelProps {
     isCreator: boolean;
     onClose: () => void;
     isOpen: boolean;
+    onNotify?: (type: 'poll' | 'announcement' | 'verse' | 'program' | 'event', label: string) => void;
+    initialSection?: 'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | 'program' | null;
 }
 
-export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose, isOpen }: GroupToolsPanelProps) {
+export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose, isOpen, onNotify, initialSection }: GroupToolsPanelProps) {
     const [activeSection, setActiveSection] = useState<'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | 'program' | null>(null);
     const [dailyVerse, setDailyVerse] = useState('');
     const [announcement, setAnnouncement] = useState('');
@@ -895,12 +901,20 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
         }
     }, [isOpen, groupId]);
 
+    // Open directly to the section requested by a pinned notification click
+    useEffect(() => {
+        if (initialSection) {
+            setActiveSection(initialSection);
+        }
+    }, [initialSection]);
+
     const allProgramDays = [...programData, ...customDays];
 
     const publishProgram = (dayNum: number) => {
         localStorage.setItem(`group_program_day_${groupId}`, String(dayNum));
         setPublishedDay(dayNum);
         toast.success(`Programme du Jour ${dayNum} publié ! 📋`);
+        onNotify?.('program', `Programme Jour ${dayNum}`);
     };
 
     const addCustomDay = () => {
@@ -933,6 +947,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
         setSavedVerse(dailyVerse.trim());
         setDailyVerse('');
         toast.success('Verset du jour épinglé ! 📖');
+        onNotify?.('verse', `Verset: ${dailyVerse.trim().slice(0, 40)}`);
     };
 
     const saveAnnouncement = () => {
@@ -941,6 +956,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
         setSavedAnnouncement(announcement.trim());
         setAnnouncement('');
         toast.success('Annonce publiée ! 📢');
+        onNotify?.('announcement', `Annonce: ${announcement.trim().slice(0, 40)}`);
     };
 
     const tools = [
@@ -1061,13 +1077,13 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                 </div>
 
                                 {activeSection === 'polls' && (
-                                    <GroupPollWidget groupId={groupId} userId={userId} userName={userName} isCreator={isCreator} />
+                                    <GroupPollWidget groupId={groupId} userId={userId} userName={userName} isCreator={isCreator} onNotify={onNotify} />
                                 )}
                                 {activeSection === 'prayer' && (
                                     <CollectivePrayerCounter groupId={groupId} userId={userId} userName={userName} />
                                 )}
                                 {activeSection === 'events' && (
-                                    <GroupEventsWidget groupId={groupId} userId={userId} userName={userName} isCreator={isCreator} />
+                                    <GroupEventsWidget groupId={groupId} userId={userId} userName={userName} isCreator={isCreator} onNotify={onNotify} />
                                 )}
                                 {activeSection === 'verse' && (
                                     <div className="space-y-3">

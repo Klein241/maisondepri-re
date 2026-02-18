@@ -442,18 +442,30 @@ export const socialService = {
 
     async getGroupMessages(groupId: string, limit: number = 50) {
         try {
-            const { data, error } = await supabase
+            // Fetch messages without embedded join (avoids PostgREST FK issues)
+            const { data: rawMsgs, error } = await supabase
                 .from('prayer_group_messages')
-                .select(`
-                    *,
-                    profiles:user_id (full_name, avatar_url)
-                `)
+                .select('id, group_id, user_id, content, type, voice_url, voice_duration, created_at, is_pinned')
                 .eq('group_id', groupId)
                 .order('created_at', { ascending: true })
                 .limit(limit);
 
             if (error) throw error;
-            return data || [];
+            const msgs = rawMsgs || [];
+            if (msgs.length === 0) return [];
+
+            // Batch fetch profiles
+            const uids = [...new Set(msgs.map(m => m.user_id))];
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url')
+                .in('id', uids);
+
+            const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+            return msgs.map(m => ({
+                ...m,
+                profiles: profileMap.get(m.user_id) || { full_name: 'Utilisateur', avatar_url: null }
+            }));
         } catch (e) {
             console.error('Error fetching messages:', e);
             return [];
