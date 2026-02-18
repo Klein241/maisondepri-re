@@ -14,7 +14,13 @@ import {
     Facebook,
     X,
     ExternalLink,
-    CalendarDays
+    CalendarDays,
+    UserPlus,
+    Users,
+    Heart,
+    MessageSquare,
+    Sparkles,
+    BookOpen
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -299,6 +305,48 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                         <p className="text-right text-purple-400 text-sm font-bold">
                             — {todayData.bibleReading.reference}
                         </p>
+                    </motion.div>
+
+                    {/* Community Shortcuts */}
+                    <motion.div
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.6 }}
+                    >
+                        <h3 className="text-sm font-bold text-slate-400 mb-3 uppercase tracking-wider">Raccourcis communauté</h3>
+                        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+                            {[
+                                { icon: <UserPlus className="w-5 h-5" />, label: 'Retrouver vos amis', color: 'from-pink-600 to-rose-600' },
+                                { icon: <Users className="w-5 h-5" />, label: 'Groupes', color: 'from-emerald-600 to-teal-600' },
+                                { icon: <CalendarDays className="w-5 h-5" />, label: 'Événement', color: 'from-amber-600 to-orange-600' },
+                                { icon: <Gamepad2 className="w-5 h-5" />, label: 'Jeux Bibliques', color: 'from-amber-500 to-orange-500' },
+                                { icon: <Heart className="w-5 h-5" />, label: 'Prières', color: 'from-indigo-600 to-purple-600' },
+                                { icon: <Sparkles className="w-5 h-5" />, label: 'Témoignages', color: 'from-violet-600 to-fuchsia-600' },
+                                { icon: <MessageSquare className="w-5 h-5" />, label: 'Chat', color: 'from-sky-600 to-cyan-600' },
+                            ].map((item, i) => (
+                                <motion.button
+                                    key={item.label}
+                                    initial={{ opacity: 0, y: 10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.65 + i * 0.05 }}
+                                    className={cn(
+                                        "flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-gradient-to-br text-white border border-white/10 hover:scale-105 transition-transform",
+                                        item.color
+                                    )}
+                                    onClick={() => {
+                                        if (item.label === 'Jeux Bibliques') {
+                                            setBibleViewTarget('games');
+                                            onNavigateTo('bible');
+                                        } else {
+                                            onNavigateTo('community');
+                                        }
+                                    }}
+                                >
+                                    {item.icon}
+                                    <span className="text-[10px] font-bold leading-tight text-center">{item.label}</span>
+                                </motion.button>
+                            ))}
+                        </div>
                     </motion.div>
                 </main>
 

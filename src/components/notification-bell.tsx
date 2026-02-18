@@ -279,10 +279,28 @@ export function NotificationBell() {
     };
 
     const markAllAsRead = () => {
-        setNotifications(prev => prev.map(n => ({ ...n, read: true })));
+        setNotifications(prev => {
+            const updated = prev.map(n => ({ ...n, read: true }));
+            if (user) {
+                // Merge with existing read IDs to prevent losing previously read items
+                const existingIds = JSON.parse(localStorage.getItem(`read_notifs_${user.id}`) || '[]');
+                const allIds = [...new Set([...existingIds, ...updated.map(n => n.id)])];
+                localStorage.setItem(`read_notifs_${user.id}`, JSON.stringify(allIds));
+                // Also persist the full updated notifications list
+                localStorage.setItem(`notifs_${user.id}`, JSON.stringify(updated.slice(0, 50)));
+            }
+            return updated;
+        });
+        setUnreadCount(0);
+
+        // Also mark all Supabase notifications as read in the DB
         if (user) {
-            const allIds = notifications.map(n => n.id);
-            localStorage.setItem(`read_notifs_${user.id}`, JSON.stringify(allIds));
+            supabase
+                .from('notifications')
+                .update({ is_read: true })
+                .eq('user_id', user.id)
+                .eq('is_read', false)
+                .then(() => { });
         }
     };
 

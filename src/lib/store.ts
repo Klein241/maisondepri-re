@@ -303,9 +303,59 @@ export const useAppStore = create<AppState>()(
             loadInitialData: async () => {
                 get().loadAppSettings();
                 const { user } = get();
-                if (!user) return;
 
                 try {
+                    // Load Prayers (public - accessible even without login)
+                    const { data: prayers } = await supabase
+                        .from('prayer_requests')
+                        .select('*, profiles(full_name, avatar_url)')
+                        .order('created_at', { ascending: false })
+                        .limit(20);
+
+                    if (prayers) {
+                        const formattedPrayers = prayers.map((p: any) => ({
+                            id: p.id,
+                            userId: p.user_id,
+                            userName: p.profiles?.full_name || 'Anonyme',
+                            userAvatar: p.profiles?.avatar_url,
+                            content: p.content,
+                            isAnonymous: p.is_anonymous,
+                            category: p.category,
+                            photos: p.photos,
+                            isAnswered: p.is_answered,
+                            answeredAt: p.answered_at,
+                            createdAt: p.created_at,
+                            prayerCount: p.prayer_count || 0,
+                            prayedBy: p.prayed_by || [],
+                        }));
+                        set({ prayerRequests: formattedPrayers });
+                    }
+
+                    // Load Testimonials (public)
+                    const { data: testimonials } = await supabase
+                        .from('testimonials')
+                        .select('*, profiles(full_name, avatar_url)')
+                        .eq('is_approved', true)
+                        .order('created_at', { ascending: false })
+                        .limit(20);
+
+                    if (testimonials) {
+                        const formattedTestimonials = testimonials.map((t: any) => ({
+                            id: t.id,
+                            userId: t.user_id,
+                            userName: t.profiles?.full_name || 'Utilisateur',
+                            userAvatar: t.profiles?.avatar_url,
+                            content: t.content,
+                            photos: t.photos || [],
+                            createdAt: t.created_at,
+                            likes: t.likes || 0,
+                            likedBy: t.liked_by || [],
+                        }));
+                        set({ testimonials: formattedTestimonials });
+                    }
+
+                    // User-specific data requires login
+                    if (!user) return;
                     // Load Progress
                     const { data: progressData } = await supabase
                         .from('user_progress')
@@ -340,54 +390,6 @@ export const useAppStore = create<AppState>()(
                         get().calculateStreak();
                     }
 
-                    // Load Prayers
-                    const { data: prayers } = await supabase
-                        .from('prayer_requests')
-                        .select('*, profiles(full_name, avatar_url)')
-                        .order('created_at', { ascending: false })
-                        .limit(20);
-
-                    if (prayers) {
-                        const formattedPrayers = prayers.map((p: any) => ({
-                            id: p.id,
-                            userId: p.user_id,
-                            userName: p.profiles?.full_name || 'Anonyme',
-                            userAvatar: p.profiles?.avatar_url,
-                            content: p.content,
-                            isAnonymous: p.is_anonymous,
-                            category: p.category,
-                            photos: p.photos,
-                            isAnswered: p.is_answered,
-                            answeredAt: p.answered_at,
-                            createdAt: p.created_at,
-                            prayerCount: p.prayer_count || 0,
-                            prayedBy: p.prayed_by || [],
-                        }));
-                        set({ prayerRequests: formattedPrayers });
-                    }
-
-                    // Load Testimonials
-                    const { data: testimonials } = await supabase
-                        .from('testimonials')
-                        .select('*, profiles(full_name, avatar_url)')
-                        .eq('is_approved', true)
-                        .order('created_at', { ascending: false })
-                        .limit(20);
-
-                    if (testimonials) {
-                        const formattedTestimonials = testimonials.map((t: any) => ({
-                            id: t.id,
-                            userId: t.user_id,
-                            userName: t.profiles?.full_name || 'Utilisateur',
-                            userAvatar: t.profiles?.avatar_url,
-                            content: t.content,
-                            photos: t.photos || [],
-                            createdAt: t.created_at,
-                            likes: t.likes || 0,
-                            likedBy: t.liked_by || [],
-                        }));
-                        set({ testimonials: formattedTestimonials });
-                    }
 
                 } catch (error) {
                     console.error('Error loading initial data', error);

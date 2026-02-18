@@ -1480,7 +1480,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     const urlRegex = /(https?:\/\/[^\s]+)/gi;
 
     // Render message content with clickable links and @mentions
-    const renderMessageContent = (content: string) => {
+    const renderMessageContent = (content: string, forceExpand = false) => {
         // First handle URLs
         const parts = content.split(urlRegex);
         const hasUrl = parts.length > 1;
@@ -1533,6 +1533,41 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     urlRegex.lastIndex = 0;
                     return <span key={i}>{renderWithFormatting(part)}</span>;
                 })}
+            </div>
+        );
+    };
+
+    // "Lire la suite" component for long messages
+    const ExpandableMessage = ({ content }: { content: string }) => {
+        const [expanded, setExpanded] = useState(false);
+        const MAX_LEN = 300;
+        const isLong = content.length > MAX_LEN;
+
+        if (!isLong || expanded) {
+            return (
+                <div>
+                    {renderMessageContent(content, true)}
+                    {isLong && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
+                            className="text-indigo-400 text-xs font-semibold mt-1 hover:underline"
+                        >
+                            Réduire
+                        </button>
+                    )}
+                </div>
+            );
+        }
+
+        return (
+            <div>
+                {renderMessageContent(content.slice(0, MAX_LEN) + '...', true)}
+                <button
+                    onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
+                    className="text-indigo-400 text-xs font-semibold mt-1 hover:underline"
+                >
+                    Lire la suite...
+                </button>
             </div>
         );
     };
@@ -3728,7 +3763,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                                     duration={msg.voice_duration}
                                                 />
                                             ) : (
-                                                renderMessageContent(msg.content)
+                                                <ExpandableMessage content={msg.content} />
                                             )}
 
                                             <div className="flex items-center justify-end gap-1 mt-1">

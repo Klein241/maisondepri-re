@@ -1793,7 +1793,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         onClick={() => requireAuth(() => setViewState('friends'))}
                                     >
                                         <UserPlus className="h-3.5 w-3.5" />
-                                        Amis
+                                        Retrouver vos amis
                                     </Button>
                                     <Button
                                         size="sm"
@@ -1949,7 +1949,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
                                 <TabsContent value="chat" className="mt-0 flex flex-col -mx-4">
-                                    <div className="relative flex-1" style={{ height: 'calc(100dvh - 240px)', minHeight: '400px' }}>
+                                    <div className="relative flex-1" style={{ height: 'calc(100dvh - 320px)', minHeight: '350px', maxHeight: '600px' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,

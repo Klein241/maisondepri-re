@@ -60,6 +60,8 @@ export function AuthListener() {
                 ensureProfile(session.user as any);
             } else {
                 setUser(null);
+                // Still load public data (prayers, testimonials) for guests
+                useAppStore.getState().loadInitialData();
             }
         };
 
