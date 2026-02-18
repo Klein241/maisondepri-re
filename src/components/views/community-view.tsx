@@ -990,15 +990,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             const { data, error } = await supabase
                 .from('prayer_group_messages')
                 .select(`
-                    *,
+                    id, group_id, user_id, content, type, voice_url, voice_duration, created_at,
                     profiles:user_id(full_name, avatar_url)
                 `)
                 .eq('group_id', groupId)
-                .order('created_at', { ascending: true })
-                .limit(100);
+                .order('created_at', { ascending: true });
 
-            if (!error && data) {
-                setGroupMessages(data);
+            if (error) {
+                console.error('Error loading group messages:', error);
+            } else {
+                setGroupMessages(data || []);
             }
         } catch (e) {
             console.error('Error loading group messages:', e);
@@ -1376,16 +1377,29 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         }
     };
 
-    // Setup real-time subscription for group messages
+    // Setup real-time subscription for group messages AND load initial messages
     useEffect(() => {
         if (viewState === 'group-detail' && selectedGroup) {
+            // ALWAYS load group messages when entering group-detail view
+            // This ensures new members see old messages immediately
+            const groupId = selectedGroup.id;
+            loadGroupMessages(groupId).then(() => {
+                // Auto-scroll to bottom after loading
+                requestAnimationFrame(() => {
+                    if (chatScrollRef.current) {
+                        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+                    }
+                });
+            });
+
+            // Setup real-time subscription for new messages
             const subscription = supabase
-                .channel(`group_rt_${selectedGroup.id}_${Date.now()}`)
+                .channel(`group_rt_${groupId}_${Date.now()}`)
                 .on('postgres_changes', {
                     event: 'INSERT',
                     schema: 'public',
                     table: 'prayer_group_messages',
-                    filter: `group_id=eq.${selectedGroup.id}`
+                    filter: `group_id=eq.${groupId}`
                 }, async (payload) => {
                     const newMsg = payload.new as any;
 
@@ -2380,7 +2394,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh] pb-0 max-w-4xl mx-auto w-full"
+                        className="fixed inset-0 z-10 flex flex-col bg-gradient-to-b from-[#0a0d14] to-[#0F1219]"
                     >
                         <header className="px-3 sm:px-6 pt-12 pb-4 border-b border-white/5">
                             <div className="flex items-center gap-2 sm:gap-4 mb-4">
@@ -2578,7 +2592,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         {/* Group Messages */}
                         <div
                             ref={chatScrollRef}
-                            className="flex-1 overflow-y-auto px-4 py-4 space-y-3 pb-4"
+                            className="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-3"
                         >
                             {loadingGroupMessages ? (
                                 <div className="flex justify-center py-12">
@@ -2604,10 +2618,9 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             )}
                         </div>
 
-                        {/* Message Input - Enhanced */}
                         {/* Message input - always visible for group members */}
                         {(
-                            <div className="px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] border-t border-white/10 bg-slate-900/95 backdrop-blur-md sticky bottom-0 z-30">
+                            <div className="shrink-0 px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom,0px))] border-t border-white/10 bg-slate-900/95 backdrop-blur-md">
                                 {/* Emoji Picker */}
                                 <div className="relative">
                                     <EmojiPicker

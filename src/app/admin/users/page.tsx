@@ -218,6 +218,33 @@ export default function UsersPage() {
         setIsSaving(false);
     };
 
+    const handleDeleteUser = async (userId: string, userName: string | null) => {
+        const confirmed = window.confirm(
+            `Êtes-vous sûr de vouloir supprimer définitivement l'utilisateur "${userName || 'Sans nom'}" ?\n\nCette action est irréversible et supprimera toutes ses données.`
+        );
+        if (!confirmed) return;
+
+        try {
+            const response = await fetch('/api/admin/delete-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || 'Erreur lors de la suppression');
+            }
+
+            toast.success(`Utilisateur "${userName || 'Sans nom'}" supprimé définitivement`);
+            fetchUsers();
+        } catch (e: any) {
+            console.error('Error deleting user:', e);
+            toast.error('Erreur: ' + (e.message || 'Impossible de supprimer'));
+        }
+    };
+
     const resetNewUser = () => {
         setNewUser({
             identifier: '',
@@ -643,6 +670,14 @@ export default function UsersPage() {
                                                                 Activer
                                                             </>
                                                         )}
+                                                    </DropdownMenuItem>
+                                                    <DropdownMenuSeparator />
+                                                    <DropdownMenuItem
+                                                        onClick={() => handleDeleteUser(user.id, user.full_name)}
+                                                        className="text-red-500 focus:text-red-500"
+                                                    >
+                                                        <Trash2 className="h-4 w-4 mr-2" />
+                                                        Supprimer définitivement
                                                     </DropdownMenuItem>
                                                 </DropdownMenuContent>
                                             </DropdownMenu>
