@@ -302,6 +302,7 @@ export async function initiateCall({
     callerAvatar,
     receiverId,
     callType,
+    conversationId,
     groupId,
     groupName,
 }: {
@@ -310,15 +311,19 @@ export async function initiateCall({
     callerAvatar?: string;
     receiverId: string;
     callType: 'video' | 'audio';
+    conversationId?: string;
     groupId?: string;
     groupName?: string;
 }): Promise<void> {
     try {
         // Signal the remote user that they have an incoming call
-        const remoteSignalChannel = supabase.channel(`call_signal_${receiverId}`, {
+        const channelName = `call_signal_${receiverId}`;
+        const remoteSignalChannel = supabase.channel(channelName, {
             config: { broadcast: { self: false } }
         });
         await remoteSignalChannel.subscribe();
+        // Wait for channel to be fully ready
+        await new Promise(resolve => setTimeout(resolve, 300));
         remoteSignalChannel.send({
             type: 'broadcast',
             event: 'incoming-call',
@@ -328,12 +333,13 @@ export async function initiateCall({
                 callerAvatar,
                 callType,
                 mode: groupId ? 'group' : 'private',
+                conversationId: conversationId || null,
                 groupId: groupId || null,
                 groupName: groupName || null,
             }
         });
         // Remove channel after a delay to let the message send
-        setTimeout(() => supabase.removeChannel(remoteSignalChannel), 2000);
+        setTimeout(() => supabase.removeChannel(remoteSignalChannel), 3000);
     } catch (e) {
         console.error('Error initiating call signal:', e);
     }

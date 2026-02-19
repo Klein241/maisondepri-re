@@ -6,15 +6,37 @@ import { Phone, PhoneOff, Mic, MicOff, Video, VideoOff, X, Loader2, Users, Volum
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { supabase } from '@/lib/supabase';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 
-// ICE servers for STUN/TURN
+// ICE servers for STUN/TURN — TURN is critical for NAT traversal
 const ICE_SERVERS: RTCConfiguration = {
     iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-    ]
+        // Free TURN servers from Open Relay (metered.ca)
+        {
+            urls: 'turn:a.relay.metered.ca:80',
+            username: 'e8dd65b92f6bce436e5d1345',
+            credential: 'dTSbp/tK+LKQbXmg',
+        },
+        {
+            urls: 'turn:a.relay.metered.ca:80?transport=tcp',
+            username: 'e8dd65b92f6bce436e5d1345',
+            credential: 'dTSbp/tK+LKQbXmg',
+        },
+        {
+            urls: 'turn:a.relay.metered.ca:443',
+            username: 'e8dd65b92f6bce436e5d1345',
+            credential: 'dTSbp/tK+LKQbXmg',
+        },
+        {
+            urls: 'turns:a.relay.metered.ca:443?transport=tcp',
+            username: 'e8dd65b92f6bce436e5d1345',
+            credential: 'dTSbp/tK+LKQbXmg',
+        },
+    ],
+    iceCandidatePoolSize: 10,
 };
 
 interface Participant {
@@ -27,19 +49,19 @@ interface Participant {
 
 interface WebRTCCallProps {
     user: { id: string; name: string; avatar?: string };
+    remoteUser?: {
+        id: string;
+        name: string;
+        avatar?: string;
+    };
     callType: 'audio' | 'video';
     mode: 'private' | 'group';
-    // For private calls
-    remoteUser?: { id: string; name: string; avatar?: string | null };
     conversationId?: string;
-    // For group calls
     groupId?: string;
     groupName?: string;
     groupMembers?: Array<{ id: string; full_name: string; avatar_url?: string | null }>;
-    // Incoming call data
     isIncoming?: boolean;
     incomingOffer?: RTCSessionDescriptionInit;
-    // Callbacks
     onEnd: () => void;
 }
 
@@ -63,14 +85,14 @@ export function WebRTCCall({
     const [participants, setParticipants] = useState<Participant[]>([]);
 
     const localStreamRef = useRef<MediaStream | null>(null);
+    const localVideoRef = useRef<HTMLVideoElement | null>(null);
     const peerConnectionsRef = useRef<Map<string, RTCPeerConnection>>(new Map());
-    const remoteAudioRefs = useRef<Map<string, HTMLAudioElement>>(new Map());
+    const remoteStreamsRef = useRef<Map<string, MediaStream>>(new Map());
+    const remoteVideoRefs = useRef<Map<string, HTMLVideoElement | HTMLAudioElement>>(new Map());
     const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const channelRef = useRef<any>(null);
-    const ringtoneRef = useRef<HTMLAudioElement | null>(null);
-
-    // Unique call ID
-    const callId = useRef(`call_${Date.now()}_${Math.random().toString(36).slice(2)}`).current;
+    const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map());
+    const mountedRef = useRef(true);
 
     // Format duration
     const formatDuration = (seconds: number) => {
@@ -83,15 +105,29 @@ export function WebRTCCall({
     const getUserMedia = useCallback(async () => {
         try {
             const constraints: MediaStreamConstraints = {
-                audio: true,
-                video: callType === 'video'
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true,
+                },
+                video: callType === 'video' ? {
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    facingMode: 'user',
+                } : false,
             };
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
             localStreamRef.current = stream;
+
+            // Show local video
+            if (localVideoRef.current && callType === 'video') {
+                localVideoRef.current.srcObject = stream;
+            }
+
             return stream;
         } catch (err) {
             console.error('Failed to get user media:', err);
-            toast.error('Impossible d\'accéder au microphone. Vérifiez les permissions.');
+            toast.error('Impossible d\'accéder au microphone/caméra. Vérifiez les permissions.');
             onEnd();
             return null;
         }
@@ -99,6 +135,13 @@ export function WebRTCCall({
 
     // Create peer connection for a specific user
     const createPeerConnection = useCallback((peerId: string) => {
+        // If already exists, close and recreate
+        const existing = peerConnectionsRef.current.get(peerId);
+        if (existing) {
+            existing.close();
+            peerConnectionsRef.current.delete(peerId);
+        }
+
         const pc = new RTCPeerConnection(ICE_SERVERS);
 
         // Add local tracks
@@ -110,9 +153,8 @@ export function WebRTCCall({
 
         // Handle ICE candidates
         pc.onicecandidate = (event) => {
-            if (event.candidate) {
-                // Send ICE candidate via Supabase channel
-                channelRef.current?.send({
+            if (event.candidate && channelRef.current) {
+                channelRef.current.send({
                     type: 'broadcast',
                     event: 'ice-candidate',
                     payload: {
@@ -127,156 +169,295 @@ export function WebRTCCall({
         // Handle remote stream
         pc.ontrack = (event) => {
             const remoteStream = event.streams[0];
-            if (remoteStream) {
-                // Create or update audio/video element
-                let audioEl = remoteAudioRefs.current.get(peerId);
-                if (!audioEl) {
-                    audioEl = new Audio();
-                    audioEl.autoplay = true;
-                    remoteAudioRefs.current.set(peerId, audioEl);
-                }
-                audioEl.srcObject = remoteStream;
+            if (!remoteStream) return;
 
-                setParticipants(prev => {
-                    const existing = prev.find(p => p.id === peerId);
-                    if (existing) {
-                        return prev.map(p => p.id === peerId ? { ...p, stream: remoteStream } : p);
+            remoteStreamsRef.current.set(peerId, remoteStream);
+
+            // Create audio/video element for playback
+            const existingEl = remoteVideoRefs.current.get(peerId);
+            if (existingEl) {
+                existingEl.srcObject = remoteStream;
+            } else {
+                if (callType === 'video') {
+                    // Video elements are managed in JSX
+                } else {
+                    const audioEl = new Audio();
+                    audioEl.autoplay = true;
+                    audioEl.srcObject = remoteStream;
+                    remoteVideoRefs.current.set(peerId, audioEl);
+                }
+            }
+
+            setParticipants(prev => {
+                const existing = prev.find(p => p.id === peerId);
+                if (existing) {
+                    return prev.map(p => p.id === peerId ? { ...p, stream: remoteStream } : p);
+                }
+                const member = groupMembers?.find(m => m.id === peerId);
+                return [...prev, {
+                    id: peerId,
+                    name: member?.full_name || remoteUser?.name || 'Utilisateur',
+                    avatar: member?.avatar_url || remoteUser?.avatar,
+                    stream: remoteStream,
+                }];
+            });
+        };
+
+        // Connection state changes
+        pc.onconnectionstatechange = () => {
+            console.log(`[WebRTC] Peer ${peerId} state: ${pc.connectionState}`);
+            if (pc.connectionState === 'connected') {
+                setCallState('connected');
+            } else if (pc.connectionState === 'failed') {
+                console.warn(`[WebRTC] Connection to ${peerId} failed, attempting restart...`);
+                // Try ICE restart
+                pc.restartIce();
+            } else if (pc.connectionState === 'disconnected') {
+                // Give it a moment to reconnect
+                setTimeout(() => {
+                    if (pc.connectionState === 'disconnected') {
+                        cleanupPeer(peerId);
+                        if (mode === 'private') {
+                            toast.info('Connexion perdue');
+                            endCall();
+                        }
                     }
-                    const member = groupMembers?.find(m => m.id === peerId);
-                    return [...prev, {
-                        id: peerId,
-                        name: member?.full_name || remoteUser?.name || 'Utilisateur',
-                        avatar: member?.avatar_url || remoteUser?.avatar,
-                        stream: remoteStream,
-                    }];
-                });
+                }, 5000);
             }
         };
 
-        pc.onconnectionstatechange = () => {
-            if (pc.connectionState === 'connected') {
+        pc.oniceconnectionstatechange = () => {
+            console.log(`[WebRTC] ICE state for ${peerId}: ${pc.iceConnectionState}`);
+            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
                 setCallState('connected');
-            } else if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
-                // Remove this peer
-                cleanupPeer(peerId);
             }
         };
 
         peerConnectionsRef.current.set(peerId, pc);
         return pc;
-    }, [user.id, groupMembers, remoteUser]);
+    }, [user.id, groupMembers, remoteUser, callType, mode]);
+
+    // Add queued ICE candidates
+    const flushPendingCandidates = useCallback(async (peerId: string) => {
+        const pc = peerConnectionsRef.current.get(peerId);
+        const pending = pendingCandidatesRef.current.get(peerId);
+        if (pc && pending && pending.length > 0) {
+            for (const candidate of pending) {
+                try {
+                    await pc.addIceCandidate(new RTCIceCandidate(candidate));
+                } catch (e) {
+                    console.warn('[WebRTC] Error adding queued ICE candidate:', e);
+                }
+            }
+            pendingCandidatesRef.current.set(peerId, []);
+        }
+    }, []);
 
     // Cleanup a specific peer
-    const cleanupPeer = (peerId: string) => {
+    const cleanupPeer = useCallback((peerId: string) => {
         const pc = peerConnectionsRef.current.get(peerId);
         if (pc) {
             pc.close();
             peerConnectionsRef.current.delete(peerId);
         }
-        const audioEl = remoteAudioRefs.current.get(peerId);
-        if (audioEl) {
-            audioEl.srcObject = null;
-            remoteAudioRefs.current.delete(peerId);
+        const el = remoteVideoRefs.current.get(peerId);
+        if (el) {
+            el.srcObject = null;
+            remoteVideoRefs.current.delete(peerId);
         }
+        remoteStreamsRef.current.delete(peerId);
         setParticipants(prev => prev.filter(p => p.id !== peerId));
-    };
+    }, []);
+
+    // End call
+    const endCall = useCallback(() => {
+        // Notify others
+        channelRef.current?.send({
+            type: 'broadcast',
+            event: 'call-end',
+            payload: { from: user.id }
+        });
+
+        // Send call-cancelled signal to remote user if private call
+        if (mode === 'private' && remoteUser) {
+            const cancelChannel = supabase.channel(`call_signal_${remoteUser.id}_cancel_${Date.now()}`, {
+                config: { broadcast: { self: false } }
+            });
+            cancelChannel.subscribe().then(() => {
+                cancelChannel.send({
+                    type: 'broadcast',
+                    event: 'call-cancelled',
+                    payload: { callerId: user.id }
+                });
+                setTimeout(() => supabase.removeChannel(cancelChannel), 2000);
+            });
+        }
+
+        // Cleanup all peers
+        peerConnectionsRef.current.forEach((pc) => pc.close());
+        peerConnectionsRef.current.clear();
+        remoteVideoRefs.current.forEach((el) => {
+            el.srcObject = null;
+        });
+        remoteVideoRefs.current.clear();
+        remoteStreamsRef.current.clear();
+
+        if (localStreamRef.current) {
+            localStreamRef.current.getTracks().forEach(track => track.stop());
+            localStreamRef.current = null;
+        }
+
+        if (channelRef.current) {
+            supabase.removeChannel(channelRef.current);
+            channelRef.current = null;
+        }
+
+        if (durationIntervalRef.current) {
+            clearInterval(durationIntervalRef.current);
+        }
+
+        setCallState('ended');
+        onEnd();
+    }, [user.id, mode, remoteUser, onEnd]);
 
     // Initialize call
     useEffect(() => {
-        let mounted = true;
+        mountedRef.current = true;
 
         const initCall = async () => {
             const stream = await getUserMedia();
-            if (!stream || !mounted) return;
+            if (!stream || !mountedRef.current) return;
 
-            // Setup signaling channel
+            // Unique channel name based on call participants
             const channelName = mode === 'private'
-                ? `call_${[user.id, remoteUser?.id].sort().join('_')}`
-                : `group_call_${groupId}`;
+                ? `webrtc_call_${[user.id, remoteUser?.id].sort().join('_')}`
+                : `webrtc_group_call_${groupId}`;
 
             const channel = supabase.channel(channelName, {
                 config: { broadcast: { self: false } }
             });
 
-            channel.on('broadcast', { event: 'offer' }, async ({ payload }) => {
-                if (payload.to !== user.id) return;
-                const pc = createPeerConnection(payload.from);
-                await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
+            // --- SIGNALING HANDLERS ---
 
-                channel.send({
-                    type: 'broadcast',
-                    event: 'answer',
-                    payload: { from: user.id, to: payload.from, answer }
-                });
-                setCallState('connecting');
+            channel.on('broadcast', { event: 'offer' }, async ({ payload }) => {
+                if (!mountedRef.current || payload.to !== user.id) return;
+                console.log('[WebRTC] Received offer from', payload.from);
+
+                const pc = createPeerConnection(payload.from);
+                try {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
+                    // Flush any ICE candidates that arrived before the offer
+                    await flushPendingCandidates(payload.from);
+
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+
+                    channel.send({
+                        type: 'broadcast',
+                        event: 'answer',
+                        payload: { from: user.id, to: payload.from, answer }
+                    });
+                    setCallState('connecting');
+                } catch (e) {
+                    console.error('[WebRTC] Error handling offer:', e);
+                }
             });
 
             channel.on('broadcast', { event: 'answer' }, async ({ payload }) => {
-                if (payload.to !== user.id) return;
+                if (!mountedRef.current || payload.to !== user.id) return;
+                console.log('[WebRTC] Received answer from', payload.from);
+
                 const pc = peerConnectionsRef.current.get(payload.from);
-                if (pc) {
-                    await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+                if (pc && pc.signalingState === 'have-local-offer') {
+                    try {
+                        await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
+                        // Flush any queued ICE candidates
+                        await flushPendingCandidates(payload.from);
+                    } catch (e) {
+                        console.error('[WebRTC] Error handling answer:', e);
+                    }
                 }
                 setCallState('connecting');
             });
 
             channel.on('broadcast', { event: 'ice-candidate' }, async ({ payload }) => {
-                if (payload.to !== user.id) return;
+                if (!mountedRef.current || payload.to !== user.id) return;
+
                 const pc = peerConnectionsRef.current.get(payload.from);
-                if (pc) {
+                if (pc && pc.remoteDescription) {
                     try {
                         await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
                     } catch (e) {
-                        console.error('Error adding ICE candidate:', e);
+                        console.warn('[WebRTC] Error adding ICE candidate:', e);
                     }
+                } else {
+                    // Queue the candidate — the offer/answer hasn't been set yet
+                    const pending = pendingCandidatesRef.current.get(payload.from) || [];
+                    pending.push(payload.candidate);
+                    pendingCandidatesRef.current.set(payload.from, pending);
                 }
             });
 
             channel.on('broadcast', { event: 'call-end' }, ({ payload }) => {
+                if (!mountedRef.current) return;
                 if (payload.from) {
                     cleanupPeer(payload.from);
                 }
-                // If private call, end entirely
                 if (mode === 'private') {
+                    toast.info('Appel terminé par l\'autre participant');
                     endCall();
                 }
             });
 
             channel.on('broadcast', { event: 'call-join' }, async ({ payload }) => {
-                if (payload.from === user.id) return;
-                // New participant joined, send them an offer
-                const pc = createPeerConnection(payload.from);
-                const offer = await pc.createOffer();
-                await pc.setLocalDescription(offer);
+                if (!mountedRef.current || payload.from === user.id) return;
+                console.log('[WebRTC] User joined:', payload.from, payload.name);
 
-                channel.send({
-                    type: 'broadcast',
-                    event: 'offer',
-                    payload: { from: user.id, to: payload.from, offer }
-                });
+                // New participant joined — create peer connection and send offer
+                // Small delay to ensure both sides are subscribed
+                setTimeout(async () => {
+                    if (!mountedRef.current) return;
+                    const pc = createPeerConnection(payload.from);
+                    try {
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+
+                        channel.send({
+                            type: 'broadcast',
+                            event: 'offer',
+                            payload: { from: user.id, to: payload.from, offer }
+                        });
+                    } catch (e) {
+                        console.error('[WebRTC] Error creating offer for joiner:', e);
+                    }
+                }, 500);
             });
 
-            await channel.subscribe();
+            // Subscribe to channel first, THEN send signals
+            await channel.subscribe((status: string) => {
+                console.log('[WebRTC] Channel status:', status);
+            });
             channelRef.current = channel;
 
-            // Announce joining
+            // Announce joining (after channel is confirmed subscribed)
+            await new Promise(resolve => setTimeout(resolve, 300));
             channel.send({
                 type: 'broadcast',
                 event: 'call-join',
                 payload: { from: user.id, name: user.name }
             });
 
-            // For private call initiator, send offer to remote user
+            // --- PRIVATE CALL: Initiator sends offer ---
             if (mode === 'private' && !isIncoming && remoteUser) {
                 setCallState('ringing');
 
                 // Signal the remote user that they have an incoming call
-                const remoteSignalChannel = supabase.channel(`call_signal_${remoteUser.id}`, {
+                const sigChannelName = `call_signal_${remoteUser.id}`;
+                const remoteSignalChannel = supabase.channel(sigChannelName, {
                     config: { broadcast: { self: false } }
                 });
                 await remoteSignalChannel.subscribe();
+                await new Promise(resolve => setTimeout(resolve, 200));
                 remoteSignalChannel.send({
                     type: 'broadcast',
                     event: 'incoming-call',
@@ -285,40 +466,50 @@ export function WebRTCCall({
                         callerName: user.name,
                         callerAvatar: user.avatar,
                         callType,
+                        mode: 'private',
                         conversationId,
                     }
                 });
-                // Keep a reference to cancel later
-                (channelRef as any).remoteSignalChannel = remoteSignalChannel;
+                setTimeout(() => supabase.removeChannel(remoteSignalChannel), 3000);
 
-                // Wait a moment for the remote user to potentially join
+                // Wait for the remote user to join the call channel, then send offer
+                // The offer will be sent when we receive their 'call-join' event
+                // But also send a proactive offer after a delay as a fallback
                 setTimeout(async () => {
-                    if (!mounted) return;
-                    const pc = createPeerConnection(remoteUser.id);
-                    const offer = await pc.createOffer();
-                    await pc.setLocalDescription(offer);
+                    if (!mountedRef.current) return;
+                    // Only send if we haven't already connected
+                    if (peerConnectionsRef.current.size === 0) {
+                        const pc = createPeerConnection(remoteUser.id);
+                        try {
+                            const offer = await pc.createOffer();
+                            await pc.setLocalDescription(offer);
+                            channel.send({
+                                type: 'broadcast',
+                                event: 'offer',
+                                payload: { from: user.id, to: remoteUser.id, offer }
+                            });
+                            setCallState('connecting');
+                        } catch (e) {
+                            console.error('[WebRTC] Error sending proactive offer:', e);
+                        }
+                    }
+                }, 2000);
 
-                    channel.send({
-                        type: 'broadcast',
-                        event: 'offer',
-                        payload: { from: user.id, to: remoteUser.id, offer }
-                    });
-                    setCallState('connecting');
-                }, 1000);
             } else if (isIncoming) {
                 setCallState('connecting');
             } else if (mode === 'group') {
                 setCallState('connecting');
 
-                // For group calls, notify all group members
+                // Notify all group members
                 if (groupMembers && groupMembers.length > 0) {
                     for (const member of groupMembers) {
                         if (member.id === user.id) continue;
-                        const memberSignalChannel = supabase.channel(`call_signal_${member.id}`, {
+                        const memberSigChannel = supabase.channel(`call_signal_${member.id}`, {
                             config: { broadcast: { self: false } }
                         });
-                        await memberSignalChannel.subscribe();
-                        memberSignalChannel.send({
+                        await memberSigChannel.subscribe();
+                        await new Promise(resolve => setTimeout(resolve, 100));
+                        memberSigChannel.send({
                             type: 'broadcast',
                             event: 'incoming-call',
                             payload: {
@@ -331,7 +522,7 @@ export function WebRTCCall({
                                 mode: 'group',
                             }
                         });
-                        setTimeout(() => supabase.removeChannel(memberSignalChannel), 2000);
+                        setTimeout(() => supabase.removeChannel(memberSigChannel), 3000);
                     }
                 }
             }
@@ -340,7 +531,7 @@ export function WebRTCCall({
         initCall();
 
         return () => {
-            mounted = false;
+            mountedRef.current = false;
         };
     }, []);
 
@@ -356,7 +547,7 @@ export function WebRTCCall({
         };
     }, [callState]);
 
-    // Auto-timeout for ringing
+    // Auto-timeout for ringing (30s)
     useEffect(() => {
         if (callState === 'ringing') {
             const timeout = setTimeout(() => {
@@ -364,12 +555,12 @@ export function WebRTCCall({
                     toast.info('Pas de réponse');
                     endCall();
                 }
-            }, 30000); // 30s timeout
+            }, 30000);
             return () => clearTimeout(timeout);
         }
-    }, [callState]);
+    }, [callState, endCall]);
 
-    // Outgoing ringtone (soft beep when calling someone)
+    // Outgoing ringtone
     useEffect(() => {
         if (callState !== 'ringing' && callState !== 'connecting') return;
         let ctx: AudioContext | null = null;
@@ -418,373 +609,236 @@ export function WebRTCCall({
         }
     };
 
-    // End call
-    const endCall = () => {
-        // Notify others
-        channelRef.current?.send({
-            type: 'broadcast',
-            event: 'call-end',
-            payload: { from: user.id }
-        });
-
-        // Send call-cancelled signal to remote user if private call
-        if (mode === 'private' && remoteUser) {
-            const cancelChannel = supabase.channel(`call_signal_${remoteUser.id}`, {
-                config: { broadcast: { self: false } }
-            });
-            cancelChannel.subscribe().then(() => {
-                cancelChannel.send({
-                    type: 'broadcast',
-                    event: 'call-cancelled',
-                    payload: { callerId: user.id }
-                });
-                setTimeout(() => supabase.removeChannel(cancelChannel), 1000);
-            });
-        }
-
-        // Cleanup remote signal channel if we created one
-        if ((channelRef as any).remoteSignalChannel) {
-            supabase.removeChannel((channelRef as any).remoteSignalChannel);
-        }
-
-        // Cleanup
-        peerConnectionsRef.current.forEach((pc, _) => pc.close());
-        peerConnectionsRef.current.clear();
-        remoteAudioRefs.current.forEach((audio, _) => {
-            audio.srcObject = null;
-        });
-        remoteAudioRefs.current.clear();
-
-        if (localStreamRef.current) {
-            localStreamRef.current.getTracks().forEach(track => track.stop());
-            localStreamRef.current = null;
-        }
-
-        if (channelRef.current) {
-            supabase.removeChannel(channelRef.current);
-            channelRef.current = null;
-        }
-
-        if (durationIntervalRef.current) {
-            clearInterval(durationIntervalRef.current);
-        }
-
-        setCallState('ended');
-        onEnd();
-    };
-
     const getInitials = (name: string) => {
         return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
     };
 
-    return (
-        <AnimatePresence>
-            <motion.div
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.95 }}
-                className="fixed inset-0 z-[100] bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 flex flex-col items-center justify-between p-6"
-            >
-                {/* Top bar */}
-                <div className="text-center mt-8">
-                    <p className="text-xs text-slate-400 uppercase tracking-wider mb-1">
-                        {callType === 'video' ? '📹 Appel vidéo' : '📞 Appel vocal'}
-                        {mode === 'group' && ` • ${groupName || 'Groupe'}`}
-                    </p>
-                    <p className="text-sm text-slate-300">
-                        {callState === 'ringing' && 'Sonnerie...'}
-                        {callState === 'connecting' && 'Connexion...'}
-                        {callState === 'connected' && formatDuration(duration)}
-                        {callState === 'ended' && 'Terminé'}
-                    </p>
-                </div>
+    // Assign remote video ref
+    const setRemoteVideoRef = useCallback((peerId: string) => (el: HTMLVideoElement | null) => {
+        if (el) {
+            remoteVideoRefs.current.set(peerId, el);
+            const stream = remoteStreamsRef.current.get(peerId);
+            if (stream) {
+                el.srcObject = stream;
+            }
+        }
+    }, []);
 
-                {/* Participants */}
-                <div className="flex-1 flex items-center justify-center w-full max-w-md">
-                    {mode === 'private' ? (
-                        /* Private call - single remote user */
-                        <div className="text-center">
-                            <motion.div
-                                animate={callState === 'ringing' ? {
-                                    scale: [1, 1.05, 1],
-                                    opacity: [1, 0.8, 1]
-                                } : {}}
-                                transition={{ duration: 2, repeat: Infinity }}
-                            >
-                                <Avatar className="h-28 w-28 mx-auto mb-4 ring-4 ring-white/10">
-                                    <AvatarImage src={remoteUser?.avatar || undefined} />
-                                    <AvatarFallback className="text-3xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
-                                        {getInitials(remoteUser?.name || '?')}
-                                    </AvatarFallback>
-                                </Avatar>
-                            </motion.div>
-                            <h2 className="text-xl font-semibold text-white">{remoteUser?.name || 'Utilisateur'}</h2>
-                            {callState === 'ringing' && (
-                                <motion.p
-                                    animate={{ opacity: [0.5, 1, 0.5] }}
-                                    transition={{ duration: 1.5, repeat: Infinity }}
-                                    className="text-sm text-slate-400 mt-1"
-                                >
-                                    Appel en cours...
-                                </motion.p>
-                            )}
-                            {callState === 'connecting' && (
-                                <div className="flex items-center gap-2 justify-center mt-2">
-                                    <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
-                                    <span className="text-sm text-slate-400">Connexion...</span>
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[9999] bg-gradient-to-b from-slate-900 via-slate-950 to-black flex flex-col"
+        >
+            {/* Header */}
+            <div className="px-6 pt-12 pb-4 text-center">
+                <p className="text-xs text-slate-400 uppercase tracking-widest mb-1">
+                    {mode === 'group' ? (groupName || 'Appel de groupe') : 'Appel privé'}
+                </p>
+                <h2 className="text-xl font-bold text-white">
+                    {mode === 'private' ? (remoteUser?.name || 'Utilisateur') : (groupName || 'Groupe')}
+                </h2>
+                <p className={cn(
+                    "text-sm mt-1",
+                    callState === 'connected' ? "text-green-400" :
+                        callState === 'ringing' ? "text-amber-400 animate-pulse" :
+                            callState === 'connecting' ? "text-blue-400 animate-pulse" :
+                                "text-slate-500"
+                )}>
+                    {callState === 'ringing' && '📞 Appel en cours...'}
+                    {callState === 'connecting' && '🔗 Connexion...'}
+                    {callState === 'connected' && `🟢 ${formatDuration(duration)}`}
+                    {callState === 'ended' && 'Appel terminé'}
+                </p>
+            </div>
+
+            {/* Video/Avatars area */}
+            <div className="flex-1 flex items-center justify-center px-4 relative overflow-hidden">
+                {callType === 'video' ? (
+                    <div className="w-full h-full grid gap-2" style={{
+                        gridTemplateColumns: participants.length <= 1 ? '1fr' : participants.length <= 4 ? 'repeat(2, 1fr)' : 'repeat(3, 1fr)',
+                        gridAutoRows: 'minmax(0, 1fr)',
+                    }}>
+                        {/* Local video */}
+                        <div className="relative rounded-2xl overflow-hidden bg-slate-800 border border-white/10">
+                            <video
+                                ref={localVideoRef}
+                                autoPlay
+                                muted
+                                playsInline
+                                className="w-full h-full object-cover"
+                                style={{ transform: 'scaleX(-1)' }}
+                            />
+                            <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded-lg">
+                                <p className="text-xs text-white font-medium">Vous</p>
+                            </div>
+                            {isMuted && (
+                                <div className="absolute top-2 right-2 bg-red-500/80 p-1 rounded-full">
+                                    <MicOff className="h-3 w-3 text-white" />
                                 </div>
                             )}
                         </div>
-                    ) : (
-                        /* Group call - multiple participants */
-                        <div className="w-full space-y-4">
-                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 max-w-sm mx-auto">
-                                {/* Current user */}
-                                <div className="text-center">
-                                    <Avatar className="h-16 w-16 mx-auto mb-1 ring-2 ring-green-500/50">
-                                        <AvatarImage src={user.avatar || undefined} />
-                                        <AvatarFallback className="text-sm bg-gradient-to-br from-green-500 to-emerald-500 text-white">
-                                            {getInitials(user.name)}
-                                        </AvatarFallback>
-                                    </Avatar>
-                                    <p className="text-xs text-white truncate">Vous</p>
-                                    {isMuted && <span className="text-[10px] text-red-400">🔇</span>}
-                                </div>
 
-                                {/* Remote participants */}
-                                {participants.map(p => (
-                                    <div key={p.id} className="text-center">
-                                        <Avatar className="h-16 w-16 mx-auto mb-1 ring-2 ring-indigo-500/50">
+                        {/* Remote videos */}
+                        {participants.map((p) => (
+                            <div key={p.id} className="relative rounded-2xl overflow-hidden bg-slate-800 border border-white/10">
+                                {p.stream ? (
+                                    <video
+                                        ref={setRemoteVideoRef(p.id)}
+                                        autoPlay
+                                        playsInline
+                                        className="w-full h-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex items-center justify-center h-full bg-slate-800">
+                                        <Avatar className="h-20 w-20">
                                             <AvatarImage src={p.avatar || undefined} />
-                                            <AvatarFallback className="text-sm bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                                            <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-2xl">
                                                 {getInitials(p.name)}
                                             </AvatarFallback>
                                         </Avatar>
-                                        <p className="text-xs text-white truncate">{p.name}</p>
                                     </div>
+                                )}
+                                <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded-lg">
+                                    <p className="text-xs text-white font-medium">{p.name}</p>
+                                </div>
+                            </div>
+                        ))}
+
+                        {/* Connecting placeholder */}
+                        {callState !== 'connected' && participants.length === 0 && (
+                            <div className="flex flex-col items-center justify-center bg-slate-800/50 rounded-2xl border border-white/5">
+                                <Loader2 className="h-8 w-8 text-indigo-400 animate-spin mb-3" />
+                                <p className="text-sm text-slate-400">
+                                    {callState === 'ringing' ? 'En attente de réponse...' : 'Connexion en cours...'}
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    /* Audio-only call UI */
+                    <div className="flex flex-col items-center gap-6">
+                        {/* Remote user avatar(s) */}
+                        {participants.length > 0 ? (
+                            <div className="flex flex-wrap gap-4 justify-center">
+                                {participants.map((p) => (
+                                    <motion.div
+                                        key={p.id}
+                                        initial={{ scale: 0 }}
+                                        animate={{ scale: 1 }}
+                                        className="flex flex-col items-center gap-2"
+                                    >
+                                        <div className="relative">
+                                            <motion.div
+                                                animate={callState === 'connected' ? {
+                                                    boxShadow: ['0 0 0 0 rgba(99,102,241,0)', '0 0 0 20px rgba(99,102,241,0.3)', '0 0 0 0 rgba(99,102,241,0)']
+                                                } : {}}
+                                                transition={{ repeat: Infinity, duration: 2 }}
+                                                className="rounded-full"
+                                            >
+                                                <Avatar className="h-24 w-24 border-2 border-indigo-500/50">
+                                                    <AvatarImage src={p.avatar || undefined} />
+                                                    <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-2xl">
+                                                        {getInitials(p.name)}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                            </motion.div>
+                                            {callState === 'connected' && (
+                                                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 rounded-full border-2 border-slate-900" />
+                                            )}
+                                        </div>
+                                        <p className="text-sm font-medium text-white">{p.name}</p>
+                                    </motion.div>
                                 ))}
                             </div>
-                            <p className="text-center text-xs text-slate-500">
-                                <Users className="h-3 w-3 inline mr-1" />
-                                {participants.length + 1} participant{participants.length > 0 ? 's' : ''}
-                            </p>
-                        </div>
-                    )}
-                </div>
+                        ) : (
+                            <motion.div
+                                animate={callState === 'ringing' ? { scale: [1, 1.1, 1] } : {}}
+                                transition={{ repeat: Infinity, duration: 2 }}
+                                className="flex flex-col items-center"
+                            >
+                                <Avatar className="h-32 w-32 border-4 border-indigo-500/30 shadow-2xl shadow-indigo-500/20">
+                                    <AvatarImage src={remoteUser?.avatar || undefined} />
+                                    <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-4xl">
+                                        {remoteUser ? getInitials(remoteUser.name) : <Users className="h-12 w-12" />}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <p className="text-lg font-bold text-white mt-4">
+                                    {remoteUser?.name || groupName || 'Appel'}
+                                </p>
+                            </motion.div>
+                        )}
 
-                {/* Controls */}
-                <div className="flex items-center gap-4 mb-8">
+                        {/* Audio wave animation when connected */}
+                        {callState === 'connected' && (
+                            <div className="flex items-center gap-1">
+                                {[...Array(5)].map((_, i) => (
+                                    <motion.div
+                                        key={i}
+                                        animate={{ height: [8, 24, 8] }}
+                                        transition={{ repeat: Infinity, duration: 1, delay: i * 0.15 }}
+                                        className="w-1 bg-indigo-500 rounded-full"
+                                    />
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+
+            {/* Participants count */}
+            {participants.length > 0 && (
+                <div className="text-center py-2">
+                    <p className="text-xs text-slate-400">
+                        <Users className="h-3 w-3 inline mr-1" />
+                        {participants.length + 1} participant{participants.length > 0 ? 's' : ''}
+                    </p>
+                </div>
+            )}
+
+            {/* Call Controls */}
+            <div className="px-6 pb-12 pt-4">
+                <div className="flex items-center justify-center gap-4">
                     {/* Mute */}
                     <Button
                         variant="ghost"
-                        size="icon"
                         onClick={toggleMute}
-                        className={`h-14 w-14 rounded-full ${isMuted
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'bg-white/10 text-white hover:bg-white/20'
-                            }`}
+                        className={cn(
+                            "h-14 w-14 rounded-full border-2 transition-all",
+                            isMuted
+                                ? "bg-red-500/20 border-red-500/50 text-red-400"
+                                : "bg-white/10 border-white/20 text-white hover:bg-white/20"
+                        )}
                     >
                         {isMuted ? <MicOff className="h-6 w-6" /> : <Mic className="h-6 w-6" />}
                     </Button>
 
-                    {/* End Call */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={endCall}
-                        className="h-16 w-16 rounded-full bg-red-600 hover:bg-red-700 text-white"
-                    >
-                        <PhoneOff className="h-7 w-7" />
-                    </Button>
-
-                    {/* Video toggle (if video call) */}
+                    {/* Video toggle (only for video calls) */}
                     {callType === 'video' && (
                         <Button
                             variant="ghost"
-                            size="icon"
                             onClick={toggleVideo}
-                            className={`h-14 w-14 rounded-full ${!isVideoEnabled
-                                ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                                : 'bg-white/10 text-white hover:bg-white/20'
-                                }`}
+                            className={cn(
+                                "h-14 w-14 rounded-full border-2 transition-all",
+                                !isVideoEnabled
+                                    ? "bg-red-500/20 border-red-500/50 text-red-400"
+                                    : "bg-white/10 border-white/20 text-white hover:bg-white/20"
+                            )}
                         >
                             {isVideoEnabled ? <Video className="h-6 w-6" /> : <VideoOff className="h-6 w-6" />}
                         </Button>
                     )}
 
-                    {/* Speaker (visual only — audio is always played) */}
+                    {/* End Call */}
                     <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-14 w-14 rounded-full bg-white/10 text-white hover:bg-white/20"
-                    >
-                        <Volume2 className="h-6 w-6" />
-                    </Button>
-                </div>
-            </motion.div>
-        </AnimatePresence>
-    );
-}
-
-// Helper: Incoming call notification overlay
-interface IncomingCallProps {
-    callerName: string;
-    callerAvatar?: string | null;
-    callType: 'audio' | 'video';
-    onAccept: () => void;
-    onReject: () => void;
-}
-
-export function IncomingCallOverlay({ callerName, callerAvatar, callType, onAccept, onReject }: IncomingCallProps) {
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const ringtoneIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Play WhatsApp-style ringtone using Web Audio API
-    useEffect(() => {
-        const playRingtone = () => {
-            try {
-                const ctx = new AudioContext();
-                audioContextRef.current = ctx;
-
-                const playTone = (freq: number, start: number, dur: number) => {
-                    const osc = ctx.createOscillator();
-                    const gain = ctx.createGain();
-                    osc.type = 'sine';
-                    osc.frequency.value = freq;
-                    gain.gain.setValueAtTime(0.15, ctx.currentTime + start);
-                    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
-                    osc.connect(gain);
-                    gain.connect(ctx.destination);
-                    osc.start(ctx.currentTime + start);
-                    osc.stop(ctx.currentTime + start + dur);
-                };
-
-                // Double ring pattern
-                const ring = () => {
-                    playTone(440, 0, 0.25);
-                    playTone(523, 0, 0.25);
-                    playTone(440, 0.35, 0.25);
-                    playTone(523, 0.35, 0.25);
-                };
-
-                ring();
-                ringtoneIntervalRef.current = setInterval(ring, 2000);
-            } catch (e) {
-                console.warn('Ringtone failed:', e);
-            }
-        };
-
-        playRingtone();
-
-        // Vibrate on mobile
-        if ('vibrate' in navigator) {
-            const vibratePattern = () => navigator.vibrate([300, 200, 300, 1200]);
-            vibratePattern();
-            const vibInterval = setInterval(vibratePattern, 2000);
-            return () => {
-                clearInterval(vibInterval);
-                navigator.vibrate(0);
-                if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
-                audioContextRef.current?.close();
-            };
-        }
-
-        return () => {
-            if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
-            audioContextRef.current?.close();
-        };
-    }, []);
-
-    const handleAccept = () => {
-        if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
-        audioContextRef.current?.close();
-        if ('vibrate' in navigator) navigator.vibrate(0);
-        onAccept();
-    };
-
-    const handleReject = () => {
-        if (ringtoneIntervalRef.current) clearInterval(ringtoneIntervalRef.current);
-        audioContextRef.current?.close();
-        if ('vibrate' in navigator) navigator.vibrate(0);
-        onReject();
-    };
-
-    return (
-        <motion.div
-            initial={{ opacity: 0, y: -50 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -50 }}
-            className="fixed inset-0 z-[110] bg-gradient-to-b from-slate-900/98 via-slate-800/98 to-slate-900/98 backdrop-blur-2xl flex flex-col items-center justify-between p-6"
-        >
-            {/* Top label */}
-            <div className="text-center mt-12">
-                <p className="text-xs text-slate-400 uppercase tracking-widest mb-2">
-                    {callType === 'video' ? '📹 Appel vidéo entrant' : '📞 Appel vocal entrant'}
-                </p>
-            </div>
-
-            {/* Caller info with pulsing rings */}
-            <div className="flex-1 flex items-center justify-center">
-                <div className="text-center relative">
-                    <motion.div
-                        animate={{ scale: [1, 2], opacity: [0.3, 0] }}
-                        transition={{ repeat: Infinity, duration: 1.5 }}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-green-500/30"
-                    />
-                    <motion.div
-                        animate={{ scale: [1, 1.8], opacity: [0.2, 0] }}
-                        transition={{ repeat: Infinity, duration: 1.5, delay: 0.3 }}
-                        className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-32 h-32 rounded-full bg-green-500/20"
-                    />
-                    <motion.div
-                        animate={{ scale: [0.95, 1.05, 0.95], opacity: [1, 0.8, 1] }}
-                        transition={{ duration: 2, repeat: Infinity }}
-                    >
-                        <Avatar className="h-32 w-32 mx-auto mb-6 ring-4 ring-green-500/30 shadow-2xl shadow-green-500/20">
-                            <AvatarImage src={callerAvatar || undefined} />
-                            <AvatarFallback className="text-3xl bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
-                                {callerName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                        </Avatar>
-                    </motion.div>
-                    <h2 className="text-2xl font-bold text-white mt-4">{callerName}</h2>
-                    <motion.p
-                        animate={{ opacity: [0.4, 1, 0.4] }}
-                        transition={{ duration: 1.5, repeat: Infinity }}
-                        className="text-sm text-slate-400 mt-2"
-                    >
-                        {callType === 'video' ? 'Appel vidéo entrant...' : 'Appel vocal entrant...'}
-                    </motion.p>
-                </div>
-            </div>
-
-            {/* Accept/Reject buttons (WhatsApp-style) */}
-            <div className="flex items-center gap-12 mb-12">
-                <div className="text-center">
-                    <Button
-                        onClick={handleReject}
-                        className="h-16 w-16 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg shadow-red-600/30"
+                        onClick={endCall}
+                        className="h-16 w-16 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-600/30"
                     >
                         <PhoneOff className="h-7 w-7" />
                     </Button>
-                    <p className="text-xs text-slate-400 mt-2">Refuser</p>
-                </div>
-                <div className="text-center">
-                    <motion.div
-                        animate={{ scale: [1, 1.1, 1] }}
-                        transition={{ repeat: Infinity, duration: 0.8 }}
-                    >
-                        <Button
-                            onClick={handleAccept}
-                            className="h-16 w-16 rounded-full bg-green-600 hover:bg-green-700 text-white shadow-lg shadow-green-600/30"
-                        >
-                            <Phone className="h-7 w-7" />
-                        </Button>
-                    </motion.div>
-                    <p className="text-xs text-slate-400 mt-2">Répondre</p>
                 </div>
             </div>
         </motion.div>
     );
 }
-

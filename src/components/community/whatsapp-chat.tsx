@@ -18,7 +18,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
-import { WebRTCCall, IncomingCallOverlay } from './webrtc-call';
+import { WebRTCCall } from './webrtc-call';
 import { initiateCall } from './call-system';
 import { GroupToolsPanel } from './group-tools';
 import { EventCalendarButton } from './event-calendar';

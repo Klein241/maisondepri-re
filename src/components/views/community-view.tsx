@@ -138,6 +138,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         mode: 'private' | 'group';
         isIncoming: boolean;
         remoteUser?: { id: string; name: string; avatar?: string | null };
+        conversationId?: string;
         groupId?: string;
         groupName?: string;
     } | null>(null);
@@ -1707,6 +1708,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 name: callData.callerName,
                 avatar: callData.callerAvatar,
             },
+            conversationId: callData.conversationId,
             groupId: callData.groupId,
             groupName: callData.groupName,
         });
@@ -1726,8 +1728,10 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             name: activeGlobalCall.remoteUser.name,
                             avatar: activeGlobalCall.remoteUser.avatar,
                         } : undefined}
+                        conversationId={activeGlobalCall.conversationId}
                         groupId={activeGlobalCall.groupId}
                         groupName={activeGlobalCall.groupName}
+                        groupMembers={groupMembers}
                         isIncoming={activeGlobalCall.isIncoming}
                         onEnd={() => setActiveGlobalCall(null)}
                     />
