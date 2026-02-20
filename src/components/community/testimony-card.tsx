@@ -1,6 +1,6 @@
 'use client';
 
-import { Heart, Share2, Sparkles } from 'lucide-react';
+import { Heart, Share2, Sparkles, Lock } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -22,7 +22,13 @@ export function TestimonyCard({
     onLike: () => void;
     userId?: string;
 }) {
+    const isGuest = !userId;
     const hasLiked = userId && testimony.likedBy ? testimony.likedBy.includes(userId) : false;
+
+    // Guest blur logic
+    const contentWords = (testimony.content || '').split(/\s+/);
+    const guestPreview = contentWords.slice(0, 5).join(' ');
+    const hasMoreWords = contentWords.length > 5;
 
     const handleShareTestimony = async () => {
         const shareData = {
@@ -65,8 +71,32 @@ export function TestimonyCard({
                     </Badge>
                 </div>
 
-                {/* Content */}
-                <p className="text-slate-200 leading-relaxed mb-4">{testimony.content}</p>
+                {/* Content — blurred for guests */}
+                {isGuest ? (
+                    <div className="relative mb-4">
+                        <p className="text-slate-200 leading-relaxed">
+                            {guestPreview}
+                            {hasMoreWords && (
+                                <span
+                                    className="select-none"
+                                    style={{ filter: 'blur(5px)', WebkitFilter: 'blur(5px)' }}
+                                >
+                                    {' ' + contentWords.slice(5, 20).join(' ')}
+                                </span>
+                            )}
+                        </p>
+                        {hasMoreWords && (
+                            <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                                <Lock className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                                <p className="text-xs text-amber-300">
+                                    Connectez-vous pour lire ce témoignage
+                                </p>
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <p className="text-slate-200 leading-relaxed mb-4">{testimony.content}</p>
+                )}
 
                 {/* Photos */}
                 {testimony.photos && testimony.photos.length > 0 && (

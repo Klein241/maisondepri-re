@@ -1298,28 +1298,46 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     };
 
     // Create prayer group - Fixed version with direct insert fallback
+    // Generate a URL-safe slug from a name
+    const generateSlug = (name: string): string => {
+        return name
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
+            .toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '') // remove special chars
+            .replace(/\s+/g, '-')          // spaces to dashes
+            .replace(/-+/g, '-')           // collapse multiple dashes
+            .replace(/^-|-$/g, '')         // trim leading/trailing dashes
+            .substring(0, 80);             // max 80 chars
+    };
+
     const createGroup = async () => {
         if (!user || !newGroupName.trim()) return;
         setCreatingGroup(true);
         try {
+            const trimmedName = newGroupName.trim();
+            const slug = generateSlug(trimmedName) + '-' + Date.now().toString(36);
+            const avatarUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(trimmedName)}&backgroundColor=6366f1,8b5cf6,a855f7`;
+
             // Try RPC first
             let groupId: string | null = null;
             const { data: rpcData, error: rpcError } = await supabase.rpc('create_prayer_group', {
-                group_name: newGroupName.trim(),
+                group_name: trimmedName,
                 group_description: newGroupDescription.trim() || null,
                 is_public_group: true
             });
 
             if (rpcError) {
                 console.log('RPC failed, using direct insert:', rpcError.message);
-                // Fallback to direct insert without is_public
+                // Fallback to direct insert
                 const { data: insertData, error: insertError } = await supabase
                     .from('prayer_groups')
                     .insert({
-                        name: newGroupName.trim(),
+                        name: trimmedName,
                         description: newGroupDescription.trim() || null,
                         created_by: user.id,
-                        is_open: true
+                        is_open: true,
+                        slug,
+                        avatar_url: avatarUrl
                     })
                     .select()
                     .single();
@@ -1337,6 +1355,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 }
             } else {
                 groupId = rpcData;
+                // Update slug and avatar for RPC-created group
+                if (groupId) {
+                    await supabase.from('prayer_groups')
+                        .update({ slug, avatar_url: avatarUrl })
+                        .eq('id', groupId);
+                }
             }
 
             toast.success('🙏 Groupe de prière créé avec succès!');
@@ -1593,13 +1617,17 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 // If createGroupWithPrayer is toggled, also create a group
                 if (createGroupWithPrayer && newPrayerId) {
                     try {
-                        const groupName = `\u{1F64F} Prière: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`;
+                        const groupName = `🙏 Prière: ${newContent.substring(0, 50)}${newContent.length > 50 ? '...' : ''}`;
+                        const groupSlug = generateSlug(groupName) + '-' + Date.now().toString(36);
+                        const groupAvatar = `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(groupName)}&backgroundColor=6366f1,8b5cf6,a855f7`;
                         const insertData: any = {
                             name: groupName,
                             description: newContent.substring(0, 200),
                             created_by: user.id,
                             is_open: true,
                             prayer_request_id: newPrayerId,
+                            slug: groupSlug,
+                            avatar_url: groupAvatar,
                         };
                         const { data: groupData, error: groupError } = await supabase
                             .from('prayer_groups')

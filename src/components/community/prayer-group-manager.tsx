@@ -310,16 +310,31 @@ export function PrayerGroupManager({
 
         setIsSaving(true);
         try {
+            const trimmedName = groupName.trim();
+            // Generate slug from name
+            const slug = trimmedName
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-')
+                .replace(/^-|-$/g, '')
+                .substring(0, 80)
+                + '-' + Date.now().toString(36);
+            const avatarUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(trimmedName)}&backgroundColor=6366f1,8b5cf6,a855f7`;
+
             const { data: newGroup, error: createError } = await supabase
                 .from('prayer_groups')
                 .insert({
-                    name: groupName.trim(),
+                    name: trimmedName,
                     description: groupDescription.trim() || null,
                     created_by: currentUserId,
                     is_open: isOpen,
                     is_urgent: isUrgent,
                     max_members: maxMembers,
-                    prayer_request_id: prayerId
+                    prayer_request_id: prayerId,
+                    slug,
+                    avatar_url: avatarUrl
                 })
                 .select()
                 .single();
