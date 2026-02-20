@@ -352,11 +352,13 @@ function LiveRegistrationFlow({
 // ===== LIVE SALON (full-screen with video + comments) =====
 function LiveSalon({
     streamUrl,
+    platform,
     userId,
     userName,
     onClose,
 }: {
     streamUrl: string;
+    platform: string;
     userId: string;
     userName: string;
     onClose: () => void;
@@ -520,29 +522,55 @@ function LiveSalon({
                     </div>
                     <p className="text-[10px] text-slate-500">Maison de Prière</p>
                 </div>
-                <Badge className="bg-red-600/20 text-red-400 gap-1 text-[10px]">
-                    <Eye className="h-3 w-3" />
-                    EN DIRECT
-                </Badge>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Badge className="bg-red-600/20 text-red-400 gap-1 text-[10px]">
+                        <Eye className="h-3 w-3" />
+                        EN DIRECT
+                    </Badge>
+                    <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-slate-400 h-8 text-[10px]"
+                        onClick={() => {
+                            const url = `${window.location.origin}/?live=1`;
+                            navigator.clipboard?.writeText(url);
+                            toast.success('🔗 Lien du live copié !');
+                        }}
+                    >
+                        <Share2 className="h-3.5 w-3.5 mr-1" />
+                        Lien
+                    </Button>
+                </div>
             </header>
 
-            {/* Video */}
+            {/* Video - aspect ratio per platform */}
             <div className="px-2 sm:px-4 py-2 relative">
-                <div className="w-full aspect-video bg-black rounded-xl overflow-hidden">
-                    {streamUrl ? (
-                        <iframe
-                            src={streamUrl}
-                            className="w-full h-full"
-                            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                            allowFullScreen
-                            frameBorder="0"
-                        />
-                    ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-500">
-                            <p>Chargement du stream...</p>
+                {(() => {
+                    const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
+                    return (
+                        <div
+                            className={cn(
+                                "bg-black rounded-xl overflow-hidden mx-auto",
+                                isPortrait ? "w-full max-w-[300px] sm:max-w-[360px]" : "w-full"
+                            )}
+                            style={{ aspectRatio: isPortrait ? '9/16' : '16/9', maxHeight: isPortrait ? '50vh' : 'auto' }}
+                        >
+                            {streamUrl ? (
+                                <iframe
+                                    src={streamUrl}
+                                    className="w-full h-full"
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                    allowFullScreen
+                                    frameBorder="0"
+                                />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-500">
+                                    <p>Chargement du stream...</p>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
+                    );
+                })()}
 
                 {/* Floating Reactions */}
                 <AnimatePresence>
@@ -716,7 +744,7 @@ function LiveSalon({
                 )}
 
                 {/* Comment input */}
-                <div className="px-3 sm:px-4 py-3 border-t border-white/5 flex items-center gap-2 bg-[#0a0d14]/80 backdrop-blur">
+                <div className="px-3 sm:px-4 py-3 border-t border-white/5 flex items-center gap-2 bg-[#0a0d14]/80 backdrop-blur" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
                     <Avatar className="h-8 w-8 shrink-0">
                         <AvatarFallback className="bg-indigo-500/20 text-indigo-300 text-xs">
                             {userName[0] || '?'}
@@ -1012,6 +1040,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                     {showLiveSalon && (
                         <LiveSalon
                             streamUrl={liveStreamUrl}
+                            platform={appSettings?.['live_platform'] || 'youtube'}
                             userId={user?.id || ''}
                             userName={user?.name || 'Visiteur'}
                             onClose={() => setShowLiveSalon(false)}

@@ -7,7 +7,8 @@ import {
     MessageSquare, Heart, Send, Plus, ChevronRight, Users, Check, Search, Pin, Shield, BellRing,
     Filter, X, Camera, Bookmark, MoreVertical, Share2, Flag, Sparkles,
     Lock, CheckCircle2, Loader2, ArrowLeft, Bell, Settings, Wrench,
-    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck, Gamepad2, LogIn
+    MessageCircle, UserPlus, ChevronDown, Crown, Trash2, Smile, Mic, MicOff, Play, Pause, Video, Globe, UserCheck, Gamepad2, LogIn,
+    Radio, Eye
 } from 'lucide-react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -48,9 +49,176 @@ const GroupToolsPanel = dynamic(() => import("@/components/community/group-tools
 const LiveStreamButton = dynamic(() => import("@/components/community/livestream-salon").then(m => ({ default: m.LiveStreamButton })), { ssr: false });
 const LiveStreamSalon = dynamic(() => import("@/components/community/livestream-salon").then(m => ({ default: m.LiveStreamSalon })), { ssr: false });
 
-type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'livestream' | 'friends' | 'conversation' | 'messages';
+type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'livestream' | 'global-live' | 'friends' | 'conversation' | 'messages';
 
 // VoiceMessagePlayer extracted to @/components/community/voice-message-player.tsx
+
+// ===== Global Live Comments (embedded in community-view) =====
+function GlobalLiveComments({ userId, userName }: { userId: string; userName: string }) {
+    const [comments, setComments] = useState<any[]>([]);
+    const [newComment, setNewComment] = useState('');
+    const [replyTo, setReplyTo] = useState<any | null>(null);
+    const commentsEndRef = useRef<HTMLDivElement>(null);
+    const { user } = useAppStore();
+    const isAdmin = user?.role === 'admin';
+
+    const loadComments = useCallback(async () => {
+        try {
+            const { data } = await supabase
+                .from('livestream_comments')
+                .select('*')
+                .eq('livestream_id', 'global-live')
+                .order('created_at', { ascending: true })
+                .limit(200);
+            if (!data) return;
+
+            const userIds = [...new Set(data.map((c: any) => c.user_id))];
+            const { data: profiles } = userIds.length > 0
+                ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', userIds)
+                : { data: [] };
+
+            const pMap = new Map((profiles || []).map((p: any) => [p.id, p]));
+
+            const topLevel: any[] = [];
+            const repliesMap = new Map<string, any[]>();
+            data.forEach((c: any) => {
+                const enriched = { ...c, profile: pMap.get(c.user_id) || { full_name: null }, replies: [] };
+                if (c.parent_id) {
+                    const arr = repliesMap.get(c.parent_id) || [];
+                    arr.push(enriched);
+                    repliesMap.set(c.parent_id, arr);
+                } else {
+                    topLevel.push(enriched);
+                }
+            });
+            topLevel.forEach((c: any) => { c.replies = repliesMap.get(c.id) || []; });
+            setComments(topLevel);
+        } catch (e) { /* table might not exist */ }
+    }, []);
+
+    useEffect(() => {
+        loadComments();
+        let channel: any = null;
+        try {
+            channel = supabase
+                .channel('global-live-comments-cv')
+                .on('postgres_changes', { event: '*', schema: 'public', table: 'livestream_comments', filter: 'livestream_id=eq.global-live' }, () => loadComments())
+                .subscribe();
+        } catch (e) { /* silent */ }
+        return () => { if (channel) supabase.removeChannel(channel); };
+    }, [loadComments]);
+
+    useEffect(() => {
+        commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [comments]);
+
+    const handleSend = async () => {
+        if (!newComment.trim()) return;
+        try {
+            await supabase.from('livestream_comments').insert({
+                livestream_id: 'global-live',
+                user_id: userId,
+                content: newComment.trim(),
+                parent_id: replyTo?.id || null,
+            });
+            setNewComment('');
+            setReplyTo(null);
+        } catch (e: any) {
+            toast.error("Impossible d'envoyer");
+        }
+    };
+
+    const handleDelete = async (id: string) => {
+        try {
+            await supabase.from('livestream_comments').delete().eq('id', id);
+        } catch (e) { toast.error('Erreur'); }
+    };
+
+    return (
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+            <ScrollArea className="flex-1 px-3 sm:px-4">
+                <div className="py-2 space-y-2.5">
+                    {comments.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500">
+                            <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                            <p className="text-sm">Soyez le premier à commenter !</p>
+                        </div>
+                    ) : comments.map((c: any) => (
+                        <div key={c.id} className="group">
+                            <div className="flex items-start gap-2">
+                                <Avatar className="h-7 w-7 shrink-0 mt-0.5">
+                                    <AvatarFallback className="bg-indigo-500/20 text-indigo-300 text-[10px]">
+                                        {(c.profile?.full_name || '?')[0]}
+                                    </AvatarFallback>
+                                </Avatar>
+                                <div className="flex-1 min-w-0">
+                                    <div className={cn("inline-block rounded-2xl px-3 py-2 max-w-full", c.is_pinned ? "bg-amber-500/10 border border-amber-500/20" : "bg-white/5")}>
+                                        <span className="font-bold text-xs text-white">{c.profile?.full_name || 'Utilisateur'}</span>
+                                        <p className="text-sm text-slate-200 break-words">{c.content}</p>
+                                    </div>
+                                    <div className="flex items-center gap-3 mt-0.5 px-1">
+                                        <span className="text-[10px] text-slate-600">
+                                            {formatDistanceToNow(new Date(c.created_at), { addSuffix: true, locale: fr })}
+                                        </span>
+                                        <button onClick={() => setReplyTo(c)} className="text-[10px] font-bold text-slate-500 hover:text-indigo-400">Répondre</button>
+                                        {(c.user_id === userId || isAdmin) && (
+                                            <button onClick={() => handleDelete(c.id)} className="text-[10px] text-red-500/50 hover:text-red-400 opacity-0 group-hover:opacity-100">Supprimer</button>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                            {c.replies?.length > 0 && (
+                                <div className="ml-9 mt-1.5 space-y-1.5 border-l-2 border-white/5 pl-3">
+                                    {c.replies.map((r: any) => (
+                                        <div key={r.id} className="group/r flex items-start gap-2">
+                                            <Avatar className="h-6 w-6 shrink-0"><AvatarFallback className="bg-purple-500/20 text-purple-300 text-[9px]">{(r.profile?.full_name || '?')[0]}</AvatarFallback></Avatar>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="inline-block rounded-2xl px-3 py-1.5 bg-white/3">
+                                                    <span className="font-bold text-[11px] text-white">{r.profile?.full_name || 'Utilisateur'}</span>
+                                                    <p className="text-xs text-slate-300 break-words">{r.content}</p>
+                                                </div>
+                                                {(r.user_id === userId || isAdmin) && (
+                                                    <button onClick={() => handleDelete(r.id)} className="text-[9px] text-red-500/60 hover:text-red-400 opacity-0 group-hover/r:opacity-100 ml-2">Supprimer</button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    <div ref={commentsEndRef} />
+                </div>
+            </ScrollArea>
+
+            {replyTo && (
+                <div className="px-3 py-1.5 bg-indigo-500/10 border-t border-indigo-500/20 flex items-center gap-2 shrink-0">
+                    <span className="text-xs text-indigo-300">Répondre à <b>{replyTo.profile?.full_name || 'Utilisateur'}</b></span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={() => setReplyTo(null)}><X className="h-3 w-3" /></Button>
+                </div>
+            )}
+
+            <div className="px-3 sm:px-4 py-3 border-t border-white/5 flex items-center gap-2 bg-[#0a0d14]/90 backdrop-blur shrink-0 pb-safe" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                <Avatar className="h-8 w-8 shrink-0"><AvatarFallback className="bg-indigo-500/20 text-indigo-300 text-xs">{userName[0] || '?'}</AvatarFallback></Avatar>
+                <Input
+                    placeholder="Commentez en direct..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                    className="flex-1 h-10 rounded-full bg-white/5 border-white/10 text-sm px-4"
+                />
+                <Button
+                    size="icon"
+                    className="h-10 w-10 rounded-full bg-gradient-to-r from-red-600 to-pink-600 shrink-0"
+                    onClick={handleSend}
+                    disabled={!newComment.trim()}
+                >
+                    <Send className="h-4 w-4" />
+                </Button>
+            </div>
+        </div>
+    );
+}
 
 interface CommunityViewProps {
     onHideNav?: (hide: boolean) => void;
@@ -60,7 +228,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const {
         prayerRequests, addPrayerRequest, prayForRequest,
         testimonials, addTestimonial, likeTestimonial,
-        user
+        user, appSettings
     } = useAppStore();
     const setGlobalActiveTab = useAppStore(s => s.setActiveTab);
     const setBibleViewTarget = useAppStore(s => s.setBibleViewTarget);
@@ -102,6 +270,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [loadingDMs, setLoadingDMs] = useState(false);
     const [allUsers, setAllUsers] = useState<any[]>([]); // For selecting new conversation partner
     const [activeLiveStream, setActiveLiveStream] = useState<any | null>(null); // Active livestream data
+    const [showGlobalLive, setShowGlobalLive] = useState(false); // Global live salon
+    const [showLiveRegistration, setShowLiveRegistration] = useState(false);
     const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupDescription, setNewGroupDescription] = useState('');
@@ -175,7 +345,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
     // Notify parent to hide/show bottom nav based on viewState
     useEffect(() => {
-        const fullScreenViews: ViewState[] = ['conversation', 'group-detail', 'group-call', 'livestream'];
+        const fullScreenViews: ViewState[] = ['conversation', 'group-detail', 'group-call', 'livestream', 'global-live'];
         onHideNav?.(fullScreenViews.includes(viewState));
     }, [viewState, onHideNav]);
 
@@ -1840,6 +2010,37 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </Button>
                                 </div>
 
+                                {/* LIVE BANNER - shown when admin activates live */}
+                                {appSettings?.['live_stream_active'] === 'true' && (
+                                    <div
+                                        className="cursor-pointer mb-2"
+                                        onClick={() => {
+                                            if (!user) {
+                                                setShowAuthPrompt(true);
+                                            } else {
+                                                setViewState('global-live');
+                                            }
+                                        }}
+                                    >
+                                        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-900/80 to-red-700/80 p-3 border border-red-500/30">
+                                            <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-transparent animate-pulse" />
+                                            <div className="relative flex items-center justify-between">
+                                                <div className="flex items-center gap-3">
+                                                    <div className="relative">
+                                                        <div className="w-3 h-3 bg-red-500 rounded-full animate-ping absolute" />
+                                                        <div className="w-3 h-3 bg-red-500 rounded-full relative" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-white text-sm">🔴 NOUS SOMMES EN DIRECT</p>
+                                                        <p className="text-red-200 text-xs">Cliquez pour rejoindre le live</p>
+                                                    </div>
+                                                </div>
+                                                <Radio className="w-5 h-5 text-red-300 animate-pulse" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
                                 {/* Tab List - stays in header */}
                                 <TabsList className="w-full bg-white/5 p-1 rounded-2xl">
                                     <TabsTrigger
@@ -2796,6 +2997,109 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             setViewState('group-detail');
                         }}
                     />
+                )}
+
+                {/* ========== GLOBAL LIVE SALON (from admin) ========== */}
+                {viewState === 'global-live' && user && (
+                    <motion.div
+                        key="global-live"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-50 flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+                    >
+                        {/* Header */}
+                        <header className="flex items-center gap-3 px-3 sm:px-4 pt-10 pb-3 border-b border-white/5 shrink-0">
+                            <Button variant="ghost" size="icon" onClick={() => setViewState('main')} className="shrink-0">
+                                <ArrowLeft className="h-5 w-5" />
+                            </Button>
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                                    <h1 className="font-black text-base sm:text-lg truncate">Diffusion en Direct</h1>
+                                </div>
+                                <p className="text-[10px] text-slate-500">Maison de Prière</p>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                                <Badge className="bg-red-600/20 text-red-400 gap-1 text-[10px]">
+                                    <Eye className="h-3 w-3" />
+                                    EN DIRECT
+                                </Badge>
+                                {/* Shareable link */}
+                                <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-slate-400 h-8 text-[10px]"
+                                    onClick={() => {
+                                        const url = `${window.location.origin}/?live=1`;
+                                        navigator.clipboard?.writeText(url);
+                                        toast.success('🔗 Lien du live copié !');
+                                    }}
+                                >
+                                    <Share2 className="h-3.5 w-3.5 mr-1" />
+                                    Partager
+                                </Button>
+                            </div>
+                        </header>
+
+                        {/* Video - aspect ratio depends on platform */}
+                        <div className="px-2 sm:px-4 py-2 shrink-0">
+                            {(() => {
+                                const streamUrl = appSettings?.['live_stream_url'] || '';
+                                const platform = appSettings?.['live_platform'] || 'youtube';
+                                const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
+
+                                return (
+                                    <div className={cn(
+                                        "bg-black rounded-xl overflow-hidden mx-auto",
+                                        isPortrait
+                                            ? "w-full max-w-[300px] sm:max-w-[360px]"
+                                            : "w-full"
+                                    )}
+                                        style={{ aspectRatio: isPortrait ? '9/16' : '16/9', maxHeight: isPortrait ? '50vh' : 'auto' }}
+                                    >
+                                        {streamUrl ? (
+                                            <iframe
+                                                src={streamUrl}
+                                                className="w-full h-full"
+                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+                                                allowFullScreen
+                                                frameBorder="0"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-slate-500">
+                                                <p>Chargement...</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </div>
+
+                        {/* Quick reactions */}
+                        <div className="px-3 sm:px-4 py-1.5 flex items-center gap-1 border-b border-white/5 overflow-x-auto shrink-0">
+                            {['❤️', '🙏', '🔥', '👏', '😍', '✝️'].map(emoji => (
+                                <button
+                                    key={emoji}
+                                    onClick={async () => {
+                                        try {
+                                            await supabase.from('livestream_reactions').insert({
+                                                livestream_id: 'global-live',
+                                                user_id: user.id,
+                                                emoji,
+                                            });
+                                        } catch (e) { /* silent */ }
+                                    }}
+                                    className="text-lg p-1.5 rounded-xl hover:bg-white/10 transition-colors shrink-0 active:scale-125"
+                                >
+                                    {emoji}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* Comments section */}
+                        <GlobalLiveComments userId={user.id} userName={user.name || 'Utilisateur'} />
+                    </motion.div>
                 )}
 
                 {/* ========== FRIENDS VIEW ========== */}

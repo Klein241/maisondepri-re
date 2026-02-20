@@ -71,13 +71,26 @@ export default function Home() {
   const [showSplash, setShowSplash] = useState(true);
   const [hideNav, setHideNav] = useState(false);
 
+  const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
+
   const handleHideNav = useCallback((hide: boolean) => {
     setHideNav(hide);
   }, []);
 
-  // Force community view on load (Feed first)
+  // Force community view on load (Feed first) + handle ?live=1 param
   useEffect(() => {
     setActiveTab('community');
+
+    // Check for ?live=1 URL parameter for shareable live link
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('live') === '1') {
+        // Set pending navigation to auto-open global-live view
+        setPendingNavigation({ communityTab: 'prayers', viewState: 'global-live' });
+        // Clean URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
   }, []);
 
   // Reset hideNav when switching to non-community tab

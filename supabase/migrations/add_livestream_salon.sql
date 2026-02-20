@@ -1,9 +1,10 @@
 -- ====================================================
--- Migration: Salon de Streaming en direct pour les groupes
--- Date: 2026-02-20
+-- Migration: Salon de Streaming en direct (IDEMPOTENT)
+-- Peut être exécutée plusieurs fois sans erreur
+-- Date: 2026-02-20 (fix: 2026-02-21)
 -- ====================================================
 
--- Table principale des livestreams
+-- 1. Table principale des livestreams de groupe
 CREATE TABLE IF NOT EXISTS group_livestreams (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
     group_id UUID NOT NULL REFERENCES prayer_groups(id) ON DELETE CASCADE,
@@ -19,10 +20,10 @@ CREATE TABLE IF NOT EXISTS group_livestreams (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Table des commentaires en direct
+-- 2. Table des commentaires en direct (FK optionnelle pour support du live global)
 CREATE TABLE IF NOT EXISTS livestream_comments (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    livestream_id UUID NOT NULL REFERENCES group_livestreams(id) ON DELETE CASCADE,
+    livestream_id TEXT NOT NULL,  -- TEXT pour supporter group UUID et 'global-live'
     user_id UUID NOT NULL REFERENCES auth.users(id),
     content TEXT NOT NULL,
     parent_id UUID REFERENCES livestream_comments(id) ON DELETE CASCADE,
@@ -30,19 +31,19 @@ CREATE TABLE IF NOT EXISTS livestream_comments (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Table des réactions en direct
+-- 3. Table des réactions en direct
 CREATE TABLE IF NOT EXISTS livestream_reactions (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    livestream_id UUID NOT NULL REFERENCES group_livestreams(id) ON DELETE CASCADE,
+    livestream_id TEXT NOT NULL,  -- TEXT pour supporter group UUID et 'global-live'
     user_id UUID NOT NULL REFERENCES auth.users(id),
     emoji TEXT NOT NULL DEFAULT '❤️',
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Table des membres bannis d'un live
+-- 4. Table des membres bannis d'un live
 CREATE TABLE IF NOT EXISTS livestream_banned_users (
     id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-    livestream_id UUID NOT NULL REFERENCES group_livestreams(id) ON DELETE CASCADE,
+    livestream_id TEXT NOT NULL,
     user_id UUID NOT NULL REFERENCES auth.users(id),
     banned_by UUID NOT NULL REFERENCES auth.users(id),
     reason TEXT,
@@ -63,7 +64,40 @@ ALTER TABLE livestream_comments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE livestream_reactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE livestream_banned_users ENABLE ROW LEVEL SECURITY;
 
--- RLS Policies: group_livestreams
+-- =====================================================
+-- DROP existing policies before recreating (IDEMPOTENT)
+-- =====================================================
+
+-- group_livestreams policies
+DROP POLICY IF EXISTS "Membres du groupe peuvent voir les lives" ON group_livestreams;
+DROP POLICY IF EXISTS "Admin du groupe peut créer des lives" ON group_livestreams;
+DROP POLICY IF EXISTS "Créateur peut modifier/terminer son live" ON group_livestreams;
+DROP POLICY IF EXISTS "Créateur peut supprimer son live" ON group_livestreams;
+
+-- livestream_comments policies
+DROP POLICY IF EXISTS "Membres peuvent voir les commentaires" ON livestream_comments;
+DROP POLICY IF EXISTS "Membres peuvent commenter" ON livestream_comments;
+DROP POLICY IF EXISTS "Auteur ou admin peut supprimer commentaire" ON livestream_comments;
+DROP POLICY IF EXISTS "Tout le monde peut voir les commentaires" ON livestream_comments;
+DROP POLICY IF EXISTS "Utilisateur connecte peut commenter" ON livestream_comments;
+DROP POLICY IF EXISTS "Auteur ou admin peut supprimer" ON livestream_comments;
+
+-- livestream_reactions policies
+DROP POLICY IF EXISTS "Membres peuvent voir les réactions" ON livestream_reactions;
+DROP POLICY IF EXISTS "Membres peuvent réagir" ON livestream_reactions;
+DROP POLICY IF EXISTS "Tout le monde peut voir les reactions" ON livestream_reactions;
+DROP POLICY IF EXISTS "Utilisateur connecte peut reagir" ON livestream_reactions;
+
+-- livestream_banned_users policies
+DROP POLICY IF EXISTS "Admin peut voir les bannis" ON livestream_banned_users;
+DROP POLICY IF EXISTS "Admin peut bannir" ON livestream_banned_users;
+DROP POLICY IF EXISTS "Admin peut débannir" ON livestream_banned_users;
+
+-- =====================================================
+-- CREATE new policies (plus permissives pour le live global)
+-- =====================================================
+
+-- group_livestreams: accès via membership de groupe
 CREATE POLICY "Membres du groupe peuvent voir les lives"
     ON group_livestreams FOR SELECT
     USING (
@@ -93,50 +127,43 @@ CREATE POLICY "Créateur peut supprimer son live"
     ON group_livestreams FOR DELETE
     USING (created_by = auth.uid());
 
--- RLS Policies: livestream_comments
-CREATE POLICY "Membres peuvent voir les commentaires"
+-- livestream_comments: ouvert à tout utilisateur connecté (pour le live global)
+CREATE POLICY "Tout le monde peut voir les commentaires"
     ON livestream_comments FOR SELECT
-    USING (
-        EXISTS (
-            SELECT 1 FROM group_livestreams gl
-            JOIN prayer_group_members pgm ON pgm.group_id = gl.group_id
-            WHERE gl.id = livestream_comments.livestream_id
-            AND pgm.user_id = auth.uid()
-        )
-    );
+    USING (true);
 
-CREATE POLICY "Membres peuvent commenter"
+CREATE POLICY "Utilisateur connecte peut commenter"
     ON livestream_comments FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
-CREATE POLICY "Auteur ou admin peut supprimer commentaire"
+CREATE POLICY "Auteur ou admin peut supprimer"
     ON livestream_comments FOR DELETE
     USING (
         user_id = auth.uid()
         OR EXISTS (
-            SELECT 1 FROM group_livestreams gl
-            WHERE gl.id = livestream_comments.livestream_id
-            AND gl.created_by = auth.uid()
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
         )
     );
 
--- RLS Policies: livestream_reactions
-CREATE POLICY "Membres peuvent voir les réactions"
+-- livestream_reactions: ouvert à tout utilisateur connecté
+CREATE POLICY "Tout le monde peut voir les reactions"
     ON livestream_reactions FOR SELECT
     USING (true);
 
-CREATE POLICY "Membres peuvent réagir"
+CREATE POLICY "Utilisateur connecte peut reagir"
     ON livestream_reactions FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
--- RLS Policies: livestream_banned_users
+-- livestream_banned_users: admin seulement
 CREATE POLICY "Admin peut voir les bannis"
     ON livestream_banned_users FOR SELECT
     USING (
         EXISTS (
-            SELECT 1 FROM group_livestreams gl
-            WHERE gl.id = livestream_banned_users.livestream_id
-            AND gl.created_by = auth.uid()
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
         )
     );
 
@@ -144,9 +171,9 @@ CREATE POLICY "Admin peut bannir"
     ON livestream_banned_users FOR INSERT
     WITH CHECK (
         EXISTS (
-            SELECT 1 FROM group_livestreams gl
-            WHERE gl.id = livestream_banned_users.livestream_id
-            AND gl.created_by = auth.uid()
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
         )
     );
 
@@ -154,13 +181,35 @@ CREATE POLICY "Admin peut débannir"
     ON livestream_banned_users FOR DELETE
     USING (
         EXISTS (
-            SELECT 1 FROM group_livestreams gl
-            WHERE gl.id = livestream_banned_users.livestream_id
-            AND gl.created_by = auth.uid()
+            SELECT 1 FROM profiles
+            WHERE profiles.id = auth.uid()
+            AND profiles.role = 'admin'
         )
     );
 
--- Enable Realtime for live comments/reactions
-ALTER PUBLICATION supabase_realtime ADD TABLE livestream_comments;
-ALTER PUBLICATION supabase_realtime ADD TABLE livestream_reactions;
-ALTER PUBLICATION supabase_realtime ADD TABLE group_livestreams;
+-- Enable Realtime
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE livestream_comments;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE livestream_reactions;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE group_livestreams;
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END $$;
+
+-- Ensure app_settings table has live settings
+INSERT INTO app_settings (key, value) VALUES ('live_stream_active', 'false') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('live_stream_url', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('live_platform', 'youtube') ON CONFLICT (key) DO NOTHING;
