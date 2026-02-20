@@ -6,6 +6,9 @@
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
 
+# NO @netlify/plugin-nextjs — this is a STATIC site (output: 'export')
+# Using the plugin would consume serverless function credits unnecessarily
+
 # SPA fallback — all routes served by index.html
 [[redirects]]
   from = "/*"
@@ -21,17 +24,18 @@
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
 
+# Cache Bible files aggressively (they never change)
 [[headers]]
   for = "/bible/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
+# Cache all static assets aggressively
 [[headers]]
   for = "/_next/static/*"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
 
-# Cache static assets aggressively
 [[headers]]
   for = "/*.js"
   [headers.values]
@@ -41,3 +45,28 @@
   for = "/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.woff2"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
+
+[[headers]]
+  for = "/*.jpg"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
+
+[[headers]]
+  for = "/*.webp"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"
+
+[[headers]]
+  for = "/*.ico"
+  [headers.values]
+    Cache-Control = "public, max-age=2592000"

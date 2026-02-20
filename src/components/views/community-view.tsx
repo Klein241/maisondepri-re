@@ -2186,55 +2186,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             </div>
                         </header>
 
-                        {/* Create Group Dialog */}
-                        <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
-                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-[2rem]">
-                                <DialogHeader>
-                                    <DialogTitle className="text-xl font-bold">Créer un groupe de prière</DialogTitle>
-                                    <DialogDescription className="text-slate-400">
-                                        Créez un espace pour prier ensemble
-                                    </DialogDescription>
-                                </DialogHeader>
-                                <div className="space-y-4 pt-4">
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                            Nom du groupe
-                                        </label>
-                                        <Input
-                                            placeholder="Ex: Prière pour les familles"
-                                            value={newGroupName}
-                                            onChange={(e) => setNewGroupName(e.target.value)}
-                                            className="h-12 rounded-2xl bg-white/5 border-white/10"
-                                        />
-                                    </div>
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                            Description (optionnel)
-                                        </label>
-                                        <Textarea
-                                            placeholder="Décrivez l'objectif du groupe..."
-                                            value={newGroupDescription}
-                                            onChange={(e) => setNewGroupDescription(e.target.value)}
-                                            className="min-h-[100px] bg-white/5 border-white/10 rounded-2xl resize-none"
-                                        />
-                                    </div>
-                                    <Button
-                                        className="w-full h-12 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold"
-                                        onClick={createGroup}
-                                        disabled={!newGroupName.trim() || creatingGroup}
-                                    >
-                                        {creatingGroup ? (
-                                            <Loader2 className="h-5 w-5 animate-spin" />
-                                        ) : (
-                                            <>
-                                                <Plus className="h-5 w-5 mr-2" />
-                                                Créer le groupe
-                                            </>
-                                        )}
-                                    </Button>
-                                </div>
-                            </DialogContent>
-                        </Dialog>
+
 
                         <ScrollArea className="flex-1 overflow-x-hidden">
                             <div className="space-y-6 pb-32 px-3 sm:px-6 max-w-full overflow-hidden">
@@ -2890,6 +2842,56 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 Continuer en tant qu&apos;invité
                             </Button>
                         </div>
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* ===== Create Group Dialog (global, always rendered) ===== */}
+            <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[92vw] sm:max-w-md rounded-2xl sm:rounded-[2rem] max-h-[85vh] overflow-y-auto">
+                    <DialogHeader>
+                        <DialogTitle className="text-xl font-bold">Créer un groupe de prière</DialogTitle>
+                        <DialogDescription className="text-slate-400">
+                            Créez un espace pour prier ensemble
+                        </DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 pt-4">
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                Nom du groupe
+                            </label>
+                            <Input
+                                placeholder="Ex: Prière pour les familles"
+                                value={newGroupName}
+                                onChange={(e) => setNewGroupName(e.target.value)}
+                                className="h-12 rounded-2xl bg-white/5 border-white/10"
+                            />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                Description (optionnel)
+                            </label>
+                            <Textarea
+                                placeholder="Décrivez l'objectif du groupe..."
+                                value={newGroupDescription}
+                                onChange={(e) => setNewGroupDescription(e.target.value)}
+                                className="min-h-[100px] bg-white/5 border-white/10 rounded-2xl resize-none"
+                            />
+                        </div>
+                        <Button
+                            className="w-full h-12 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold"
+                            onClick={createGroup}
+                            disabled={!newGroupName.trim() || creatingGroup}
+                        >
+                            {creatingGroup ? (
+                                <Loader2 className="h-5 w-5 animate-spin" />
+                            ) : (
+                                <>
+                                    <Plus className="h-5 w-5 mr-2" />
+                                    Créer le groupe
+                                </>
+                            )}
+                        </Button>
                     </div>
                 </DialogContent>
             </Dialog>
