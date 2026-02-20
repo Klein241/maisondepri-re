@@ -20,6 +20,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { supabase } from '@/lib/supabase';
 import { WebRTCCall } from './webrtc-call';
 import { initiateCall } from './call-system';
+import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendGroupMessageClient, fetchBiblePassage } from '@/lib/api-client';
 import { GroupToolsPanel } from './group-tools';
 import { EventCalendarButton } from './event-calendar';
 import { CallHistory } from './call-history';
@@ -930,44 +931,18 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     .eq('is_read', false)
                     .then(() => { });
             } else {
-                // Load group messages via server API (bypasses RLS, no PostgREST joins)
+                // Load group messages (direct Supabase call, no serverless)
                 let groupMsgs: any[] = [];
                 try {
-                    const response = await fetch(`/api/group-messages?groupId=${id}`);
-                    const result = await response.json();
-                    if (!response.ok) throw new Error(result.error);
-                    groupMsgs = (result.messages || []).map((m: any) => ({
+                    const rawMessages = await loadGroupMessagesClient(id);
+                    groupMsgs = rawMessages.map((m: any) => ({
                         ...m,
                         sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
                         sender_id: m.user_id,
                         is_read: true
                     }));
                 } catch (apiErr) {
-                    console.warn('[loadMessages] API route failed, trying direct query:', apiErr);
-                    // Fallback: direct query WITHOUT PostgREST joins
-                    const { data: rawMsgs } = await supabase
-                        .from('prayer_group_messages')
-                        .select('id, group_id, user_id, content, type, voice_url, voice_duration, created_at')
-                        .eq('group_id', id)
-                        .order('created_at', { ascending: true });
-
-                    const msgs = rawMsgs || [];
-                    // Batch fetch profiles
-                    const uids = [...new Set(msgs.map(m => m.user_id))];
-                    const profileMap = new Map<string, any>();
-                    if (uids.length > 0) {
-                        const { data: profiles } = await supabase
-                            .from('profiles')
-                            .select('id, full_name, avatar_url')
-                            .in('id', uids);
-                        (profiles || []).forEach(p => profileMap.set(p.id, p));
-                    }
-                    groupMsgs = msgs.map(m => ({
-                        ...m,
-                        sender: profileMap.get(m.user_id) || { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
-                        sender_id: m.user_id,
-                        is_read: true
-                    }));
+                    console.warn('[loadMessages] Error loading group messages:', apiErr);
                 }
                 setMessages(groupMsgs);
                 // Load reactions, comments, notifications, game session, and active meeting for this group
@@ -1032,29 +1007,20 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     conversationId: selectedConversation.id,
                 });
             } else if (view === 'group' && selectedGroup) {
-                // Send group message via server API (bypasses RLS)
-                const response = await fetch('/api/group-messages', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        groupId: selectedGroup.id,
-                        userId: user.id,
-                        content: msgContent,
-                        type: 'text'
-                    })
+                // Send group message (direct Supabase call)
+                const savedMsg = await sendGroupMessageClient({
+                    groupId: selectedGroup.id,
+                    userId: user.id,
+                    content: msgContent,
+                    type: 'text',
                 });
 
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error);
-
-                // Optimistic local add
-                if (result.message) {
-                    const data = result.message;
+                if (savedMsg) {
                     setMessages(prev => {
-                        if (prev.find(m => m.id === data.id)) return prev;
+                        if (prev.find(m => m.id === savedMsg.id)) return prev;
                         return [...prev, {
-                            ...data,
-                            sender_id: data.user_id,
+                            ...savedMsg,
+                            sender_id: savedMsg.user_id,
                             sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
                             is_read: true
                         }];
@@ -1136,21 +1102,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     conversationId: selectedConversation.id,
                 });
             } else if (view === 'group' && selectedGroup) {
-                // Use API route to bypass RLS for group voice messages
-                const response = await fetch('/api/group-messages', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        groupId: selectedGroup.id,
-                        userId: user.id,
-                        content: '🎤 Message vocal',
-                        type: 'voice',
-                        voiceUrl: publicUrl,
-                        voiceDuration: duration
-                    })
+                // Send group voice message (direct Supabase call)
+                await sendGroupMessageClient({
+                    groupId: selectedGroup.id,
+                    userId: user.id,
+                    content: '🎤 Message vocal',
+                    type: 'voice',
+                    voiceUrl: publicUrl,
+                    voiceDuration: duration,
                 });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error);
             }
 
             toast.success('Message vocal envoyé!');
@@ -1287,14 +1247,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             setPinnedPrayer(null);
         }
 
-        // Start polling fallback for group messages via API route (bypasses RLS)
+        // Start polling fallback for group messages (direct Supabase, no serverless)
         if (groupPollRef.current) clearInterval(groupPollRef.current);
         groupPollRef.current = setInterval(async () => {
             try {
-                const response = await fetch(`/api/group-messages?groupId=${group.id}`);
-                if (!response.ok) return;
-                const result = await response.json();
-                const data = result.messages || [];
+                const data = await loadGroupMessagesClient(group.id);
                 setMessages(prev => {
                     const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
                     const newLastId = data.length > 0 ? data[data.length - 1].id : null;
@@ -1327,14 +1284,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 setPinnedPrayer(null);
             }
 
-            // Start polling fallback for group messages via API (no broken joins)
+            // Start polling fallback for group messages (direct Supabase, no serverless)
             if (groupPollRef.current) clearInterval(groupPollRef.current);
             groupPollRef.current = setInterval(async () => {
                 try {
-                    const response = await fetch(`/api/group-messages?groupId=${gId}`);
-                    if (!response.ok) return;
-                    const result = await response.json();
-                    const data = result.messages || [];
+                    const data = await loadGroupMessagesClient(gId);
                     setMessages(prev => {
                         const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
                         const newLastId = data.length > 0 ? data[data.length - 1].id : null;
@@ -2516,10 +2470,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
 
             const res = await fetch(`/bible/${fileName}`);
             if (!res.ok) {
-                // Try API fallback
-                const apiRes = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&translation=${bibleVersion.toLowerCase()}`);
-                if (apiRes.ok) {
-                    const apiData = await apiRes.json();
+                // Try direct Bible API fallback (no serverless)
+                const apiData = await fetchBiblePassage(bibleReference, bibleVersion.toLowerCase());
+                if (apiData && (apiData.text || apiData.content)) {
                     setBibleContent(apiData.text || apiData.content || 'Passage non trouvé');
                 } else {
                     setBibleContent(`[Passage non trouvé. Vérifiez le livre "${bookRaw}" et le chapitre ${chapter}.]`);

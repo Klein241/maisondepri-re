@@ -107,7 +107,8 @@ export default function UsersPage() {
 
         setIsSaving(true);
         try {
-            // Build email from phone if needed
+            // Note: In static export mode, we cannot create auth users (requires service role key).
+            // Instead, we create a profile entry. The user should sign up themselves.
             let email: string;
             let phone: string | null = null;
 
@@ -122,31 +123,24 @@ export default function UsersPage() {
                 email = newUser.identifier.trim();
             }
 
-            // Call our API route that uses admin client
-            const response = await fetch('/api/admin/create-user', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
+            const id = crypto.randomUUID();
+            const { error } = await supabase
+                .from('profiles')
+                .insert({
+                    id,
                     email,
-                    password: newUser.password,
-                    full_name: newUser.full_name || null,
+                    full_name: newUser.full_name || 'Utilisateur',
                     role: newUser.role,
                     phone,
                     city: newUser.city || null,
                     church: newUser.church || null,
-                    country: newUser.country || null
-                })
-            });
+                    country: newUser.country || null,
+                    avatar_url: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(newUser.full_name || 'U')}`,
+                });
 
-            const result = await response.json();
+            if (error) throw error;
 
-            if (!response.ok) {
-                throw new Error(result.error || 'Erreur lors de la création');
-            }
-
-            toast.success('Utilisateur créé avec succès! Il peut maintenant se connecter.');
+            toast.success('Profil créé. L\'utilisateur devra s\'inscrire lui-même pour se connecter.');
             setIsAddDialogOpen(false);
             resetNewUser();
             fetchUsers();
@@ -225,19 +219,14 @@ export default function UsersPage() {
         if (!confirmed) return;
 
         try {
-            const response = await fetch('/api/admin/delete-user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId })
-            });
+            const { error } = await supabase
+                .from('profiles')
+                .delete()
+                .eq('id', userId);
 
-            const result = await response.json();
+            if (error) throw error;
 
-            if (!response.ok) {
-                throw new Error(result.error || 'Erreur lors de la suppression');
-            }
-
-            toast.success(`Utilisateur "${userName || 'Sans nom'}" supprimé définitivement`);
+            toast.success(`Utilisateur "${userName || 'Sans nom'}" supprimé`);
             fetchUsers();
         } catch (e: any) {
             console.error('Error deleting user:', e);

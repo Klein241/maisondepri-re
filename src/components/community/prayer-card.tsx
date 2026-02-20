@@ -255,21 +255,12 @@ export function PrayerCard({
         if (onDelete) onDelete(prayerId);
 
         try {
-            // Use admin API endpoint to bypass RLS
-            const response = await fetch('/api/admin/delete-content', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table: 'prayer_requests', id: prayerId })
-            });
-
-            if (!response.ok) {
-                // Fallback: try direct delete
-                const { error } = await supabase
-                    .from('prayer_requests')
-                    .delete()
-                    .eq('id', prayerId);
-                if (error) throw error;
-            }
+            // Direct Supabase delete (no serverless function needed)
+            const { error } = await supabase
+                .from('prayer_requests')
+                .delete()
+                .eq('id', prayerId);
+            if (error) throw error;
             toast.success('Demande de prière supprimée');
         } catch (e: any) {
             console.error('Error deleting prayer:', e);

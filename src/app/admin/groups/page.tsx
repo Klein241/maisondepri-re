@@ -328,27 +328,23 @@ export default function AdminGroupsPage() {
         if (!confirm('Êtes-vous sûr de vouloir supprimer ce groupe? Cette action est irréversible.')) return;
 
         try {
-            // Use admin API to bypass RLS - delete members first
-            await fetch('/api/admin/delete-content', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table: 'prayer_group_members', id: groupId, key: 'group_id' }),
-            });
+            // Delete members first
+            await supabase
+                .from('prayer_group_members')
+                .delete()
+                .eq('group_id', groupId);
             // Delete messages
-            await fetch('/api/admin/delete-content', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table: 'prayer_group_messages', id: groupId, key: 'group_id' }),
-            });
+            await supabase
+                .from('prayer_group_messages')
+                .delete()
+                .eq('group_id', groupId);
             // Delete group itself
-            const res = await fetch('/api/admin/delete-content', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ table: 'prayer_groups', id: groupId }),
-            });
+            const { error } = await supabase
+                .from('prayer_groups')
+                .delete()
+                .eq('id', groupId);
 
-            const result = await res.json();
-            if (!res.ok) throw new Error(result.error);
+            if (error) throw error;
 
             toast.success('Groupe supprimé avec succès');
             fetchGroups();

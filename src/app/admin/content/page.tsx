@@ -232,25 +232,11 @@ export default function ContentPage() {
         if (!confirm(`Supprimer le jour ${dayNumber}?`)) return;
 
         try {
-            // Use Admin API to bypass RLS
-            const response = await fetch('/api/admin/delete-content', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    table: 'days',
-                    id: dayNumber,
-                    key: 'day_number'
-                }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.error || "Erreur lors de la suppression");
-            }
-
+            const { error } = await supabase
+                .from('days')
+                .delete()
+                .eq('day_number', dayNumber);
+            if (error) throw error;
             toast.success(`Jour ${dayNumber} supprimé`);
             fetchDays();
         } catch (e: any) {

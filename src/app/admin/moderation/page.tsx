@@ -49,21 +49,11 @@ export default function ModerationPage() {
 
     const handleDelete = async (table: 'prayer_requests' | 'testimonials', id: string) => {
         try {
-            // Use Admin API to bypass RLS
-            const response = await fetch('/api/admin/delete-content', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ table, id }),
-            })
-
-            const data = await response.json()
-
-            if (!response.ok) {
-                throw new Error(data.error || "Erreur lors de la suppression")
-            }
-
+            const { error } = await supabase
+                .from(table)
+                .delete()
+                .eq('id', id);
+            if (error) throw error;
             toast.success("Élément supprimé avec succès")
             fetchData()
         } catch (e: any) {

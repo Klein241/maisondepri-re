@@ -27,6 +27,7 @@ import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { NotificationBell } from "@/components/notification-bell";
 import { IncomingCallOverlay, useCallListener, DMCallButtons, CallSignal } from "@/components/community/call-system";
 import { WebRTCCall } from "@/components/community/webrtc-call";
+import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendGroupMessageClient } from '@/lib/api-client';
 import { EventCalendarButton } from "@/components/community/event-calendar";
 import { PrayerCard } from "@/components/community/prayer-card";
 import { TestimonyCard } from "@/components/community/testimony-card";
@@ -995,18 +996,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         }
     };
 
-    // Load group messages via server API (bypasses RLS)
+    // Load group messages (direct Supabase call, no serverless)
     const loadGroupMessages = async (groupId: string) => {
         setLoadingGroupMessages(true);
         try {
-            const response = await fetch(`/api/group-messages?groupId=${groupId}`);
-            const result = await response.json();
-
-            if (!response.ok) {
-                console.error('Error loading group messages:', result.error);
-            } else {
-                setGroupMessages(result.messages || []);
-            }
+            const messages = await loadGroupMessagesClient(groupId);
+            setGroupMessages(messages);
         } catch (e) {
             console.error('Error loading group messages:', e);
         }
@@ -1042,26 +1037,18 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         });
 
         try {
-            const response = await fetch('/api/group-messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    groupId: selectedGroup.id,
-                    userId: user.id,
-                    content: messageContent,
-                    type: 'text'
-                })
+            const savedMessage = await sendGroupMessageClient({
+                groupId: selectedGroup.id,
+                userId: user.id,
+                content: messageContent,
+                type: 'text',
             });
 
-            const result = await response.json();
-
-            if (!response.ok) throw new Error(result.error);
-
             // Replace temp with real
-            if (result.message) {
+            if (savedMessage) {
                 setGroupMessages(prev =>
                     prev.map(m => m.id === tempId
-                        ? { ...result.message, profiles: optimisticMsg.profiles }
+                        ? { ...savedMessage, profiles: optimisticMsg.profiles }
                         : m
                     )
                 );
@@ -1241,22 +1228,17 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
             const voiceUrl = urlData.publicUrl;
 
-            // Insert message with voice data via server API (bypasses RLS)
-            const response = await fetch('/api/group-messages', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    groupId: selectedGroup.id,
-                    userId: user.id,
-                    content: '🎤 Message vocal',
-                    type: 'voice',
-                    voiceUrl: voiceUrl,
-                    voiceDuration: duration
-                })
+            // Insert message with voice data (direct Supabase call)
+            const savedVoiceMsg = await sendGroupMessageClient({
+                groupId: selectedGroup.id,
+                userId: user.id,
+                content: '🎤 Message vocal',
+                type: 'voice',
+                voiceUrl: voiceUrl,
+                voiceDuration: duration,
             });
 
-            const result = await response.json();
-            if (!response.ok) throw new Error(result.error);
+            if (!savedVoiceMsg) throw new Error('Failed to send voice message');
 
             toast.success("Message vocal envoyé! 🎤");
             loadGroupMessages(selectedGroup.id);

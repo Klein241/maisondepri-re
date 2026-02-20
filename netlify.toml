@@ -1,15 +1,16 @@
 [build]
   command = "npm run build"
-  publish = ".next"
+  publish = "out"
 
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
-  # Prevent minification issues that cause TDZ errors
-  NEXT_PRIVATE_MINIMIZE_FEATURES = "1"
 
-[[plugins]]
-  package = "@netlify/plugin-nextjs"
+# SPA fallback — all routes served by index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
 
 # Headers for security and performance
 [[headers]]
@@ -27,5 +28,16 @@
 
 [[headers]]
   for = "/_next/static/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+# Cache static assets aggressively
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/*.css"
   [headers.values]
     Cache-Control = "public, max-age=31536000, immutable"

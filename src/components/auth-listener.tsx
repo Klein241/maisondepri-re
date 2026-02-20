@@ -3,6 +3,7 @@
 import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/lib/store';
+import { ensureUserProfile } from '@/lib/api-client';
 
 // Ensure the user has a row in the profiles table via API (bypasses RLS)
 async function ensureProfile(user: {
@@ -16,24 +17,14 @@ async function ensureProfile(user: {
             || user.email?.split('@')[0]
             || 'Utilisateur';
 
-        const res = await fetch('/api/auth/ensure-profile', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                id: user.id,
-                email: user.email || '',
-                full_name: fullName,
-                avatar_url: user.user_metadata.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}`,
-                first_name: user.user_metadata.first_name || fullName.split(' ')[0] || null,
-            }),
+        await ensureUserProfile({
+            id: user.id,
+            email: user.email || '',
+            full_name: fullName,
+            avatar_url: user.user_metadata.avatar_url || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(fullName)}`,
+            first_name: user.user_metadata.first_name || fullName.split(' ')[0] || undefined,
         });
-
-        if (!res.ok) {
-            const data = await res.json();
-            console.warn('[Auth] Profile ensure failed:', data.error);
-        }
     } catch (e) {
-        // Silently fail - profile might already exist
         console.warn('[Auth] ensureProfile error:', e);
     }
 }
