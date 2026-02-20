@@ -59,13 +59,24 @@ export function PrayerCard({
     const [hasLinkedGroup, setHasLinkedGroup] = useState(false);
     const [isExpanded, setIsExpanded] = useState(false);
 
+    // Guest detection (no userId = not logged in)
+    const isGuest = !userId;
+
     // Content truncation logic
     const CONTENT_PREVIEW_LENGTH = 150;
     const contentText = prayer.content || '';
     const isLongContent = contentText.length > CONTENT_PREVIEW_LENGTH;
-    const displayContent = isExpanded || !isLongContent
-        ? contentText
-        : contentText.substring(0, CONTENT_PREVIEW_LENGTH).trim() + '…';
+
+    // For guests: show only first 5 words, blur the rest
+    const contentWords = contentText.split(/\s+/);
+    const guestPreview = contentWords.slice(0, 5).join(' ');
+    const hasMoreWords = contentWords.length > 5;
+
+    const displayContent = isGuest
+        ? guestPreview
+        : (isExpanded || !isLongContent
+            ? contentText
+            : contentText.substring(0, CONTENT_PREVIEW_LENGTH).trim() + '…');
 
     // Formatted date
     const formattedDate = useMemo(() => {
@@ -355,24 +366,52 @@ export function PrayerCard({
 
                     {/* Content */}
                     <div className="mb-4">
-                        <p className="text-slate-200 leading-relaxed">{displayContent}</p>
-                        {isLongContent && (
-                            <button
-                                onClick={() => setIsExpanded(!isExpanded)}
-                                className="mt-2 flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
-                            >
-                                {isExpanded ? (
-                                    <>
-                                        <ChevronUp className="h-3.5 w-3.5" />
-                                        Lire moins
-                                    </>
-                                ) : (
-                                    <>
-                                        <ChevronDown className="h-3.5 w-3.5" />
-                                        Lire la suite
-                                    </>
+                        {isGuest ? (
+                            /* Guest view: first 5 words visible + blurred rest */
+                            <div className="relative">
+                                <p className="text-slate-200 leading-relaxed">
+                                    {guestPreview}
+                                    {hasMoreWords && (
+                                        <span
+                                            className="select-none"
+                                            style={{ filter: 'blur(5px)', WebkitFilter: 'blur(5px)' }}
+                                        >
+                                            {' ' + contentWords.slice(5, 20).join(' ')}
+                                        </span>
+                                    )}
+                                </p>
+                                {hasMoreWords && (
+                                    <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-indigo-500/10 border border-indigo-500/20">
+                                        <Lock className="h-3.5 w-3.5 text-indigo-400 shrink-0" />
+                                        <p className="text-xs text-indigo-300">
+                                            Connectez-vous pour lire cette demande de prière
+                                        </p>
+                                    </div>
                                 )}
-                            </button>
+                            </div>
+                        ) : (
+                            /* Logged-in view: full content with expand/collapse */
+                            <>
+                                <p className="text-slate-200 leading-relaxed">{displayContent}</p>
+                                {isLongContent && (
+                                    <button
+                                        onClick={() => setIsExpanded(!isExpanded)}
+                                        className="mt-2 flex items-center gap-1 text-xs font-semibold text-indigo-400 hover:text-indigo-300 transition-colors"
+                                    >
+                                        {isExpanded ? (
+                                            <>
+                                                <ChevronUp className="h-3.5 w-3.5" />
+                                                Lire moins
+                                            </>
+                                        ) : (
+                                            <>
+                                                <ChevronDown className="h-3.5 w-3.5" />
+                                                Lire la suite
+                                            </>
+                                        )}
+                                    </button>
+                                )}
+                            </>
                         )}
                     </div>
 

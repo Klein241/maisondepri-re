@@ -822,20 +822,20 @@ export function PrayerGroupManager({
                 // Group exists
                 <div className="space-y-3 sm:space-y-4">
                     {/* Group Info Card */}
-                    <Card className="bg-white/5 border-white/10">
+                    <Card className="bg-white/5 border-white/10 overflow-hidden">
                         <CardContent className="p-3 sm:p-4">
-                            <div className="flex items-start gap-3 sm:gap-4">
+                            <div className="flex flex-col sm:flex-row items-start gap-3">
                                 <div className={cn(
-                                    "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center shrink-0",
+                                    "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
                                     existingGroup.is_urgent
                                         ? "bg-gradient-to-br from-red-500 to-orange-500"
                                         : "bg-gradient-to-br from-indigo-500 to-purple-500"
                                 )}>
-                                    <Users className="h-6 w-6 sm:h-7 sm:w-7 text-white" />
+                                    <Users className="h-6 w-6 text-white" />
                                 </div>
-                                <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                        <h4 className="font-semibold text-sm sm:text-base truncate">{existingGroup.name}</h4>
+                                <div className="flex-1 min-w-0 w-full">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                        <h4 className="font-semibold text-sm sm:text-base break-words">{existingGroup.name}</h4>
                                         {existingGroup.is_urgent && (
                                             <Badge className="bg-red-500/20 text-red-400 text-[10px]">
                                                 URGENT
@@ -849,14 +849,14 @@ export function PrayerGroupManager({
                                         )}
                                     </div>
                                     {existingGroup.description && (
-                                        <p className="text-xs sm:text-sm text-slate-400 mt-1 line-clamp-2">{existingGroup.description}</p>
+                                        <p className="text-xs sm:text-sm text-slate-400 mt-1 line-clamp-2 break-words">{existingGroup.description}</p>
                                     )}
-                                    <div className="flex items-center gap-3 mt-2">
+                                    <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
                                         <p className="text-[10px] sm:text-xs text-slate-500">
                                             {existingGroup.member_count} / {existingGroup.max_members} membres
                                         </p>
                                         {existingGroup.creator && (
-                                            <p className="text-[10px] sm:text-xs text-slate-500">
+                                            <p className="text-[10px] sm:text-xs text-slate-500 truncate max-w-[150px] sm:max-w-none">
                                                 par {existingGroup.creator.full_name || 'Inconnu'}
                                             </p>
                                         )}
@@ -1009,7 +1009,7 @@ export function JoinPrayerGroupButton({
             </Button>
 
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogContent className="max-w-[95vw] sm:max-w-md bg-[#0F1219] border-white/10 text-white rounded-2xl sm:rounded-[2rem]">
+                <DialogContent className="max-w-[92vw] sm:max-w-md bg-[#0F1219] border-white/10 text-white rounded-2xl sm:rounded-[2rem] max-h-[85vh] overflow-y-auto p-4 sm:p-6">
                     <DialogHeader>
                         <DialogTitle className="sr-only">Groupe de prière</DialogTitle>
                     </DialogHeader>
