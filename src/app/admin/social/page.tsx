@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,19 +33,30 @@ import {
     TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
     Radio,
     Youtube,
     Facebook,
+    Instagram,
+    Tv,
+    Monitor,
     Plus,
     Trash2,
     Edit,
     ExternalLink,
     Loader2,
     Save,
-    RefreshCw
+    RefreshCw,
+    MessageSquare,
+    Eye,
+    Users,
+    AlertTriangle
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { formatDistanceToNow } from 'date-fns';
+import { fr } from 'date-fns/locale';
 
 interface SocialLink {
     id: string;
@@ -57,9 +68,27 @@ interface SocialLink {
     sort_order: number;
 }
 
+interface LiveComment {
+    id: string;
+    user_id: string;
+    content: string;
+    created_at: string;
+    profile?: { full_name: string | null; avatar_url: string | null };
+}
+
+const PLATFORM_OPTIONS = [
+    { id: 'youtube', name: 'YouTube', icon: Youtube, color: 'text-red-500', hint: 'https://www.youtube.com/embed/VIDEO_ID' },
+    { id: 'facebook', name: 'Facebook', icon: Facebook, color: 'text-blue-500', hint: 'https://www.facebook.com/.../videos/...' },
+    { id: 'tiktok', name: 'TikTok', icon: Tv, color: 'text-pink-500', hint: 'Collez le lien TikTok Live' },
+    { id: 'instagram', name: 'Instagram', icon: Instagram, color: 'text-purple-500', hint: 'Collez le lien Instagram Live' },
+    { id: 'twitch', name: 'Twitch', icon: Monitor, color: 'text-violet-500', hint: 'https://player.twitch.tv/?channel=CHANNEL' },
+    { id: 'other', name: 'Autre', icon: ExternalLink, color: 'text-gray-400', hint: "Collez l'URL d'intégration (embed)" },
+];
+
 export default function SocialPage() {
     const [isLiveActive, setIsLiveActive] = useState(false);
     const [liveStreamUrl, setLiveStreamUrl] = useState('');
+    const [livePlatform, setLivePlatform] = useState('youtube');
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -72,6 +101,10 @@ export default function SocialPage() {
         embed_code: ''
     });
 
+    // Live comments management
+    const [liveComments, setLiveComments] = useState<LiveComment[]>([]);
+    const [showCommentsPanel, setShowCommentsPanel] = useState(false);
+
     useEffect(() => {
         loadData();
     }, []);
@@ -83,12 +116,13 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_platform']);
 
             if (settings) {
                 settings.forEach(s => {
                     if (s.key === 'live_stream_active') setIsLiveActive(s.value === 'true');
                     if (s.key === 'live_stream_url') setLiveStreamUrl(s.value || '');
+                    if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
                 });
             }
 
@@ -105,19 +139,109 @@ export default function SocialPage() {
         setIsLoading(false);
     };
 
+    // Load live comments for admin moderation
+    const loadLiveComments = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('livestream_comments')
+                .select('*')
+                .eq('livestream_id', 'global-live')
+                .order('created_at', { ascending: false })
+                .limit(100);
+
+            if (error || !data) return;
+
+            const userIds = [...new Set(data.map(c => c.user_id))];
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url')
+                .in('id', userIds.length > 0 ? userIds : ['none']);
+
+            const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+            setLiveComments(data.map(c => ({
+                ...c,
+                profile: profileMap.get(c.user_id) || { full_name: null, avatar_url: null }
+            })));
+        } catch (e) {
+            // Table might not exist
+        }
+    }, []);
+
+    useEffect(() => {
+        if (showCommentsPanel) {
+            loadLiveComments();
+            // Real-time
+            const channel = supabase
+                .channel('admin-live-comments')
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'livestream_comments',
+                    filter: 'livestream_id=eq.global-live'
+                }, () => loadLiveComments())
+                .subscribe();
+
+            return () => { supabase.removeChannel(channel); };
+        }
+    }, [showCommentsPanel, loadLiveComments]);
+
+    const convertToEmbed = (url: string, platform: string): string => {
+        try {
+            const u = new URL(url.trim());
+            if (platform === 'youtube') {
+                if (u.hostname.includes('youtube.com') && u.searchParams.get('v')) {
+                    return `https://www.youtube.com/embed/${u.searchParams.get('v')}?autoplay=1`;
+                }
+                if (u.hostname === 'youtu.be') {
+                    return `https://www.youtube.com/embed${u.pathname}?autoplay=1`;
+                }
+            }
+            if (platform === 'facebook') {
+                return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url.trim())}&show_text=false&autoplay=true`;
+            }
+        } catch (e) { /* not a URL */ }
+        return url.trim();
+    };
+
     const saveLiveSettings = async () => {
         setIsSaving(true);
         try {
+            const embedUrl = convertToEmbed(liveStreamUrl, livePlatform);
+
             await supabase.from('app_settings').upsert([
                 { key: 'live_stream_active', value: isLiveActive.toString() },
-                { key: 'live_stream_url', value: liveStreamUrl }
+                { key: 'live_stream_url', value: embedUrl },
+                { key: 'live_platform', value: livePlatform },
             ], { onConflict: 'key' });
 
-            toast.success('Paramètres du live enregistrés!');
+            setLiveStreamUrl(embedUrl);
+            toast.success('🔴 Paramètres du live enregistrés!');
         } catch (e: any) {
             toast.error('Erreur: ' + e.message);
         }
         setIsSaving(false);
+    };
+
+    const handleDeleteComment = async (id: string) => {
+        try {
+            await supabase.from('livestream_comments').delete().eq('id', id);
+            toast.success('Commentaire supprimé');
+            loadLiveComments();
+        } catch (e: any) {
+            toast.error('Erreur');
+        }
+    };
+
+    const handleClearAllComments = async () => {
+        if (!confirm('Supprimer TOUS les commentaires du live ?')) return;
+        try {
+            await supabase.from('livestream_comments').delete().eq('livestream_id', 'global-live');
+            toast.success('Tous les commentaires supprimés');
+            setLiveComments([]);
+        } catch (e: any) {
+            toast.error('Erreur');
+        }
     };
 
     const handleAddLink = async () => {
@@ -201,13 +325,13 @@ export default function SocialPage() {
     };
 
     const getPlatformIcon = (platform: string) => {
-        switch (platform) {
-            case 'youtube': return <Youtube className="h-4 w-4 text-red-500" />;
-            case 'facebook': return <Facebook className="h-4 w-4 text-blue-500" />;
-            case 'tiktok': return <span className="text-sm font-bold text-pink-500">TT</span>;
-            default: return <ExternalLink className="h-4 w-4" />;
-        }
+        const p = PLATFORM_OPTIONS.find(o => o.id === platform);
+        if (!p) return <ExternalLink className="h-4 w-4" />;
+        const Icon = p.icon;
+        return <Icon className={`h-4 w-4 ${p.color}`} />;
     };
+
+    const selectedPlatformConfig = PLATFORM_OPTIONS.find(p => p.id === livePlatform) || PLATFORM_OPTIONS[0];
 
     if (isLoading) {
         return (
@@ -238,15 +362,40 @@ export default function SocialPage() {
             {/* Live Streaming Section */}
             <Card className="border-red-500/20">
                 <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                        <Radio className="h-5 w-5 text-red-500" />
-                        Diffusion en Direct
-                    </CardTitle>
-                    <CardDescription>
-                        Configurez votre stream live qui apparaîtra sur l'accueil de l'application
-                    </CardDescription>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <CardTitle className="flex items-center gap-2">
+                                <Radio className="h-5 w-5 text-red-500" />
+                                Diffusion en Direct
+                                {isLiveActive && (
+                                    <Badge className="bg-red-600/20 text-red-400 gap-1 text-[10px] animate-pulse">
+                                        EN DIRECT
+                                    </Badge>
+                                )}
+                            </CardTitle>
+                            <CardDescription>
+                                Configurez votre stream live qui apparaîtra sur l'accueil de l'application
+                            </CardDescription>
+                        </div>
+                        {/* Admin Comments Moderation Button */}
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => setShowCommentsPanel(!showCommentsPanel)}
+                        >
+                            <MessageSquare className="h-4 w-4" />
+                            Commentaires
+                            {liveComments.length > 0 && (
+                                <Badge className="bg-red-500 text-white text-[10px] h-5 w-5 p-0 flex items-center justify-center rounded-full">
+                                    {liveComments.length}
+                                </Badge>
+                            )}
+                        </Button>
+                    </div>
                 </CardHeader>
                 <CardContent className="space-y-6">
+                    {/* Active Toggle */}
                     <div className="flex items-center justify-between p-4 rounded-lg bg-muted/50 border">
                         <div className="space-y-1">
                             <p className="font-medium">Stream en direct actif</p>
@@ -260,35 +409,125 @@ export default function SocialPage() {
                         />
                     </div>
 
+                    {/* Platform Selection */}
                     <div className="space-y-2">
-                        <Label>URL du Stream (YouTube, Facebook Live, etc.)</Label>
+                        <Label>Plateforme du Stream</Label>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                            {PLATFORM_OPTIONS.map(p => {
+                                const Icon = p.icon;
+                                return (
+                                    <button
+                                        key={p.id}
+                                        onClick={() => setLivePlatform(p.id)}
+                                        className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all ${livePlatform === p.id
+                                                ? 'bg-primary/10 border-primary/50 ring-2 ring-primary/30'
+                                                : 'bg-muted/30 border-muted hover:bg-muted/50'
+                                            }`}
+                                    >
+                                        <Icon className={`h-5 w-5 ${p.color}`} />
+                                        <span className="text-[10px] font-bold">{p.name}</span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* Stream URL */}
+                    <div className="space-y-2">
+                        <Label>URL du Stream ({selectedPlatformConfig.name})</Label>
                         <Input
-                            placeholder="https://www.youtube.com/embed/..."
+                            placeholder={selectedPlatformConfig.hint}
                             value={liveStreamUrl}
                             onChange={(e) => setLiveStreamUrl(e.target.value)}
                         />
                         <p className="text-xs text-muted-foreground">
-                            Utilisez l'URL d'intégration (embed) pour YouTube: youtube.com/embed/VIDEO_ID
+                            💡 Collez le lien de votre live ou l'URL d'intégration. La conversion embed est automatique pour YouTube et Facebook.
                         </p>
                     </div>
 
+                    {/* Preview */}
                     {liveStreamUrl && (
                         <div className="space-y-2">
                             <Label>Aperçu</Label>
-                            <div className="aspect-video bg-black rounded-lg overflow-hidden">
+                            <div className="aspect-video bg-black rounded-lg overflow-hidden border border-muted">
                                 <iframe
-                                    src={liveStreamUrl}
+                                    src={convertToEmbed(liveStreamUrl, livePlatform)}
                                     className="w-full h-full"
                                     allowFullScreen
+                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                                 />
                             </div>
                         </div>
                     )}
 
+                    {/* Save Button */}
                     <Button onClick={saveLiveSettings} disabled={isSaving} className="bg-red-600 hover:bg-red-500">
                         {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
                         Enregistrer les paramètres Live
                     </Button>
+
+                    {/* Comments Moderation Panel */}
+                    {showCommentsPanel && (
+                        <div className="border border-muted rounded-xl p-4 space-y-4">
+                            <div className="flex items-center justify-between">
+                                <h4 className="font-bold flex items-center gap-2">
+                                    <MessageSquare className="h-4 w-4" />
+                                    Commentaires du Live ({liveComments.length})
+                                </h4>
+                                <div className="flex gap-2">
+                                    <Button variant="outline" size="sm" onClick={loadLiveComments}>
+                                        <RefreshCw className="h-3 w-3 mr-1" />
+                                        Rafraîchir
+                                    </Button>
+                                    {liveComments.length > 0 && (
+                                        <Button variant="destructive" size="sm" onClick={handleClearAllComments}>
+                                            <Trash2 className="h-3 w-3 mr-1" />
+                                            Tout supprimer
+                                        </Button>
+                                    )}
+                                </div>
+                            </div>
+
+                            <ScrollArea className="max-h-[400px]">
+                                <div className="space-y-2">
+                                    {liveComments.length === 0 ? (
+                                        <p className="text-sm text-muted-foreground text-center py-6">
+                                            Aucun commentaire pour le moment
+                                        </p>
+                                    ) : (
+                                        liveComments.map(comment => (
+                                            <div key={comment.id} className="flex items-start gap-2 p-2 rounded-lg bg-muted/30 group">
+                                                <Avatar className="h-7 w-7 shrink-0">
+                                                    <AvatarFallback className="text-[10px]">
+                                                        {(comment.profile?.full_name || '?')[0]}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-xs">
+                                                            {comment.profile?.full_name || 'Utilisateur'}
+                                                        </span>
+                                                        <span className="text-[10px] text-muted-foreground">
+                                                            {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true, locale: fr })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm break-words">{comment.content}</p>
+                                                </div>
+                                                <Button
+                                                    variant="ghost"
+                                                    size="icon"
+                                                    className="h-7 w-7 opacity-0 group-hover:opacity-100 text-red-500"
+                                                    onClick={() => handleDeleteComment(comment.id)}
+                                                >
+                                                    <Trash2 className="h-3 w-3" />
+                                                </Button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </ScrollArea>
+                        </div>
+                    )}
                 </CardContent>
             </Card>
 
@@ -330,6 +569,7 @@ export default function SocialPage() {
                                             <SelectItem value="facebook">Facebook</SelectItem>
                                             <SelectItem value="tiktok">TikTok</SelectItem>
                                             <SelectItem value="instagram">Instagram</SelectItem>
+                                            <SelectItem value="twitch">Twitch</SelectItem>
                                             <SelectItem value="other">Autre</SelectItem>
                                         </SelectContent>
                                     </Select>
@@ -466,6 +706,7 @@ export default function SocialPage() {
                                         <SelectItem value="facebook">Facebook</SelectItem>
                                         <SelectItem value="tiktok">TikTok</SelectItem>
                                         <SelectItem value="instagram">Instagram</SelectItem>
+                                        <SelectItem value="twitch">Twitch</SelectItem>
                                         <SelectItem value="other">Autre</SelectItem>
                                     </SelectContent>
                                 </Select>
