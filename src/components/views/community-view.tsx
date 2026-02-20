@@ -45,8 +45,10 @@ const PrayerGroupManager = dynamic(() => import("@/components/community/prayer-g
 const GroupCallManager = dynamic(() => import("@/components/community/group-call-manager").then(m => ({ default: m.GroupCallManager })), { ssr: false });
 const FriendSystem = dynamic(() => import("@/components/community/friend-system").then(m => ({ default: m.FriendSystem })), { ssr: false, loading: () => <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div> });
 const GroupToolsPanel = dynamic(() => import("@/components/community/group-tools").then(m => ({ default: m.GroupToolsPanel })), { ssr: false });
+const LiveStreamButton = dynamic(() => import("@/components/community/livestream-salon").then(m => ({ default: m.LiveStreamButton })), { ssr: false });
+const LiveStreamSalon = dynamic(() => import("@/components/community/livestream-salon").then(m => ({ default: m.LiveStreamSalon })), { ssr: false });
 
-type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'friends' | 'conversation' | 'messages';
+type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'livestream' | 'friends' | 'conversation' | 'messages';
 
 // VoiceMessagePlayer extracted to @/components/community/voice-message-player.tsx
 
@@ -172,7 +174,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
     // Notify parent to hide/show bottom nav based on viewState
     useEffect(() => {
-        const fullScreenViews: ViewState[] = ['conversation', 'group-detail', 'group-call'];
+        const fullScreenViews: ViewState[] = ['conversation', 'group-detail', 'group-call', 'livestream'];
         onHideNav?.(fullScreenViews.includes(viewState));
     }, [viewState, onHideNav]);
 
@@ -2470,6 +2472,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             <span className="text-xs font-bold">Appel</span>
                                         </Button>
                                     </motion.div>
+                                    {/* Livestream Button */}
+                                    <LiveStreamButton
+                                        groupId={selectedGroup.id}
+                                        userId={user?.id || ''}
+                                        isGroupAdmin={(selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id) || false}
+                                        onOpenStream={(stream) => {
+                                            (window as any).__activeStream = stream;
+                                            setViewState('livestream');
+                                        }}
+                                    />
                                 </div>
                             </div>
 
@@ -2769,6 +2781,20 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             />
                         </div>
                     </motion.div>
+                )}
+
+                {/* ========== LIVESTREAM SALON ========== */}
+                {viewState === 'livestream' && selectedGroup && (window as any).__activeStream && (
+                    <LiveStreamSalon
+                        stream={(window as any).__activeStream}
+                        groupId={selectedGroup.id}
+                        groupName={selectedGroup.name}
+                        userId={user?.id || ''}
+                        onClose={() => {
+                            (window as any).__activeStream = null;
+                            setViewState('group-detail');
+                        }}
+                    />
                 )}
 
                 {/* ========== FRIENDS VIEW ========== */}
