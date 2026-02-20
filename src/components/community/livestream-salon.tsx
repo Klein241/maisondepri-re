@@ -899,45 +899,57 @@ export function LiveStreamButton({
     // Check for active livestream
     useEffect(() => {
         const checkStream = async () => {
-            const { data } = await supabase
-                .from('group_livestreams')
-                .select('*')
-                .eq('group_id', groupId)
-                .eq('is_active', true)
-                .order('created_at', { ascending: false })
-                .limit(1)
-                .maybeSingle();
+            try {
+                const { data, error } = await supabase
+                    .from('group_livestreams')
+                    .select('*')
+                    .eq('group_id', groupId)
+                    .eq('is_active', true)
+                    .order('created_at', { ascending: false })
+                    .limit(1)
+                    .maybeSingle();
 
-            setActiveStream(data);
+                // If table doesn't exist or other error, just skip
+                if (!error && data) {
+                    setActiveStream(data);
+                }
+            } catch (e) {
+                console.log('Livestream table not available yet');
+            }
             setLoading(false);
         };
         checkStream();
 
-        // Listen for stream changes
-        const channel = supabase
-            .channel(`group-stream-${groupId}`)
-            .on('postgres_changes', {
-                event: '*',
-                schema: 'public',
-                table: 'group_livestreams',
-                filter: `group_id=eq.${groupId}`
-            }, (payload) => {
-                if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
-                    const stream = payload.new as LiveStream;
-                    if (stream.is_active) {
-                        setActiveStream(stream);
-                    } else {
+        // Listen for stream changes (silently fails if table doesn't exist)
+        let channel: any = null;
+        try {
+            channel = supabase
+                .channel(`group-stream-${groupId}`)
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'group_livestreams',
+                    filter: `group_id=eq.${groupId}`
+                }, (payload) => {
+                    if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+                        const stream = payload.new as LiveStream;
+                        if (stream.is_active) {
+                            setActiveStream(stream);
+                        } else {
+                            setActiveStream(null);
+                        }
+                    }
+                    if (payload.eventType === 'DELETE') {
                         setActiveStream(null);
                     }
-                }
-                if (payload.eventType === 'DELETE') {
-                    setActiveStream(null);
-                }
-            })
-            .subscribe();
+                })
+                .subscribe();
+        } catch (e) {
+            // Realtime subscription failed — table probably doesn't exist yet
+        }
 
         return () => {
-            supabase.removeChannel(channel);
+            if (channel) supabase.removeChannel(channel);
         };
     }, [groupId]);
 

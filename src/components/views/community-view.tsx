@@ -101,6 +101,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [loadingConversations, setLoadingConversations] = useState(false);
     const [loadingDMs, setLoadingDMs] = useState(false);
     const [allUsers, setAllUsers] = useState<any[]>([]); // For selecting new conversation partner
+    const [activeLiveStream, setActiveLiveStream] = useState<any | null>(null); // Active livestream data
     const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupDescription, setNewGroupDescription] = useState('');
@@ -2478,7 +2479,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         userId={user?.id || ''}
                                         isGroupAdmin={(selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id) || false}
                                         onOpenStream={(stream) => {
-                                            (window as any).__activeStream = stream;
+                                            setActiveLiveStream(stream);
                                             setViewState('livestream');
                                         }}
                                     />
@@ -2784,14 +2785,14 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 )}
 
                 {/* ========== LIVESTREAM SALON ========== */}
-                {viewState === 'livestream' && selectedGroup && (window as any).__activeStream && (
+                {viewState === 'livestream' && selectedGroup && activeLiveStream && (
                     <LiveStreamSalon
-                        stream={(window as any).__activeStream}
+                        stream={activeLiveStream}
                         groupId={selectedGroup.id}
                         groupName={selectedGroup.name}
                         userId={user?.id || ''}
                         onClose={() => {
-                            (window as any).__activeStream = null;
+                            setActiveLiveStream(null);
                             setViewState('group-detail');
                         }}
                     />
