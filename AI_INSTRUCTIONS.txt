@@ -1,0 +1,169 @@
+================================================================================
+🚨 INSTRUCTIONS OBLIGATOIRES POUR L'IA — LIRE EN PRIORITÉ AVANT TOUT DÉVELOPPEMENT
+================================================================================
+
+Ce fichier est destiné à tout modèle IA (Claude, GPT, Gemini, etc.) qui intervient
+sur ce projet. Il contient des règles CRITIQUES qui protègent l'application contre
+un problème financier grave déjà rencontré et résolu en février 2026.
+
+================================================================================
+📖 CONTEXTE — CE QUI S'EST PASSÉ
+================================================================================
+
+En février 2026, l'application "Maison de Prière" a consommé la totalité de ses
+crédits Netlify (125 000 invocations gratuites, puis 1000 crédits payants) en
+quelques jours seulement, avec seulement ~50 utilisateurs actifs.
+
+CAUSE DU PROBLÈME :
+L'application utilisait Next.js en mode SSR (Server-Side Rendering) avec le plugin
+@netlify/plugin-nextjs. Chaque visite de page et chaque appel d'API invoquait une
+"Netlify Serverless Function", facturée en crédits :
+
+  - 1 visite de page = 1 crédit (SSR)
+  - 1 appel API /api/group-messages = 1 crédit
+  - Le polling du chat (toutes les 8 secondes) = 450 crédits/heure/utilisateur
+  - 1 appel /api/bible = 1 crédit
+  - 1 appel /api/auth/ensure-profile = 1 crédit
+
+Résultat : un seul utilisateur actif sur le chat consommait ~938 crédits/jour.
+Pour 50 utilisateurs = ~47 000 crédits/jour = budget épuisé en 2-3 jours.
+
+================================================================================
+✅ LA SOLUTION MISE EN PLACE — EXPORT STATIQUE (SPA)
+================================================================================
+
+L'application a été convertie en EXPORT STATIQUE Next.js :
+
+  - next.config.ts → output: 'export'
+  - Le build génère un dossier "out/" avec des fichiers HTML/JS/CSS purs
+  - Netlify sert ces fichiers comme un CDN classique → 0 crédit consommé
+  - TOUTES les données sont chargées côté CLIENT via le SDK Supabase
+  - AUCUNE route API serverless n'existe dans le projet
+  - Le temps réel utilise Supabase Realtime (WebSocket côté client)
+
+Résultat : 0 crédit consommé par visite, 0 par message, 0 par utilisateur.
+L'application peut supporter des milliers d'utilisateurs sur le plan GRATUIT.
+
+================================================================================
+🚫 CE QUE TU NE DOIS JAMAIS FAIRE
+================================================================================
+
+1. ❌ NE JAMAIS créer de dossier "src/app/api/"
+   → Les routes API Next.js créent des serverless functions sur Netlify
+   → Chaque appel = 1 crédit Netlify facturé
+   → C'est LA CAUSE du problème de surconsommation
+
+2. ❌ NE JAMAIS supprimer ou modifier "output: 'export'" dans next.config.ts
+   → Sans cette option, Next.js utilise le SSR (Server-Side Rendering)
+   → Chaque visite de page = 1 serverless function = 1 crédit
+
+3. ❌ NE JAMAIS installer ou configurer "@netlify/plugin-nextjs"
+   → Ce plugin active le mode SSR de Next.js sur Netlify
+   → C'est lui qui transforme chaque page en serverless function
+
+4. ❌ NE JAMAIS utiliser ces fonctions/imports dans les pages :
+   → import { headers, cookies } from 'next/headers'
+   → import { NextRequest, NextResponse } from 'next/server'
+   → export const dynamic = "force-dynamic"
+   → export const dynamicParams = true
+   → Ces éléments forcent le rendu serveur
+
+5. ❌ NE JAMAIS créer de routes dynamiques [param] sans generateStaticParams()
+   → Les routes dynamiques sans params statiques cassent le build
+   → La route admin/users/[id] a été supprimée pour cette raison
+
+6. ❌ NE JAMAIS utiliser fetch('/api/...') dans les composants
+   → Il n'y a plus de routes API dans ce projet
+   → Utilise les fonctions dans src/lib/api-client.ts à la place
+
+================================================================================
+✅ CE QUE TU DOIS FAIRE À LA PLACE
+================================================================================
+
+1. ✅ Pour charger des données → Utiliser le SDK Supabase DIRECTEMENT
+   
+   Exemple :
+   ```typescript
+   import { supabase } from '@/lib/supabase';
+   
+   const { data, error } = await supabase
+     .from('prayer_requests')
+     .select('*')
+     .order('created_at', { ascending: false });
+   ```
+
+2. ✅ Pour les opérations CRUD → Utiliser api-client.ts ou direct Supabase
+   
+   Les fonctions réutilisables sont dans :
+   - src/lib/api-client.ts → loadGroupMessages, sendGroupMessage, 
+                              ensureUserProfile, fetchBiblePassage
+   - src/lib/admin-client.ts → adminDeleteContent, adminCreateUser, 
+                                adminDeleteUser
+
+3. ✅ Pour le temps réel → Utiliser Supabase Realtime (déjà en place)
+   
+   ```typescript
+   const channel = supabase
+     .channel('my-channel')
+     .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, 
+         (payload) => { /* mise à jour */ })
+     .subscribe();
+   ```
+
+4. ✅ Si une logique serveur est ABSOLUMENT nécessaire → Supabase Edge Functions
+   
+   Les Supabase Edge Functions sont GRATUITES et ILLIMITÉES.
+   - Créer dans : supabase/functions/nom-fonction/index.ts
+   - Déployer : supabase functions deploy nom-fonction
+   - Appeler : supabase.functions.invoke('nom-fonction', { body: {...} })
+   
+   NE PAS créer de API route Next.js (/api/...) pour cela !
+
+5. ✅ Pour les nouvelles pages → Composants client avec "use client"
+   
+   ```typescript
+   "use client"
+   import { useState, useEffect } from 'react';
+   import { supabase } from '@/lib/supabase';
+   
+   export default function MaPage() {
+     const [data, setData] = useState([]);
+     useEffect(() => {
+       supabase.from('table').select('*').then(({ data }) => setData(data || []));
+     }, []);
+     return <div>{/* rendu */}</div>;
+   }
+   ```
+
+================================================================================
+📂 STRUCTURE DU PROJET — FICHIERS CLÉS
+================================================================================
+
+next.config.ts          → CONTIENT output: 'export' (NE PAS MODIFIER)
+netlify.toml            → publish = "out", SPA fallback redirect
+src/lib/supabase.ts     → Client Supabase (singleton)
+src/lib/api-client.ts   → Fonctions de data-fetching (remplacent les API routes)
+src/lib/admin-client.ts → Fonctions admin (remplacent les API admin routes)
+src/app/               → Pages de l'application (toutes statiques)
+src/app/api/           → ⚠️ CE DOSSIER NE DOIT PAS EXISTER
+
+================================================================================
+🔒 SÉCURITÉ — RLS SUPABASE
+================================================================================
+
+Puisque TOUTES les requêtes passent directement du navigateur à Supabase,
+les Row Level Security (RLS) policies sont le SEUL mécanisme de sécurité.
+
+Avant de créer une nouvelle table ou de modifier les accès :
+1. Vérifier que la table a des RLS policies activées
+2. Vérifier que les policies autorisent UNIQUEMENT ce qui est nécessaire
+3. Ne JAMAIS désactiver RLS sur une table contenant des données sensibles
+
+================================================================================
+📊 RÉSUMÉ EN UNE PHRASE
+================================================================================
+
+"Ce projet est un SITE STATIQUE Next.js. TOUTES les données passent par le SDK
+Supabase CÔTÉ CLIENT. Il n'y a AUCUNE route API serverless. Ne jamais en créer."
+
+================================================================================
