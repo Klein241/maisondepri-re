@@ -504,73 +504,54 @@ function LiveSalon({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
         >
             {/* Header */}
-            <header className="flex items-center gap-3 px-3 sm:px-4 pt-10 pb-3 border-b border-white/5">
-                <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
+            <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
+                <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 h-9 w-9">
                     <ArrowLeft className="h-5 w-5" />
                 </Button>
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                        <motion.div
-                            animate={{ scale: [1, 1.2, 1] }}
-                            transition={{ repeat: Infinity, duration: 2 }}
-                            className="w-2.5 h-2.5 rounded-full bg-red-500"
-                        />
-                        <h1 className="font-black text-base sm:text-lg truncate">Diffusion en Direct</h1>
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <h1 className="font-black text-sm truncate">Diffusion en Direct</h1>
                     </div>
-                    <p className="text-[10px] text-slate-500">Maison de Prière</p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
-                    <Badge className="bg-red-600/20 text-red-400 gap-1 text-[10px]">
-                        <Eye className="h-3 w-3" />
-                        EN DIRECT
-                    </Badge>
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-slate-400 h-8 text-[10px]"
-                        onClick={() => {
-                            const url = `${window.location.origin}/?live=1`;
-                            navigator.clipboard?.writeText(url);
-                            toast.success('🔗 Lien du live copié !');
-                        }}
-                    >
-                        <Share2 className="h-3.5 w-3.5 mr-1" />
-                        Lien
-                    </Button>
-                </div>
+                <Badge className="bg-red-600/20 text-red-400 gap-1 text-[9px] px-2 py-0.5 shrink-0">
+                    <Radio className="h-2.5 w-2.5" />
+                    LIVE
+                </Badge>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-400 h-7 text-[9px] px-2 shrink-0"
+                    onClick={() => {
+                        const url = `${window.location.origin}/?live=1`;
+                        navigator.clipboard?.writeText(url);
+                        toast.success('🔗 Lien copié !');
+                    }}
+                >
+                    <Share2 className="h-3 w-3" />
+                </Button>
             </header>
 
-            {/* Video - aspect ratio per platform */}
-            <div className="px-2 sm:px-4 py-2 relative">
-                {(() => {
-                    const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
-                    return (
-                        <div
-                            className={cn(
-                                "bg-black rounded-xl overflow-hidden mx-auto",
-                                isPortrait ? "w-full max-w-[300px] sm:max-w-[360px]" : "w-full"
-                            )}
-                            style={{ aspectRatio: isPortrait ? '9/16' : '16/9', maxHeight: isPortrait ? '50vh' : 'auto' }}
-                        >
-                            {streamUrl ? (
-                                <iframe
-                                    src={streamUrl}
-                                    className="w-full h-full"
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                                    allowFullScreen
-                                    frameBorder="0"
-                                />
-                            ) : (
-                                <div className="w-full h-full flex items-center justify-center text-slate-500">
-                                    <p>Chargement du stream...</p>
-                                </div>
-                            )}
-                        </div>
-                    );
-                })()}
+            {/* Video — pas de ratio forcé, laisse le player gérer */}
+            <div className="w-full shrink-0 bg-black relative">
+                {streamUrl ? (
+                    <iframe
+                        src={streamUrl}
+                        className="w-full"
+                        style={{ height: '35vh', minHeight: '200px' }}
+                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                        allowFullScreen
+                        frameBorder="0"
+                        scrolling="no"
+                    />
+                ) : (
+                    <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                )}
 
                 {/* Floating Reactions */}
                 <AnimatePresence>

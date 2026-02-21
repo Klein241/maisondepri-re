@@ -104,6 +104,7 @@ export default function SocialPage() {
     // Live comments management
     const [liveComments, setLiveComments] = useState<LiveComment[]>([]);
     const [showCommentsPanel, setShowCommentsPanel] = useState(false);
+    const [liveStats, setLiveStats] = useState({ comments: 0, reactions: 0 });
 
     useEffect(() => {
         loadData();
@@ -133,6 +134,22 @@ export default function SocialPage() {
                 .order('sort_order');
 
             if (links) setSocialLinks(links);
+
+            // Load live stats
+            try {
+                const { count: commentCount } = await supabase
+                    .from('livestream_comments')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('livestream_id', 'global-live');
+                const { count: reactionCount } = await supabase
+                    .from('livestream_reactions')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('livestream_id', 'global-live');
+                setLiveStats({
+                    comments: commentCount || 0,
+                    reactions: reactionCount || 0,
+                });
+            } catch (e) { /* tables might not exist */ }
         } catch (e) {
             console.error('Error loading data:', e);
         }
@@ -189,18 +206,40 @@ export default function SocialPage() {
     const convertToEmbed = (url: string, platform: string): string => {
         try {
             const u = new URL(url.trim());
+
+            // YouTube: extract video ID and use low-latency embed params
             if (platform === 'youtube') {
+                let videoId = '';
                 if (u.hostname.includes('youtube.com') && u.searchParams.get('v')) {
-                    return `https://www.youtube.com/embed/${u.searchParams.get('v')}?autoplay=1`;
+                    videoId = u.searchParams.get('v')!;
+                } else if (u.hostname === 'youtu.be') {
+                    videoId = u.pathname.slice(1);
+                } else if (u.pathname.includes('/embed/')) {
+                    videoId = u.pathname.split('/embed/')[1]?.split('?')[0] || '';
+                } else if (u.pathname.includes('/live/')) {
+                    videoId = u.pathname.split('/live/')[1]?.split('?')[0] || '';
                 }
-                if (u.hostname === 'youtu.be') {
-                    return `https://www.youtube.com/embed${u.pathname}?autoplay=1`;
+                if (videoId) {
+                    return `https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&rel=0&playsinline=1&modestbranding=1`;
                 }
             }
+
+            // Facebook: use plugins/video.php with proper params for sound
             if (platform === 'facebook') {
-                return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url.trim())}&show_text=false&autoplay=true`;
+                // If already an embed URL, return as-is
+                if (u.pathname.includes('plugins/video.php')) return url.trim();
+                return `https://www.facebook.com/plugins/video.php?href=${encodeURIComponent(url.trim())}&width=500&show_text=false&autoplay=true&allowfullscreen=true&muted=false`;
             }
-        } catch (e) { /* not a URL */ }
+
+            // Twitch: convert channel URL to embed
+            if (platform === 'twitch') {
+                const channel = u.pathname.split('/').filter(Boolean)[0];
+                if (channel && !u.pathname.includes('player.twitch.tv')) {
+                    const parentDomain = typeof window !== 'undefined' ? window.location.hostname : 'maisondepriere.netlify.app';
+                    return `https://player.twitch.tv/?channel=${channel}&parent=${parentDomain}&muted=false&autoplay=true`;
+                }
+            }
+        } catch (e) { /* not a valid URL, return as-is */ }
         return url.trim();
     };
 
@@ -409,6 +448,33 @@ export default function SocialPage() {
                         />
                     </div>
 
+                    {/* Live Stats */}
+                    {isLiveActive && (
+                        <div className="grid grid-cols-3 gap-3">
+                            <div className="text-center p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                <p className="text-2xl font-bold text-blue-400">{liveStats.comments}</p>
+                                <p className="text-xs text-muted-foreground">Commentaires</p>
+                            </div>
+                            <div className="text-center p-3 rounded-lg bg-pink-500/10 border border-pink-500/20">
+                                <p className="text-2xl font-bold text-pink-400">{liveStats.reactions}</p>
+                                <p className="text-xs text-muted-foreground">Réactions</p>
+                            </div>
+                            <div className="text-center p-3 rounded-lg bg-green-500/10 border border-green-500/20">
+                                <button
+                                    className="text-xs text-green-400 hover:underline font-medium"
+                                    onClick={() => {
+                                        const url = `${typeof window !== 'undefined' ? window.location.origin : ''}/?live=1`;
+                                        navigator.clipboard?.writeText(url);
+                                        toast.success('🔗 Lien du live copié !');
+                                    }}
+                                >
+                                    📋 Copier le lien
+                                </button>
+                                <p className="text-[10px] text-muted-foreground mt-1">Lien partageable</p>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Platform Selection */}
                     <div className="space-y-2">
                         <Label>Plateforme du Stream</Label>
@@ -420,8 +486,8 @@ export default function SocialPage() {
                                         key={p.id}
                                         onClick={() => setLivePlatform(p.id)}
                                         className={`flex flex-col items-center gap-1 p-3 rounded-xl border transition-all ${livePlatform === p.id
-                                                ? 'bg-primary/10 border-primary/50 ring-2 ring-primary/30'
-                                                : 'bg-muted/30 border-muted hover:bg-muted/50'
+                                            ? 'bg-primary/10 border-primary/50 ring-2 ring-primary/30'
+                                            : 'bg-muted/30 border-muted hover:bg-muted/50'
                                             }`}
                                     >
                                         <Icon className={`h-5 w-5 ${p.color}`} />

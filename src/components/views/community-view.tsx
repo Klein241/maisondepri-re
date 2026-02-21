@@ -3006,98 +3006,83 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-50 flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+                        className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
                     >
                         {/* Header */}
-                        <header className="flex items-center gap-3 px-3 sm:px-4 pt-10 pb-3 border-b border-white/5 shrink-0">
-                            <Button variant="ghost" size="icon" onClick={() => setViewState('main')} className="shrink-0">
+                        <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
+                            <Button variant="ghost" size="icon" onClick={() => setViewState('main')} className="shrink-0 h-9 w-9">
                                 <ArrowLeft className="h-5 w-5" />
                             </Button>
                             <div className="flex-1 min-w-0">
                                 <div className="flex items-center gap-2">
-                                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
-                                    <h1 className="font-black text-base sm:text-lg truncate">Diffusion en Direct</h1>
+                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    <h1 className="font-black text-sm truncate">Diffusion en Direct</h1>
                                 </div>
-                                <p className="text-[10px] text-slate-500">Maison de Prière</p>
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                                <Badge className="bg-red-600/20 text-red-400 gap-1 text-[10px]">
-                                    <Eye className="h-3 w-3" />
-                                    EN DIRECT
-                                </Badge>
-                                {/* Shareable link */}
-                                <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className="text-slate-400 h-8 text-[10px]"
-                                    onClick={() => {
-                                        const url = `${window.location.origin}/?live=1`;
-                                        navigator.clipboard?.writeText(url);
-                                        toast.success('🔗 Lien du live copié !');
-                                    }}
-                                >
-                                    <Share2 className="h-3.5 w-3.5 mr-1" />
-                                    Partager
-                                </Button>
-                            </div>
+                            <Badge className="bg-red-600/20 text-red-400 gap-1 text-[9px] px-2 py-0.5 shrink-0">
+                                <Radio className="h-2.5 w-2.5" />
+                                LIVE
+                            </Badge>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-slate-400 h-7 text-[9px] px-2 shrink-0"
+                                onClick={() => {
+                                    const url = `${window.location.origin}/?live=1`;
+                                    navigator.clipboard?.writeText(url);
+                                    toast.success('🔗 Lien copié !');
+                                }}
+                            >
+                                <Share2 className="h-3 w-3" />
+                            </Button>
                         </header>
 
-                        {/* Video - aspect ratio depends on platform */}
-                        <div className="px-2 sm:px-4 py-2 shrink-0">
+                        {/* Video — pas de ratio forcé, laisse le player gérer */}
+                        <div className="w-full shrink-0 bg-black">
                             {(() => {
                                 const streamUrl = appSettings?.['live_stream_url'] || '';
-                                const platform = appSettings?.['live_platform'] || 'youtube';
-                                const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
-
-                                return (
-                                    <div className={cn(
-                                        "bg-black rounded-xl overflow-hidden mx-auto",
-                                        isPortrait
-                                            ? "w-full max-w-[300px] sm:max-w-[360px]"
-                                            : "w-full"
-                                    )}
-                                        style={{ aspectRatio: isPortrait ? '9/16' : '16/9', maxHeight: isPortrait ? '50vh' : 'auto' }}
-                                    >
-                                        {streamUrl ? (
-                                            <iframe
-                                                src={streamUrl}
-                                                className="w-full h-full"
-                                                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-                                                allowFullScreen
-                                                frameBorder="0"
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center text-slate-500">
-                                                <p>Chargement...</p>
-                                            </div>
-                                        )}
+                                return streamUrl ? (
+                                    <iframe
+                                        src={streamUrl}
+                                        className="w-full"
+                                        style={{ height: '35vh', minHeight: '200px' }}
+                                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                                        allowFullScreen
+                                        frameBorder="0"
+                                        scrolling="no"
+                                    />
+                                ) : (
+                                    <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
+                                        <Loader2 className="h-8 w-8 animate-spin" />
                                     </div>
                                 );
                             })()}
                         </div>
 
-                        {/* Quick reactions */}
-                        <div className="px-3 sm:px-4 py-1.5 flex items-center gap-1 border-b border-white/5 overflow-x-auto shrink-0">
+                        {/* Quick reactions — avec feedback visuel */}
+                        <div className="px-3 py-1 flex items-center gap-0.5 border-b border-white/5 shrink-0">
                             {['❤️', '🙏', '🔥', '👏', '😍', '✝️'].map(emoji => (
                                 <button
                                     key={emoji}
                                     onClick={async () => {
-                                        try {
-                                            await supabase.from('livestream_reactions').insert({
-                                                livestream_id: 'global-live',
-                                                user_id: user.id,
-                                                emoji,
-                                            });
-                                        } catch (e) { /* silent */ }
+                                        const { error } = await supabase.from('livestream_reactions').insert({
+                                            livestream_id: 'global-live',
+                                            user_id: user.id,
+                                            emoji,
+                                        });
+                                        if (error) {
+                                            console.error('Reaction error:', error);
+                                            toast.error('Réaction impossible');
+                                        }
                                     }}
-                                    className="text-lg p-1.5 rounded-xl hover:bg-white/10 transition-colors shrink-0 active:scale-125"
+                                    className="text-lg p-1.5 rounded-xl hover:bg-white/10 transition-all active:scale-150"
                                 >
                                     {emoji}
                                 </button>
                             ))}
                         </div>
 
-                        {/* Comments section */}
+                        {/* Comments section — flex-1 prend tout l'espace restant */}
                         <GlobalLiveComments userId={user.id} userName={user.name || 'Utilisateur'} />
                     </motion.div>
                 )}
