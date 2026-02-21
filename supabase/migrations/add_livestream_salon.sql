@@ -212,4 +212,56 @@ END $$;
 -- Ensure app_settings table has live settings
 INSERT INTO app_settings (key, value) VALUES ('live_stream_active', 'false') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('live_stream_url', '') ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value) VALUES ('live_stream_url_backup', '') ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value) VALUES ('live_platform', 'youtube') ON CONFLICT (key) DO NOTHING;
+
+-- ====================================================
+-- Table: live_replays (historique des lives passés)
+-- ====================================================
+CREATE TABLE IF NOT EXISTS live_replays (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL DEFAULT 'Replay du live',
+    description TEXT,
+    platform TEXT NOT NULL DEFAULT 'youtube',
+    embed_url TEXT NOT NULL,
+    thumbnail_url TEXT,
+    duration_minutes INTEGER,
+    recorded_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by UUID REFERENCES auth.users(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS for live_replays
+ALTER TABLE live_replays ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Tout le monde peut voir les replays" ON live_replays;
+CREATE POLICY "Tout le monde peut voir les replays"
+    ON live_replays FOR SELECT
+    USING (true);
+
+DROP POLICY IF EXISTS "Admin peut ajouter des replays" ON live_replays;
+CREATE POLICY "Admin peut ajouter des replays"
+    ON live_replays FOR INSERT
+    WITH CHECK (
+        EXISTS (
+            SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+DROP POLICY IF EXISTS "Admin peut supprimer des replays" ON live_replays;
+CREATE POLICY "Admin peut supprimer des replays"
+    ON live_replays FOR DELETE
+    USING (
+        EXISTS (
+            SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+        )
+    );
+
+DROP POLICY IF EXISTS "Admin peut modifier des replays" ON live_replays;
+CREATE POLICY "Admin peut modifier des replays"
+    ON live_replays FOR UPDATE
+    USING (
+        EXISTS (
+            SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin'
+        )
+    );

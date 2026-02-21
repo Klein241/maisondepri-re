@@ -352,12 +352,14 @@ function LiveRegistrationFlow({
 // ===== LIVE SALON (full-screen with video + comments) =====
 function LiveSalon({
     streamUrl,
+    backupUrl,
     platform,
     userId,
     userName,
     onClose,
 }: {
     streamUrl: string;
+    backupUrl: string;
     platform: string;
     userId: string;
     userName: string;
@@ -369,6 +371,28 @@ function LiveSalon({
     const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const commentsEndRef = useRef<HTMLDivElement>(null);
+
+    // Fallback / blocked platform detection
+    const [useBackup, setUseBackup] = useState(false);
+    const [iframeLoaded, setIframeLoaded] = useState(false);
+    const [showBlockedMsg, setShowBlockedMsg] = useState(false);
+    const currentUrl = useBackup ? backupUrl : streamUrl;
+    const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
+
+    useEffect(() => {
+        setIframeLoaded(false);
+        setShowBlockedMsg(false);
+        const timer = setTimeout(() => {
+            if (!iframeLoaded) {
+                setShowBlockedMsg(true);
+                if (backupUrl && !useBackup) {
+                    setUseBackup(true);
+                    toast.info('🔄 Basculement auto vers le lien de secours');
+                }
+            }
+        }, 6000);
+        return () => clearTimeout(timer);
+    }, [currentUrl, backupUrl]);
 
     // Check if admin
     const { user } = useAppStore();
@@ -535,18 +559,28 @@ function LiveSalon({
                 </Button>
             </header>
 
-            {/* Video — pas de ratio forcé, laisse le player gérer */}
-            <div className="w-full shrink-0 bg-black relative">
-                {streamUrl ? (
-                    <iframe
-                        src={streamUrl}
-                        className="w-full"
-                        style={{ height: '35vh', minHeight: '200px' }}
-                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                        allowFullScreen
-                        frameBorder="0"
-                        scrolling="no"
-                    />
+            {/* Video — 9:16 for Facebook/TikTok/Instagram, 16:9 for others */}
+            <div className={cn("shrink-0 bg-black flex items-center justify-center relative", isPortrait && !useBackup ? '' : 'w-full')}>
+                {currentUrl ? (
+                    <div className={cn(
+                        "bg-black overflow-hidden mx-auto",
+                        isPortrait && !useBackup ? "w-full max-w-[280px] sm:max-w-[340px]" : "w-full"
+                    )}
+                        style={{
+                            aspectRatio: isPortrait && !useBackup ? '9/16' : '16/9',
+                            maxHeight: isPortrait && !useBackup ? '45vh' : '35vh'
+                        }}
+                    >
+                        <iframe
+                            src={currentUrl}
+                            className="w-full h-full"
+                            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                            allowFullScreen
+                            frameBorder="0"
+                            scrolling="no"
+                            onLoad={() => { setIframeLoaded(true); setShowBlockedMsg(false); }}
+                        />
+                    </div>
                 ) : (
                     <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
                         <Loader2 className="h-8 w-8 animate-spin" />
@@ -570,6 +604,24 @@ function LiveSalon({
                     ))}
                 </AnimatePresence>
             </div>
+
+            {/* Blocked platform warning + manual switch */}
+            {(showBlockedMsg || backupUrl) && (
+                <div className="px-3 py-1.5 flex items-center justify-between shrink-0 border-b border-white/5">
+                    {showBlockedMsg && !backupUrl && (
+                        <p className="text-[10px] text-amber-400">⚠️ Vidéo inaccessible. Activez un VPN.</p>
+                    )}
+                    {backupUrl && (
+                        <button
+                            onClick={() => { setUseBackup(!useBackup); setIframeLoaded(false); setShowBlockedMsg(false); }}
+                            className="text-[10px] font-bold text-blue-400 hover:text-blue-300"
+                        >
+                            {useBackup ? '⬅️ Lien principal' : '🔄 Vidéo bloquée ? Lien alternatif'}
+                        </button>
+                    )}
+                    {useBackup && <span className="text-[9px] text-green-400">✅ Secours</span>}
+                </div>
+            )}
 
             {/* Quick reactions */}
             <div className="px-3 sm:px-4 py-2 flex items-center gap-1 border-b border-white/5 overflow-x-auto">
@@ -770,6 +822,9 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
     const [showLiveSalon, setShowLiveSalon] = useState(false);
     const [showSocialDialog, setShowSocialDialog] = useState(false);
     const [showEventsDialog, setShowEventsDialog] = useState(false);
+    const [showReplaysDialog, setShowReplaysDialog] = useState(false);
+    const [replays, setReplays] = useState<any[]>([]);
+    const [selectedReplay, setSelectedReplay] = useState<any | null>(null);
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
 
     useEffect(() => {
@@ -781,6 +836,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
 
         // Load social links
         loadSocialLinks();
+        loadReplays();
     }, [appSettings]);
 
     const loadSocialLinks = async () => {
@@ -791,6 +847,19 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                 .eq('is_active', true)
                 .order('sort_order');
             if (data) setSocialLinks(data);
+        } catch (e) {
+            // Table might not exist yet
+        }
+    };
+
+    const loadReplays = async () => {
+        try {
+            const { data } = await supabase
+                .from('live_replays')
+                .select('*')
+                .order('recorded_at', { ascending: false })
+                .limit(20);
+            if (data) setReplays(data);
         } catch (e) {
             // Table might not exist yet
         }
@@ -885,6 +954,26 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                 </div>
                             </div>
                         </motion.div>
+                    )}
+
+                    {/* Replay Button - always visible if replays exist */}
+                    {replays.length > 0 && (
+                        <motion.button
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1 }}
+                            onClick={() => setShowReplaysDialog(true)}
+                            className="w-full flex items-center gap-3 p-3 rounded-2xl bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border border-purple-500/20 hover:border-purple-400/40 transition-all"
+                        >
+                            <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center border border-purple-500/10">
+                                <Play className="w-5 h-5 text-purple-300 fill-purple-300" />
+                            </div>
+                            <div className="flex-1 text-left">
+                                <p className="font-bold text-sm text-white">Voir les replays</p>
+                                <p className="text-[10px] text-purple-300">{replays.length} live{replays.length > 1 ? 's' : ''} enregistré{replays.length > 1 ? 's' : ''}</p>
+                            </div>
+                            <ArrowLeft className="w-4 h-4 text-purple-400 rotate-180" />
+                        </motion.button>
                     )}
 
                     {/* Main Progression Card */}
@@ -1021,6 +1110,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                     {showLiveSalon && (
                         <LiveSalon
                             streamUrl={liveStreamUrl}
+                            backupUrl={appSettings?.['live_stream_url_backup'] || ''}
                             platform={appSettings?.['live_platform'] || 'youtube'}
                             userId={user?.id || ''}
                             userName={user?.name || 'Visiteur'}
@@ -1112,6 +1202,105 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                         </p>
                     </DialogContent>
                 </Dialog>
+
+                {/* Replays Dialog */}
+                <Dialog open={showReplaysDialog} onOpenChange={setShowReplaysDialog}>
+                    <DialogContent className="max-w-md bg-slate-900 border-slate-800 max-h-[85vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2 text-white">
+                                <Play className="w-5 h-5 text-purple-400 fill-purple-400" />
+                                Lives Passés (Replay)
+                            </DialogTitle>
+                            <DialogDescription>
+                                Revoyez nos précédentes diffusions en direct
+                            </DialogDescription>
+                        </DialogHeader>
+                        <div className="space-y-3 mt-2">
+                            {replays.length === 0 ? (
+                                <p className="text-sm text-slate-500 text-center py-8">
+                                    Aucun replay disponible pour le moment. Revenez après un live !
+                                </p>
+                            ) : (
+                                replays.map(replay => (
+                                    <motion.button
+                                        key={replay.id}
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                        onClick={() => {
+                                            setSelectedReplay(replay);
+                                            setShowReplaysDialog(false);
+                                        }}
+                                        className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 hover:border-purple-500/30 transition-all text-left"
+                                    >
+                                        <div className="w-14 h-10 bg-gradient-to-br from-purple-600/30 to-pink-600/30 rounded-lg flex items-center justify-center shrink-0 border border-purple-500/20">
+                                            <Play className="h-5 w-5 text-purple-300 fill-purple-300" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <p className="font-bold text-sm text-white truncate">{replay.title}</p>
+                                            <p className="text-[10px] text-slate-400">
+                                                {new Date(replay.recorded_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                            </p>
+                                        </div>
+                                        <Badge variant="outline" className="text-[9px] shrink-0 border-purple-500/30 text-purple-300">
+                                            {replay.platform}
+                                        </Badge>
+                                    </motion.button>
+                                ))
+                            )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
+
+                {/* Selected Replay Viewer (full screen) */}
+                <AnimatePresence>
+                    {selectedReplay && (
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+                        >
+                            <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
+                                <Button variant="ghost" size="icon" onClick={() => setSelectedReplay(null)} className="shrink-0 h-9 w-9">
+                                    <ArrowLeft className="h-5 w-5" />
+                                </Button>
+                                <div className="flex-1 min-w-0">
+                                    <h1 className="font-black text-sm truncate">{selectedReplay.title}</h1>
+                                    <p className="text-[10px] text-slate-500">
+                                        {new Date(selectedReplay.recorded_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                    </p>
+                                </div>
+                                <Badge className="bg-purple-600/20 text-purple-400 text-[9px] shrink-0">
+                                    REPLAY
+                                </Badge>
+                            </header>
+                            <div className="flex-1 flex items-start justify-center bg-black p-2">
+                                {(() => {
+                                    const rpIsPortrait = ['facebook', 'tiktok', 'instagram'].includes(selectedReplay.platform);
+                                    return (
+                                        <div className={cn(
+                                            "bg-black overflow-hidden mx-auto",
+                                            rpIsPortrait ? "w-full max-w-[300px]" : "w-full"
+                                        )}
+                                            style={{
+                                                aspectRatio: rpIsPortrait ? '9/16' : '16/9',
+                                                maxHeight: '80vh'
+                                            }}
+                                        >
+                                            <iframe
+                                                src={selectedReplay.embed_url}
+                                                className="w-full h-full"
+                                                allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                                                allowFullScreen
+                                                frameBorder="0"
+                                            />
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
             </div>
         </div>
     );

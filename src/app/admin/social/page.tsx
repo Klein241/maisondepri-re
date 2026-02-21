@@ -52,7 +52,8 @@ import {
     MessageSquare,
     Eye,
     Users,
-    AlertTriangle
+    AlertTriangle,
+    Play
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
@@ -88,6 +89,7 @@ const PLATFORM_OPTIONS = [
 export default function SocialPage() {
     const [isLiveActive, setIsLiveActive] = useState(false);
     const [liveStreamUrl, setLiveStreamUrl] = useState('');
+    const [liveStreamUrlBackup, setLiveStreamUrlBackup] = useState('');
     const [livePlatform, setLivePlatform] = useState('youtube');
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -106,6 +108,12 @@ export default function SocialPage() {
     const [showCommentsPanel, setShowCommentsPanel] = useState(false);
     const [liveStats, setLiveStats] = useState({ comments: 0, reactions: 0 });
 
+    // Replay management
+    const [replays, setReplays] = useState<any[]>([]);
+    const [showReplayForm, setShowReplayForm] = useState(false);
+    const [newReplayTitle, setNewReplayTitle] = useState('');
+    const [newReplayUrl, setNewReplayUrl] = useState('');
+
     useEffect(() => {
         loadData();
     }, []);
@@ -117,12 +125,13 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url', 'live_platform']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_url_backup', 'live_platform']);
 
             if (settings) {
                 settings.forEach(s => {
                     if (s.key === 'live_stream_active') setIsLiveActive(s.value === 'true');
                     if (s.key === 'live_stream_url') setLiveStreamUrl(s.value || '');
+                    if (s.key === 'live_stream_url_backup') setLiveStreamUrlBackup(s.value || '');
                     if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
                 });
             }
@@ -150,6 +159,15 @@ export default function SocialPage() {
                     reactions: reactionCount || 0,
                 });
             } catch (e) { /* tables might not exist */ }
+
+            // Load replays
+            try {
+                const { data: replayData } = await supabase
+                    .from('live_replays')
+                    .select('*')
+                    .order('recorded_at', { ascending: false });
+                if (replayData) setReplays(replayData);
+            } catch (e) { /* table might not exist */ }
         } catch (e) {
             console.error('Error loading data:', e);
         }
@@ -247,19 +265,75 @@ export default function SocialPage() {
         setIsSaving(true);
         try {
             const embedUrl = convertToEmbed(liveStreamUrl, livePlatform);
+            // Auto-detect backup platform (try youtube first, then other)
+            let backupPlatform = 'youtube';
+            try {
+                const bu = new URL(liveStreamUrlBackup.trim());
+                if (bu.hostname.includes('youtube') || bu.hostname === 'youtu.be') backupPlatform = 'youtube';
+                else if (bu.hostname.includes('facebook')) backupPlatform = 'facebook';
+                else if (bu.hostname.includes('twitch')) backupPlatform = 'twitch';
+            } catch (e) { }
+            const embedUrlBackup = liveStreamUrlBackup.trim() ? convertToEmbed(liveStreamUrlBackup.trim(), backupPlatform) : '';
 
             await supabase.from('app_settings').upsert([
                 { key: 'live_stream_active', value: isLiveActive.toString() },
                 { key: 'live_stream_url', value: embedUrl },
+                { key: 'live_stream_url_backup', value: embedUrlBackup },
                 { key: 'live_platform', value: livePlatform },
             ], { onConflict: 'key' });
 
             setLiveStreamUrl(embedUrl);
+            setLiveStreamUrlBackup(embedUrlBackup);
             toast.success('🔴 Paramètres du live enregistrés!');
         } catch (e: any) {
             toast.error('Erreur: ' + e.message);
         }
         setIsSaving(false);
+    };
+
+    const handleAddReplay = async () => {
+        if (!newReplayTitle.trim() || !newReplayUrl.trim()) return;
+        setIsSaving(true);
+        try {
+            // Auto-detect platform
+            let replayPlatform = 'other';
+            try {
+                const u = new URL(newReplayUrl.trim());
+                if (u.hostname.includes('youtube') || u.hostname === 'youtu.be') replayPlatform = 'youtube';
+                else if (u.hostname.includes('facebook')) replayPlatform = 'facebook';
+                else if (u.hostname.includes('twitch')) replayPlatform = 'twitch';
+                else if (u.hostname.includes('tiktok')) replayPlatform = 'tiktok';
+            } catch (e) { }
+
+            const embedUrl = convertToEmbed(newReplayUrl.trim(), replayPlatform);
+
+            const { error } = await supabase.from('live_replays').insert({
+                title: newReplayTitle.trim(),
+                platform: replayPlatform,
+                embed_url: embedUrl,
+            });
+
+            if (error) throw error;
+            toast.success('⏪ Replay ajouté!');
+            setNewReplayTitle('');
+            setNewReplayUrl('');
+            setShowReplayForm(false);
+            loadData();
+        } catch (e: any) {
+            toast.error('Erreur: ' + e.message);
+        }
+        setIsSaving(false);
+    };
+
+    const handleDeleteReplay = async (id: string) => {
+        if (!confirm('Supprimer ce replay ?')) return;
+        try {
+            await supabase.from('live_replays').delete().eq('id', id);
+            toast.success('Replay supprimé');
+            setReplays(prev => prev.filter(r => r.id !== id));
+        } catch (e: any) {
+            toast.error('Erreur');
+        }
     };
 
     const handleDeleteComment = async (id: string) => {
@@ -511,16 +585,38 @@ export default function SocialPage() {
                         </p>
                     </div>
 
+                    {/* Backup URL - for blocked platforms */}
+                    <div className="space-y-2">
+                        <Label className="flex items-center gap-2">
+                            🔄 URL de secours (obligatoire si la plateforme est bloquée)
+                        </Label>
+                        <Input
+                            placeholder="Ex: lien YouTube si votre live principal est sur Facebook"
+                            value={liveStreamUrlBackup}
+                            onChange={(e) => setLiveStreamUrlBackup(e.target.value)}
+                        />
+                        <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                            <p className="text-xs text-amber-300 font-medium mb-1">⚠️ Important : plateformes bloquées</p>
+                            <p className="text-xs text-muted-foreground">
+                                Si Facebook/YouTube/TikTok est bloqué dans le pays de vos utilisateurs, l'app basculera automatiquement sur cette URL.
+                                <br />
+                                <strong>Conseil :</strong> Utilisez <a href="https://restream.io" target="_blank" className="text-blue-400 underline">Restream.io</a> ou <a href="https://streamyard.com" target="_blank" className="text-blue-400 underline">StreamYard</a> pour streamer simultanément sur plusieurs plateformes.
+                            </p>
+                        </div>
+                    </div>
+
                     {/* Preview */}
                     {liveStreamUrl && (
                         <div className="space-y-2">
                             <Label>Aperçu</Label>
-                            <div className="aspect-video bg-black rounded-lg overflow-hidden border border-muted">
+                            <div className={`bg-black rounded-lg overflow-hidden border border-muted mx-auto ${livePlatform === 'facebook' || livePlatform === 'tiktok' || livePlatform === 'instagram' ? 'max-w-[300px]' : 'w-full'}`}
+                                style={{ aspectRatio: ['facebook', 'tiktok', 'instagram'].includes(livePlatform) ? '9/16' : '16/9' }}
+                            >
                                 <iframe
                                     src={convertToEmbed(liveStreamUrl, livePlatform)}
                                     className="w-full h-full"
                                     allowFullScreen
-                                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                                    allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                                 />
                             </div>
                         </div>
@@ -592,6 +688,93 @@ export default function SocialPage() {
                                     )}
                                 </div>
                             </ScrollArea>
+                        </div>
+                    )}
+                </CardContent>
+            </Card>
+
+            {/* ============ REPLAY SECTION ============ */}
+            <Card className="border-purple-500/20">
+                <CardHeader>
+                    <div className="flex items-center justify-between">
+                        <div>
+                            <CardTitle className="flex items-center gap-2">
+                                <Play className="h-5 w-5 text-purple-500" />
+                                Replays / Lives passés
+                            </CardTitle>
+                            <CardDescription>
+                                Ajoutez les enregistrements des lives passés pour que les fidèles puissent revoir
+                            </CardDescription>
+                        </div>
+                        <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowReplayForm(!showReplayForm)}>
+                            <Plus className="h-4 w-4" />
+                            Ajouter un replay
+                        </Button>
+                    </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                    {/* Add replay form */}
+                    {showReplayForm && (
+                        <div className="border border-purple-500/20 rounded-xl p-4 space-y-3 bg-purple-500/5">
+                            <div className="space-y-2">
+                                <Label>Titre du replay</Label>
+                                <Input
+                                    placeholder="Ex: Prière du dimanche 20 février"
+                                    value={newReplayTitle}
+                                    onChange={(e) => setNewReplayTitle(e.target.value)}
+                                />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>URL de la vidéo (YouTube, Facebook, etc.)</Label>
+                                <Input
+                                    placeholder="https://www.youtube.com/watch?v=..."
+                                    value={newReplayUrl}
+                                    onChange={(e) => setNewReplayUrl(e.target.value)}
+                                />
+                                <p className="text-xs text-muted-foreground">💡 Collez le lien YouTube/Facebook. La conversion embed est automatique.</p>
+                            </div>
+                            <div className="flex gap-2">
+                                <Button
+                                    onClick={handleAddReplay}
+                                    disabled={isSaving || !newReplayTitle.trim() || !newReplayUrl.trim()}
+                                    className="bg-purple-600 hover:bg-purple-500"
+                                >
+                                    {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                                    Enregistrer le replay
+                                </Button>
+                                <Button variant="outline" onClick={() => setShowReplayForm(false)}>Annuler</Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Replays list */}
+                    {replays.length === 0 ? (
+                        <p className="text-sm text-muted-foreground text-center py-6">
+                            Aucun replay enregistré. Ajoutez vos lives passés pour que les fidèles puissent les revoir.
+                        </p>
+                    ) : (
+                        <div className="space-y-3">
+                            {replays.map(replay => (
+                                <div key={replay.id} className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 border group">
+                                    <div className="w-16 h-10 bg-black rounded overflow-hidden flex items-center justify-center shrink-0">
+                                        <Play className="h-5 w-5 text-purple-400" />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="font-medium text-sm truncate">{replay.title}</p>
+                                        <p className="text-[10px] text-muted-foreground">
+                                            {replay.platform} • {new Date(replay.recorded_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                        </p>
+                                    </div>
+                                    <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 text-red-500 opacity-0 group-hover:opacity-100"
+                                        onClick={() => handleDeleteReplay(replay.id)}
+                                    >
+                                        <Trash2 className="h-4 w-4" />
+                                    </Button>
+                                </div>
+                            ))}
                         </div>
                     )}
                 </CardContent>

@@ -53,6 +53,134 @@ type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'l
 
 // VoiceMessagePlayer extracted to @/components/community/voice-message-player.tsx
 
+// ===== Global Live Salon (with fallback + portrait/landscape) =====
+function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, user, onClose }: {
+    platform: string; isPortrait: boolean; primaryUrl: string; backupUrl: string;
+    user: { id: string; name?: string | null; role?: string };
+    onClose: () => void;
+}) {
+    const [useBackup, setUseBackup] = useState(false);
+    const [iframeLoaded, setIframeLoaded] = useState(false);
+    const [showBlockedMsg, setShowBlockedMsg] = useState(false);
+
+    const currentUrl = useBackup ? backupUrl : primaryUrl;
+
+    // Auto-detect blocked platform: if iframe didn't load after 6s, show fallback
+    useEffect(() => {
+        setIframeLoaded(false);
+        setShowBlockedMsg(false);
+        const timer = setTimeout(() => {
+            if (!iframeLoaded) {
+                setShowBlockedMsg(true);
+                // Auto-switch to backup if available
+                if (backupUrl && !useBackup) {
+                    setUseBackup(true);
+                    toast.info('🔄 Plateforme bloquée, basculement automatique vers le lien de secours');
+                }
+            }
+        }, 6000);
+        return () => clearTimeout(timer);
+    }, [currentUrl, backupUrl]);
+
+    const handleIframeLoad = () => { setIframeLoaded(true); setShowBlockedMsg(false); };
+
+    return (
+        <motion.div
+            key="global-live"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+        >
+            {/* Header */}
+            <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
+                <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 h-9 w-9">
+                    <ArrowLeft className="h-5 w-5" />
+                </Button>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <h1 className="font-black text-sm truncate">Diffusion en Direct</h1>
+                    </div>
+                </div>
+                <Badge className="bg-red-600/20 text-red-400 gap-1 text-[9px] px-2 py-0.5 shrink-0">
+                    <Radio className="h-2.5 w-2.5" />
+                    LIVE
+                </Badge>
+                <Button variant="ghost" size="sm" className="text-slate-400 h-7 text-[9px] px-2 shrink-0"
+                    onClick={() => { navigator.clipboard?.writeText(`${window.location.origin}/?live=1`); toast.success('🔗 Lien copié !'); }}>
+                    <Share2 className="h-3 w-3" />
+                </Button>
+            </header>
+
+            {/* Video — 9:16 for Facebook/TikTok/Instagram, 16:9 for others */}
+            <div className={cn("shrink-0 bg-black flex items-center justify-center", isPortrait && !useBackup ? '' : 'w-full')}>
+                {currentUrl ? (
+                    <div className={cn(
+                        "bg-black overflow-hidden mx-auto relative",
+                        isPortrait && !useBackup ? "w-full max-w-[280px] sm:max-w-[340px]" : "w-full"
+                    )}
+                        style={{
+                            aspectRatio: isPortrait && !useBackup ? '9/16' : '16/9',
+                            maxHeight: isPortrait && !useBackup ? '45vh' : '35vh'
+                        }}
+                    >
+                        <iframe
+                            src={currentUrl}
+                            className="w-full h-full"
+                            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                            allowFullScreen
+                            frameBorder="0"
+                            scrolling="no"
+                            onLoad={handleIframeLoad}
+                        />
+                    </div>
+                ) : (
+                    <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                )}
+            </div>
+
+            {/* Blocked platform warning + manual switch */}
+            {(showBlockedMsg || backupUrl) && (
+                <div className="px-3 py-1.5 flex items-center justify-between shrink-0 border-b border-white/5">
+                    {showBlockedMsg && !backupUrl && (
+                        <p className="text-[10px] text-amber-400">⚠️ Vidéo inaccessible. Activez un VPN ou demandez le lien YouTube.</p>
+                    )}
+                    {backupUrl && (
+                        <button
+                            onClick={() => { setUseBackup(!useBackup); setIframeLoaded(false); setShowBlockedMsg(false); }}
+                            className="text-[10px] font-bold text-blue-400 hover:text-blue-300"
+                        >
+                            {useBackup ? '⬅️ Revenir au lien principal' : '🔄 Vidéo bloquée ? Lien alternatif'}
+                        </button>
+                    )}
+                    {useBackup && <span className="text-[9px] text-green-400">✅ Lien de secours</span>}
+                </div>
+            )}
+
+            {/* Quick reactions */}
+            <div className="px-3 py-1 flex items-center gap-0.5 border-b border-white/5 shrink-0">
+                {['❤️', '🙏', '🔥', '👏', '😍', '✝️'].map(emoji => (
+                    <button key={emoji}
+                        onClick={async () => {
+                            const { error } = await supabase.from('livestream_reactions').insert({
+                                livestream_id: 'global-live', user_id: user.id, emoji,
+                            });
+                            if (error) toast.error('Réaction impossible');
+                        }}
+                        className="text-lg p-1.5 rounded-xl hover:bg-white/10 transition-all active:scale-150"
+                    >{emoji}</button>
+                ))}
+            </div>
+
+            {/* Comments */}
+            <GlobalLiveComments userId={user.id} userName={user.name || 'Utilisateur'} />
+        </motion.div>
+    );
+}
+
 // ===== Global Live Comments (embedded in community-view) =====
 function GlobalLiveComments({ userId, userName }: { userId: string; userName: string }) {
     const [comments, setComments] = useState<any[]>([]);
@@ -3000,92 +3128,23 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 )}
 
                 {/* ========== GLOBAL LIVE SALON (from admin) ========== */}
-                {viewState === 'global-live' && user && (
-                    <motion.div
-                        key="global-live"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
-                    >
-                        {/* Header */}
-                        <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
-                            <Button variant="ghost" size="icon" onClick={() => setViewState('main')} className="shrink-0 h-9 w-9">
-                                <ArrowLeft className="h-5 w-5" />
-                            </Button>
-                            <div className="flex-1 min-w-0">
-                                <div className="flex items-center gap-2">
-                                    <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                                    <h1 className="font-black text-sm truncate">Diffusion en Direct</h1>
-                                </div>
-                            </div>
-                            <Badge className="bg-red-600/20 text-red-400 gap-1 text-[9px] px-2 py-0.5 shrink-0">
-                                <Radio className="h-2.5 w-2.5" />
-                                LIVE
-                            </Badge>
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                className="text-slate-400 h-7 text-[9px] px-2 shrink-0"
-                                onClick={() => {
-                                    const url = `${window.location.origin}/?live=1`;
-                                    navigator.clipboard?.writeText(url);
-                                    toast.success('🔗 Lien copié !');
-                                }}
-                            >
-                                <Share2 className="h-3 w-3" />
-                            </Button>
-                        </header>
+                {viewState === 'global-live' && user && (() => {
+                    const platform = appSettings?.['live_platform'] || 'youtube';
+                    const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
+                    const primaryUrl = appSettings?.['live_stream_url'] || '';
+                    const backupUrl = appSettings?.['live_stream_url_backup'] || '';
 
-                        {/* Video — pas de ratio forcé, laisse le player gérer */}
-                        <div className="w-full shrink-0 bg-black">
-                            {(() => {
-                                const streamUrl = appSettings?.['live_stream_url'] || '';
-                                return streamUrl ? (
-                                    <iframe
-                                        src={streamUrl}
-                                        className="w-full"
-                                        style={{ height: '35vh', minHeight: '200px' }}
-                                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                                        allowFullScreen
-                                        frameBorder="0"
-                                        scrolling="no"
-                                    />
-                                ) : (
-                                    <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
-                                        <Loader2 className="h-8 w-8 animate-spin" />
-                                    </div>
-                                );
-                            })()}
-                        </div>
-
-                        {/* Quick reactions — avec feedback visuel */}
-                        <div className="px-3 py-1 flex items-center gap-0.5 border-b border-white/5 shrink-0">
-                            {['❤️', '🙏', '🔥', '👏', '😍', '✝️'].map(emoji => (
-                                <button
-                                    key={emoji}
-                                    onClick={async () => {
-                                        const { error } = await supabase.from('livestream_reactions').insert({
-                                            livestream_id: 'global-live',
-                                            user_id: user.id,
-                                            emoji,
-                                        });
-                                        if (error) {
-                                            console.error('Reaction error:', error);
-                                            toast.error('Réaction impossible');
-                                        }
-                                    }}
-                                    className="text-lg p-1.5 rounded-xl hover:bg-white/10 transition-all active:scale-150"
-                                >
-                                    {emoji}
-                                </button>
-                            ))}
-                        </div>
-
-                        {/* Comments section — flex-1 prend tout l'espace restant */}
-                        <GlobalLiveComments userId={user.id} userName={user.name || 'Utilisateur'} />
-                    </motion.div>
-                )}
+                    return (
+                        <GlobalLiveSalon
+                            platform={platform}
+                            isPortrait={isPortrait}
+                            primaryUrl={primaryUrl}
+                            backupUrl={backupUrl}
+                            user={user}
+                            onClose={() => setViewState('main')}
+                        />
+                    );
+                })()}
 
                 {/* ========== FRIENDS VIEW ========== */}
                 {viewState === 'friends' && (
