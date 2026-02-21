@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Crimson_Pro } from "next/font/google"; // Updated fonts
+import { Inter, Crimson_Pro } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthListener } from "@/components/auth-listener";
 import { NotificationListener } from "@/components/notification-listener";
 import { PWAManager } from "@/components/pwa-manager";
+import { PushNotificationWrapper } from "@/components/push-wrapper";
 import "./globals.css";
 
 const inter = Inter({
@@ -75,6 +76,7 @@ export default function RootLayout({
           <AuthListener />
           <NotificationListener />
           <PWAManager />
+          <PushNotificationWrapper />
           {children}
           <Toaster position="top-center" richColors theme="dark" />
         </ThemeProvider>

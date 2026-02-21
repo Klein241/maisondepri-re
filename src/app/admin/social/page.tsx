@@ -92,6 +92,8 @@ export default function SocialPage() {
     const [liveStreamUrlBackup, setLiveStreamUrlBackup] = useState('');
     const [liveProxyUrl, setLiveProxyUrl] = useState('');
     const [proxyStatus, setProxyStatus] = useState<string>('idle');
+    const [fbPageVideosUrl, setFbPageVideosUrl] = useState('');
+    const [videoGalleryEnabled, setVideoGalleryEnabled] = useState(false);
     const [livePlatform, setLivePlatform] = useState('youtube');
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -127,7 +129,7 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_url_backup', 'live_platform', 'live_proxy_url']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_url_backup', 'live_platform', 'live_proxy_url', 'facebook_page_videos_url', 'video_gallery_enabled']);
 
             if (settings) {
                 settings.forEach(s => {
@@ -136,6 +138,8 @@ export default function SocialPage() {
                     if (s.key === 'live_stream_url_backup') setLiveStreamUrlBackup(s.value || '');
                     if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
                     if (s.key === 'live_proxy_url') setLiveProxyUrl(s.value || '');
+                    if (s.key === 'facebook_page_videos_url') setFbPageVideosUrl(s.value || '');
+                    if (s.key === 'video_gallery_enabled') setVideoGalleryEnabled(s.value === 'true');
                 });
             }
 
@@ -284,6 +288,8 @@ export default function SocialPage() {
                 { key: 'live_stream_url_backup', value: embedUrlBackup },
                 { key: 'live_platform', value: livePlatform },
                 { key: 'live_proxy_url', value: liveProxyUrl.trim() },
+                { key: 'facebook_page_videos_url', value: fbPageVideosUrl.trim() },
+                { key: 'video_gallery_enabled', value: videoGalleryEnabled.toString() },
             ], { onConflict: 'key' });
 
             setLiveStreamUrl(embedUrl);
@@ -701,6 +707,35 @@ export default function SocialPage() {
                                     ⏹ Arrêter
                                 </Button>
                             </div>
+                        )}
+                    </div>
+
+                    {/* ── VIDEO GALLERY ── */}
+                    <div className="space-y-2 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
+                        <div className="flex items-center justify-between">
+                            <Label className="flex items-center gap-2 text-blue-400 font-bold">
+                                📺 Galerie Vidéos Facebook (sans VPN)
+                            </Label>
+                            <Button
+                                variant={videoGalleryEnabled ? "default" : "outline"}
+                                size="sm"
+                                className={cn("text-xs h-7", videoGalleryEnabled && "bg-blue-600 hover:bg-blue-500")}
+                                onClick={() => setVideoGalleryEnabled(!videoGalleryEnabled)}
+                            >
+                                {videoGalleryEnabled ? '✅ Activé' : '❌ Désactivé'}
+                            </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                            Les utilisateurs pourront parcourir toutes vos vidéos Facebook <b>sans VPN</b>.
+                            Le proxy extrait les vidéos et les diffuse via Fly.io.
+                        </p>
+                        <Input
+                            placeholder="https://www.facebook.com/MDPJESUS/videos/"
+                            value={fbPageVideosUrl}
+                            onChange={(e) => setFbPageVideosUrl(e.target.value)}
+                        />
+                        {!liveProxyUrl && videoGalleryEnabled && (
+                            <p className="text-[10px] text-amber-400">⚠️ Configurez d'abord l'URL du proxy ci-dessus pour que la galerie fonctionne.</p>
                         )}
                     </div>
                     {/* Preview */}

@@ -11,7 +11,13 @@ primary_region = "cdg"
 
 [env]
   PORT = "3000"
-  NODE_ENV = "production"
+  # Set these secrets via: flyctl secrets set KEY=value
+  # SUPABASE_URL = "your-supabase-url"
+  # SUPABASE_SERVICE_KEY = "your-supabase-service-key"
+  # VAPID_PUBLIC_KEY = "generated-vapid-public-key"
+  # VAPID_PRIVATE_KEY = "generated-vapid-private-key"
+  # VAPID_EMAIL = "mailto:admin@maisondepriere.app"
+  # ADMIN_KEY = "maison-de-priere-admin-2026"
 
 [[vm]]
   memory = "512mb"

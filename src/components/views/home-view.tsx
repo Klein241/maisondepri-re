@@ -68,6 +68,9 @@ import { NotificationBell } from '@/components/notification-bell';
 import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
+import dynamic from 'next/dynamic';
+
+const VideoGallery = dynamic(() => import('@/components/community/video-gallery'), { ssr: false });
 
 interface HomeViewProps {
     onNavigateToDay: (day: number) => void;
@@ -823,6 +826,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
     const [showSocialDialog, setShowSocialDialog] = useState(false);
     const [showEventsDialog, setShowEventsDialog] = useState(false);
     const [showReplaysDialog, setShowReplaysDialog] = useState(false);
+    const [showVideoGallery, setShowVideoGallery] = useState(false);
     const [replays, setReplays] = useState<any[]>([]);
     const [selectedReplay, setSelectedReplay] = useState<any | null>(null);
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
@@ -973,6 +977,26 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                 <p className="text-[10px] text-purple-300">{replays.length} live{replays.length > 1 ? 's' : ''} enregistré{replays.length > 1 ? 's' : ''}</p>
                             </div>
                             <ArrowLeft className="w-4 h-4 text-purple-400 rotate-180" />
+                        </motion.button>
+                    )}
+
+                    {/* Video Gallery Button */}
+                    {appSettings?.['live_proxy_url'] && appSettings?.['facebook_page_videos_url'] && appSettings?.['video_gallery_enabled'] === 'true' && (
+                        <motion.button
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.15 }}
+                            onClick={() => setShowVideoGallery(true)}
+                            className="w-full flex items-center gap-3 p-3 rounded-2xl bg-gradient-to-r from-blue-900/40 to-cyan-900/40 border border-blue-500/20 hover:border-blue-400/40 transition-all"
+                        >
+                            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/10">
+                                <Play className="w-5 h-5 text-blue-300 fill-blue-300" />
+                            </div>
+                            <div className="flex-1 text-left">
+                                <p className="font-bold text-sm text-white">📺 Vidéos & Prédications</p>
+                                <p className="text-[10px] text-blue-300">Regarder sans VPN</p>
+                            </div>
+                            <ArrowLeft className="w-4 h-4 text-blue-400 rotate-180" />
                         </motion.button>
                     )}
 
@@ -1301,6 +1325,15 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                         </motion.div>
                     )}
                 </AnimatePresence>
+
+                {/* Video Gallery (full screen) */}
+                {showVideoGallery && appSettings?.['live_proxy_url'] && appSettings?.['facebook_page_videos_url'] && (
+                    <VideoGallery
+                        proxyUrl={appSettings['live_proxy_url']}
+                        pageUrl={appSettings['facebook_page_videos_url']}
+                        onClose={() => setShowVideoGallery(false)}
+                    />
+                )}
             </div>
         </div>
     );

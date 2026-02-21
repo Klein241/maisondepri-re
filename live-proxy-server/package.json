@@ -1,7 +1,7 @@
 {
     "name": "live-proxy-server",
-    "version": "1.0.0",
-    "description": "Proxy live streaming server - Extracts streams from blocked platforms via yt-dlp and serves HLS",
+    "version": "2.0.0",
+    "description": "Multi-service proxy: Live stream, video gallery, push notifications, presence, typing, link preview",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",
@@ -11,6 +11,9 @@
         "express": "^4.18.2",
         "socket.io": "^4.7.4",
         "cors": "^2.8.5",
-        "fluent-ffmpeg": "^2.1.2"
+        "fluent-ffmpeg": "^2.1.2",
+        "web-push": "^3.6.7",
+        "@supabase/supabase-js": "^2.43.0",
+        "sharp": "^0.33.2"
     }
 }
