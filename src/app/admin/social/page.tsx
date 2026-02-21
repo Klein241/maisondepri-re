@@ -90,6 +90,8 @@ export default function SocialPage() {
     const [isLiveActive, setIsLiveActive] = useState(false);
     const [liveStreamUrl, setLiveStreamUrl] = useState('');
     const [liveStreamUrlBackup, setLiveStreamUrlBackup] = useState('');
+    const [liveProxyUrl, setLiveProxyUrl] = useState('');
+    const [proxyStatus, setProxyStatus] = useState<string>('idle');
     const [livePlatform, setLivePlatform] = useState('youtube');
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -125,7 +127,7 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_url_backup', 'live_platform']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_url_backup', 'live_platform', 'live_proxy_url']);
 
             if (settings) {
                 settings.forEach(s => {
@@ -133,6 +135,7 @@ export default function SocialPage() {
                     if (s.key === 'live_stream_url') setLiveStreamUrl(s.value || '');
                     if (s.key === 'live_stream_url_backup') setLiveStreamUrlBackup(s.value || '');
                     if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
+                    if (s.key === 'live_proxy_url') setLiveProxyUrl(s.value || '');
                 });
             }
 
@@ -280,6 +283,7 @@ export default function SocialPage() {
                 { key: 'live_stream_url', value: embedUrl },
                 { key: 'live_stream_url_backup', value: embedUrlBackup },
                 { key: 'live_platform', value: livePlatform },
+                { key: 'live_proxy_url', value: liveProxyUrl.trim() },
             ], { onConflict: 'key' });
 
             setLiveStreamUrl(embedUrl);
@@ -605,6 +609,100 @@ export default function SocialPage() {
                         </div>
                     </div>
 
+                    {/* ── PROXY SERVER ── */}
+                    <div className="space-y-2 p-4 rounded-xl border border-green-500/20 bg-green-500/5">
+                        <Label className="flex items-center gap-2 text-green-400 font-bold">
+                            📡 Serveur Proxy (sans VPN pour les utilisateurs)
+                        </Label>
+                        <p className="text-xs text-muted-foreground">
+                            Si vous avez déployé le serveur proxy sur Fly.io, entrez son URL ici.
+                            Il permet aux utilisateurs de regarder le live <b>sans VPN</b> même si Facebook est bloqué.
+                        </p>
+                        <Input
+                            placeholder="Ex: https://maisondepriere-live.fly.dev"
+                            value={liveProxyUrl}
+                            onChange={(e) => setLiveProxyUrl(e.target.value)}
+                        />
+                        {liveProxyUrl && (
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <Badge variant="outline" className={cn(
+                                    "text-[10px]",
+                                    proxyStatus === 'live' ? 'border-green-500 text-green-400' :
+                                        proxyStatus === 'extracting' ? 'border-amber-500 text-amber-400' :
+                                            'border-slate-500 text-slate-400'
+                                )}>
+                                    {proxyStatus === 'live' ? '🟢 Proxy en direct' :
+                                        proxyStatus === 'extracting' ? '⏳ Extraction...' :
+                                            '⚪ Proxy inactif'}
+                                </Badge>
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={async () => {
+                                        try {
+                                            const res = await fetch(`${liveProxyUrl}/api/status`);
+                                            const data = await res.json();
+                                            setProxyStatus(data.status || 'idle');
+                                            toast.success(`Proxy: ${data.status} | ${data.viewers || 0} viewers`);
+                                        } catch (e) {
+                                            toast.error('Impossible de contacter le proxy');
+                                        }
+                                    }}
+                                >
+                                    Vérifier statut
+                                </Button>
+                                <Button
+                                    size="sm"
+                                    className="text-xs h-7 bg-green-600 hover:bg-green-500"
+                                    disabled={!liveStreamUrl}
+                                    onClick={async () => {
+                                        try {
+                                            const res = await fetch(`${liveProxyUrl}/api/start-proxy`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({
+                                                    url: liveStreamUrl,
+                                                    admin_key: 'maison-de-priere-admin-2026',
+                                                }),
+                                            });
+                                            const data = await res.json();
+                                            if (data.success) {
+                                                setProxyStatus('extracting');
+                                                toast.success('🔴 Proxy démarré ! Le flux sera disponible dans ~10s');
+                                            } else {
+                                                toast.error(data.error || 'Erreur proxy');
+                                            }
+                                        } catch (e) {
+                                            toast.error('Impossible de démarrer le proxy');
+                                        }
+                                    }}
+                                >
+                                    ▶ Démarrer le proxy
+                                </Button>
+                                <Button
+                                    variant="destructive"
+                                    size="sm"
+                                    className="text-xs h-7"
+                                    onClick={async () => {
+                                        try {
+                                            await fetch(`${liveProxyUrl}/api/stop-proxy`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ admin_key: 'maison-de-priere-admin-2026' }),
+                                            });
+                                            setProxyStatus('idle');
+                                            toast.success('Proxy arrêté');
+                                        } catch (e) {
+                                            toast.error('Erreur');
+                                        }
+                                    }}
+                                >
+                                    ⏹ Arrêter
+                                </Button>
+                            </div>
+                        )}
+                    </div>
                     {/* Preview */}
                     {liveStreamUrl && (
                         <div className="space-y-2">
@@ -987,6 +1085,6 @@ export default function SocialPage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </div>
+        </div >
     );
 }
