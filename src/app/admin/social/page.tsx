@@ -56,6 +56,7 @@ import {
     Play
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 
@@ -260,7 +261,7 @@ export default function SocialPage() {
             if (platform === 'twitch') {
                 const channel = u.pathname.split('/').filter(Boolean)[0];
                 if (channel && !u.pathname.includes('player.twitch.tv')) {
-                    const parentDomain = typeof window !== 'undefined' ? window.location.hostname : 'maisondepriere.netlify.app';
+                    const parentDomain = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
                     return `https://player.twitch.tv/?channel=${channel}&parent=${parentDomain}&muted=false&autoplay=true`;
                 }
             }
