@@ -125,10 +125,30 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+// Clean embed/iframe URLs → original URLs for yt-dlp
+function cleanUrl(url) {
+    if (!url) return url;
+    try {
+        const u = new URL(url);
+        // Facebook embed → original URL
+        if (u.pathname.includes('/plugins/video.php') || u.pathname.includes('/plugins/post.php')) {
+            const href = u.searchParams.get('href');
+            if (href) return decodeURIComponent(href);
+        }
+        // YouTube embed → original URL
+        if (u.hostname.includes('youtube.com') && u.pathname.startsWith('/embed/')) {
+            const videoId = u.pathname.split('/embed/')[1]?.split('?')[0];
+            if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+        }
+    } catch (e) { /* not a valid URL, return as-is */ }
+    return url;
+}
+
 function extractStreamUrl(socialUrl) {
+    const cleanedUrl = cleanUrl(socialUrl);
     return new Promise((resolve, reject) => {
-        console.log('🔍 Extracting stream URL from:', socialUrl);
-        const cmd = `yt-dlp -g -f "best[ext=mp4]/best" --no-warnings --no-check-certificates "${socialUrl}"`;
+        console.log('🔍 Extracting stream URL from:', cleanedUrl, cleanedUrl !== socialUrl ? `(cleaned from: ${socialUrl.substring(0, 80)}...)` : '');
+        const cmd = `yt-dlp -g -f "best[ext=mp4]/best" --no-warnings --no-check-certificates "${cleanedUrl}"`;
         exec(cmd, { timeout: 60000 }, (error, stdout, stderr) => {
             if (error) {
                 console.error('❌ yt-dlp error:', stderr || error.message);
