@@ -95,6 +95,10 @@ export default function SocialPage() {
     const [proxyStatus, setProxyStatus] = useState<string>('idle');
     const [fbPageVideosUrl, setFbPageVideosUrl] = useState('');
     const [videoGalleryEnabled, setVideoGalleryEnabled] = useState(false);
+    const [newVideoTitle, setNewVideoTitle] = useState('');
+    const [newVideoUrl, setNewVideoUrl] = useState('');
+    const [newVideoCategory, setNewVideoCategory] = useState('predication');
+    const [galleryVideos, setGalleryVideos] = useState<any[]>([]);
     const [livePlatform, setLivePlatform] = useState('youtube');
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -119,8 +123,19 @@ export default function SocialPage() {
     const [newReplayTitle, setNewReplayTitle] = useState('');
     const [newReplayUrl, setNewReplayUrl] = useState('');
 
+    const loadGalleryVideos = async () => {
+        try {
+            const { data } = await supabase
+                .from('video_gallery')
+                .select('*')
+                .order('created_at', { ascending: false });
+            setGalleryVideos(data || []);
+        } catch (e) { /* table may not exist yet */ }
+    };
+
     useEffect(() => {
         loadData();
+        loadGalleryVideos();
     }, []);
 
     const loadData = async () => {
@@ -712,10 +727,10 @@ export default function SocialPage() {
                     </div>
 
                     {/* ── VIDEO GALLERY ── */}
-                    <div className="space-y-2 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
+                    <div className="space-y-3 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
                         <div className="flex items-center justify-between">
                             <Label className="flex items-center gap-2 text-blue-400 font-bold">
-                                📺 Galerie Vidéos Facebook (sans VPN)
+                                📺 Galerie Vidéos (sans VPN)
                             </Label>
                             <Button
                                 variant={videoGalleryEnabled ? "default" : "outline"}
@@ -727,16 +742,98 @@ export default function SocialPage() {
                             </Button>
                         </div>
                         <p className="text-xs text-muted-foreground">
-                            Les utilisateurs pourront parcourir toutes vos vidéos Facebook <b>sans VPN</b>.
-                            Le proxy extrait les vidéos et les diffuse via Fly.io.
+                            Ajoutez des liens de vidéos Facebook. Les utilisateurs les regarderont <b>sans VPN</b> via le proxy.
                         </p>
-                        <Input
-                            placeholder="https://www.facebook.com/MDPJESUS/videos/"
-                            value={fbPageVideosUrl}
-                            onChange={(e) => setFbPageVideosUrl(e.target.value)}
-                        />
+
+                        {/* Add video form */}
+                        <div className="space-y-2 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                            <Label className="text-xs text-blue-300">➕ Ajouter une vidéo</Label>
+                            <Input
+                                placeholder="Titre de la vidéo"
+                                value={newVideoTitle}
+                                onChange={(e) => setNewVideoTitle(e.target.value)}
+                                className="text-xs h-8"
+                            />
+                            <Input
+                                placeholder="https://www.facebook.com/MDPJESUS/videos/12345..."
+                                value={newVideoUrl}
+                                onChange={(e) => setNewVideoUrl(e.target.value)}
+                                className="text-xs h-8"
+                            />
+                            <div className="flex gap-2">
+                                <Select value={newVideoCategory} onValueChange={setNewVideoCategory}>
+                                    <SelectTrigger className="text-xs h-8 flex-1">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem value="predication">🎤 Prédication</SelectItem>
+                                        <SelectItem value="louange">🎵 Louange</SelectItem>
+                                        <SelectItem value="temoignage">💬 Témoignage</SelectItem>
+                                        <SelectItem value="enseignement">📖 Enseignement</SelectItem>
+                                        <SelectItem value="priere">🙏 Prière</SelectItem>
+                                        <SelectItem value="autre">📺 Autre</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <Button
+                                    size="sm"
+                                    className="h-8 text-xs bg-blue-600 hover:bg-blue-500"
+                                    disabled={!newVideoTitle.trim() || !newVideoUrl.trim()}
+                                    onClick={async () => {
+                                        try {
+                                            const { error } = await supabase.from('video_gallery').insert({
+                                                title: newVideoTitle.trim(),
+                                                video_url: newVideoUrl.trim(),
+                                                category: newVideoCategory,
+                                                platform: 'facebook',
+                                            });
+                                            if (error) throw error;
+                                            toast.success('Vidéo ajoutée !');
+                                            setNewVideoTitle('');
+                                            setNewVideoUrl('');
+                                            loadGalleryVideos();
+                                        } catch (e: any) {
+                                            toast.error(e.message || 'Erreur');
+                                        }
+                                    }}
+                                >
+                                    <Plus className="h-3 w-3 mr-1" /> Ajouter
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Video list */}
+                        {galleryVideos.length > 0 && (
+                            <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                                <Label className="text-[10px] text-slate-500">{galleryVideos.length} vidéo(s)</Label>
+                                {galleryVideos.map(v => (
+                                    <div key={v.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-800/30 border border-slate-700/30">
+                                        <Play className="h-3 w-3 text-blue-400 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[11px] font-bold truncate">{v.title}</p>
+                                            <p className="text-[9px] text-slate-500 truncate">{v.video_url}</p>
+                                        </div>
+                                        <Badge className="text-[7px] bg-purple-600/20 text-purple-300 px-1 py-0 shrink-0">
+                                            {v.category}
+                                        </Badge>
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 text-red-400 hover:text-red-300 shrink-0"
+                                            onClick={async () => {
+                                                await supabase.from('video_gallery').delete().eq('id', v.id);
+                                                toast.success('Supprimée');
+                                                loadGalleryVideos();
+                                            }}
+                                        >
+                                            <Trash2 className="h-3 w-3" />
+                                        </Button>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
                         {!liveProxyUrl && videoGalleryEnabled && (
-                            <p className="text-[10px] text-amber-400">⚠️ Configurez d'abord l'URL du proxy ci-dessus pour que la galerie fonctionne.</p>
+                            <p className="text-[10px] text-amber-400">⚠️ Configurez l'URL du proxy ci-dessus.</p>
                         )}
                     </div>
                     {/* Preview */}

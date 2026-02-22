@@ -148,18 +148,31 @@ function extractStreamUrl(socialUrl) {
     const cleanedUrl = cleanUrl(socialUrl);
     return new Promise((resolve, reject) => {
         console.log('🔍 Extracting stream URL from:', cleanedUrl, cleanedUrl !== socialUrl ? `(cleaned from: ${socialUrl.substring(0, 80)}...)` : '');
-        const cmd = `yt-dlp -g -f "best[ext=mp4]/best" --no-warnings --no-check-certificates "${cleanedUrl}"`;
-        exec(cmd, { timeout: 60000 }, (error, stdout, stderr) => {
-            if (error) {
-                console.error('❌ yt-dlp error:', stderr || error.message);
-                reject(new Error(`Extraction failed: ${stderr || error.message}`));
+        // Try multiple format strategies for maximum compatibility
+        const formats = ['b', 'best', 'best[ext=mp4]/best', 'worst'];
+        let lastErr = '';
+
+        const tryFormat = (idx) => {
+            if (idx >= formats.length) {
+                reject(new Error(`Extraction failed after all format attempts: ${lastErr}`));
                 return;
             }
-            const url = stdout.trim().split('\n')[0];
-            if (!url) { reject(new Error('No stream URL found')); return; }
-            console.log('✅ Stream URL extracted');
-            resolve(url);
-        });
+            const fmt = formats[idx];
+            const cmd = `yt-dlp -g -f "${fmt}" --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" "${cleanedUrl}"`;
+            exec(cmd, { timeout: 60000 }, (error, stdout, stderr) => {
+                if (error) {
+                    lastErr = (stderr || error.message).trim();
+                    console.warn(`⚠️ Format "${fmt}" failed, trying next...`);
+                    tryFormat(idx + 1);
+                    return;
+                }
+                const url = stdout.trim().split('\n')[0];
+                if (!url) { tryFormat(idx + 1); return; }
+                console.log(`✅ Stream URL extracted (format: ${fmt})`);
+                resolve(url);
+            });
+        };
+        tryFormat(0);
     });
 }
 
@@ -240,13 +253,12 @@ function stopAllFFmpeg() {
 
 // List all videos from a Facebook page
 app.post('/api/videos/list', async (req, res) => {
-    const { page_url, admin_key } = req.body;
-    if (admin_key !== ADMIN_KEY) return res.status(401).json({ error: 'Unauthorized' });
+    const { page_url } = req.body;
     if (!page_url) return res.status(400).json({ error: 'page_url required' });
 
     try {
         console.log('📋 Listing videos from:', page_url);
-        const cmd = `yt-dlp --flat-playlist -j --no-warnings --no-check-certificates "${page_url}" 2>/dev/null | head -50`;
+        const cmd = `yt-dlp --flat-playlist -j --no-warnings --no-check-certificates --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" "${page_url}" 2>/dev/null | head -50`;
         exec(cmd, { timeout: 120000, maxBuffer: 10 * 1024 * 1024 }, (error, stdout, stderr) => {
             if (error && !stdout) {
                 return res.status(500).json({ error: 'Failed to list videos', detail: stderr });
