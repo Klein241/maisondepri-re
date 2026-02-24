@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
-    Play, ArrowLeft, Loader2, RefreshCw, Eye, Video, X
+    Play, ArrowLeft, Loader2, RefreshCw, Eye, Video, Share2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -49,11 +50,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 };
 
 export function VideoGallery({ proxyUrl, onClose }: VideoGalleryProps) {
+    const router = useRouter();
     const [videos, setVideos] = useState<VideoItem[]>([]);
     const [loading, setLoading] = useState(true);
-    const [selectedVideo, setSelectedVideo] = useState<VideoItem | null>(null);
-    const [videoStreamUrl, setVideoStreamUrl] = useState<string | null>(null);
-    const [loadingVideo, setLoadingVideo] = useState(false);
     const [activeCategory, setActiveCategory] = useState<string>('all');
     const [error, setError] = useState<string | null>(null);
 
@@ -79,102 +78,27 @@ export function VideoGallery({ proxyUrl, onClose }: VideoGalleryProps) {
 
     useEffect(() => { loadVideos(); }, [loadVideos]);
 
-    const playVideo = async (video: VideoItem) => {
-        setSelectedVideo(video);
-        setLoadingVideo(true);
-        setVideoStreamUrl(null);
+    const openVideo = (video: VideoItem) => {
+        // Navigate to dedicated page with URL, comments, reactions, share
+        onClose(); // close the gallery overlay first
+        router.push(`/video/${video.id}`);
+    };
 
-        // Increment view count
-        supabase.from('video_gallery').update({ view_count: (video.view_count || 0) + 1 }).eq('id', video.id).then();
-
-        try {
-            // Extract direct URL via proxy
-            const res = await fetch(`${proxyUrl}/api/videos/extract`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ video_url: video.video_url }),
-            });
-            const data = await res.json();
-
-            if (data.direct_url) {
-                setVideoStreamUrl(data.direct_url);
-            } else {
-                // Fallback: proxy stream
-                setVideoStreamUrl(`${proxyUrl}/api/videos/stream?url=${encodeURIComponent(video.video_url)}`);
-            }
-        } catch (e) {
-            // Fallback: proxy stream
-            setVideoStreamUrl(`${proxyUrl}/api/videos/stream?url=${encodeURIComponent(video.video_url)}`);
+    const shareVideo = async (e: React.MouseEvent, video: VideoItem) => {
+        e.stopPropagation();
+        const url = `${window.location.origin}/video/${video.id}`;
+        if (navigator.share) {
+            try {
+                await navigator.share({ title: video.title, url });
+                return;
+            } catch (err) { }
         }
-        setLoadingVideo(false);
+        await navigator.clipboard.writeText(url);
+        toast.success('🔗 Lien copié !');
     };
 
     const categories = ['all', ...new Set(videos.map(v => v.category))];
     const filteredVideos = activeCategory === 'all' ? videos : videos.filter(v => v.category === activeCategory);
-
-    // Player view
-    if (selectedVideo) {
-        return (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[110] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
-            >
-                <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
-                    <Button variant="ghost" size="icon" onClick={() => { setSelectedVideo(null); setVideoStreamUrl(null); }} className="shrink-0 h-9 w-9">
-                        <ArrowLeft className="h-5 w-5" />
-                    </Button>
-                    <div className="flex-1 min-w-0">
-                        <h1 className="font-bold text-sm truncate">{selectedVideo.title}</h1>
-                        <div className="flex items-center gap-2">
-                            {selectedVideo.view_count > 0 && (
-                                <p className="text-[10px] text-slate-500 flex items-center gap-1">
-                                    <Eye className="h-2.5 w-2.5" /> {selectedVideo.view_count.toLocaleString('fr-FR')} vues
-                                </p>
-                            )}
-                            <Badge className="text-[8px] bg-purple-600/20 text-purple-300 px-1.5 py-0">
-                                {CATEGORY_LABELS[selectedVideo.category] || selectedVideo.category}
-                            </Badge>
-                        </div>
-                    </div>
-                </header>
-                <div className="flex-1 flex items-center justify-center bg-black p-2">
-                    {loadingVideo ? (
-                        <div className="flex flex-col items-center gap-3 text-slate-500">
-                            <Loader2 className="h-10 w-10 animate-spin text-purple-400" />
-                            <p className="text-sm">Extraction de la vidéo via le proxy...</p>
-                            <p className="text-[10px] text-slate-600">Cela peut prendre quelques secondes</p>
-                        </div>
-                    ) : videoStreamUrl ? (
-                        <video
-                            src={videoStreamUrl}
-                            controls
-                            autoPlay
-                            playsInline
-                            className="w-full max-h-[75vh] rounded-lg"
-                            onError={() => {
-                                if (videoStreamUrl && !videoStreamUrl.includes('/api/videos/stream')) {
-                                    toast.info('Basculement vers le proxy...');
-                                    setVideoStreamUrl(`${proxyUrl}/api/videos/stream?url=${encodeURIComponent(selectedVideo.video_url)}`);
-                                }
-                            }}
-                        />
-                    ) : (
-                        <div className="text-center text-slate-500">
-                            <p className="text-sm mb-2">Impossible de charger la vidéo</p>
-                            <Button variant="outline" size="sm" onClick={() => playVideo(selectedVideo)}>Réessayer</Button>
-                        </div>
-                    )}
-                </div>
-                {selectedVideo.description && (
-                    <div className="px-4 py-3 border-t border-white/5">
-                        <p className="text-xs text-slate-400">{selectedVideo.description}</p>
-                    </div>
-                )}
-            </motion.div>
-        );
-    }
 
     // Gallery grid view
     return (
@@ -242,7 +166,7 @@ export function VideoGallery({ proxyUrl, onClose }: VideoGalleryProps) {
                                     key={video.id}
                                     whileHover={{ scale: 1.03 }}
                                     whileTap={{ scale: 0.97 }}
-                                    onClick={() => playVideo(video)}
+                                    onClick={() => openVideo(video)}
                                     className="relative rounded-xl overflow-hidden bg-slate-800/60 border border-slate-700/50 hover:border-purple-500/30 transition-all text-left"
                                 >
                                     {/* Thumbnail */}
@@ -268,15 +192,24 @@ export function VideoGallery({ proxyUrl, onClose }: VideoGalleryProps) {
                                     {/* Info */}
                                     <div className="p-2">
                                         <p className="text-[11px] font-bold text-white line-clamp-2 leading-tight">{video.title}</p>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            {video.view_count > 0 && (
-                                                <span className="text-[9px] text-slate-500 flex items-center gap-0.5">
-                                                    <Eye className="h-2.5 w-2.5" /> {video.view_count > 1000 ? `${(video.view_count / 1000).toFixed(1)}k` : video.view_count}
+                                        <div className="flex items-center justify-between gap-1 mt-1">
+                                            <div className="flex items-center gap-1.5">
+                                                {video.view_count > 0 && (
+                                                    <span className="text-[9px] text-slate-500 flex items-center gap-0.5">
+                                                        <Eye className="h-2.5 w-2.5" /> {video.view_count > 1000 ? `${(video.view_count / 1000).toFixed(1)}k` : video.view_count}
+                                                    </span>
+                                                )}
+                                                <span className="text-[8px] text-purple-400/60">
+                                                    {CATEGORY_LABELS[video.category]?.split(' ')[0] || '📺'}
                                                 </span>
-                                            )}
-                                            <span className="text-[8px] text-purple-400/60">
-                                                {CATEGORY_LABELS[video.category]?.split(' ')[0] || '📺'}
-                                            </span>
+                                            </div>
+                                            <button
+                                                onClick={(e) => shareVideo(e, video)}
+                                                className="p-1 text-slate-500 hover:text-white transition-colors"
+                                                title="Partager"
+                                            >
+                                                <Share2 className="h-3 w-3" />
+                                            </button>
                                         </div>
                                     </div>
                                 </motion.button>

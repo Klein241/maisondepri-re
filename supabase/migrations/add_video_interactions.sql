@@ -1,0 +1,38 @@
+-- Tables for video gallery comments & reactions
+
+CREATE TABLE IF NOT EXISTS video_comments (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    video_id UUID NOT NULL,    -- references video_gallery(id)
+    user_id UUID NOT NULL,     -- references profiles(id)
+    content TEXT NOT NULL,
+    parent_id UUID REFERENCES video_comments(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS video_reactions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    video_id UUID NOT NULL,
+    user_id UUID NOT NULL,
+    reaction TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- RLS
+ALTER TABLE video_comments ENABLE ROW LEVEL SECURITY;
+ALTER TABLE video_reactions ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Anyone reads video_comments" ON video_comments FOR SELECT USING (true);
+CREATE POLICY "Auth insert video_comments" ON video_comments FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "User delete own video_comment" ON video_comments FOR DELETE USING (auth.uid() = user_id);
+
+CREATE POLICY "Anyone reads video_reactions" ON video_reactions FOR SELECT USING (true);
+CREATE POLICY "Auth insert video_reactions" ON video_reactions FOR INSERT WITH CHECK (auth.uid() IS NOT NULL);
+CREATE POLICY "User delete own video_reaction" ON video_reactions FOR DELETE USING (auth.uid() = user_id);
+
+-- Realtime
+ALTER PUBLICATION supabase_realtime ADD TABLE video_comments;
+ALTER PUBLICATION supabase_realtime ADD TABLE video_reactions;
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_video_comments_video ON video_comments(video_id, created_at ASC);
+CREATE INDEX IF NOT EXISTS idx_video_reactions_video ON video_reactions(video_id);

@@ -406,10 +406,31 @@ function LiveSalon({
     const [useBackup, setUseBackup] = useState(false);
     const [iframeLoaded, setIframeLoaded] = useState(false);
     const [showBlockedMsg, setShowBlockedMsg] = useState(false);
+    const [muted, setMuted] = useState(true); // Start muted for autoplay guarantee
     const currentUrl = useBackup ? backupUrl : streamUrl;
     const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
     // Use proxy video element if proxy is live (avoids 18s CDN token expiry)
     const useProxyVideo = proxyStatus === 'live' && !!proxyStreamUrl && platform === 'facebook';
+
+    // Build muted/unmuted embed URL for guaranteed autoplay
+    const buildEmbedUrl = (url: string) => {
+        if (!url) return url;
+        try {
+            const u = new URL(url);
+            if (u.hostname.includes('facebook')) {
+                u.searchParams.set('muted', muted ? 'true' : 'false');
+                u.searchParams.set('autoplay', 'true');
+                return u.toString();
+            }
+            if (u.hostname.includes('youtube')) {
+                u.searchParams.set('autoplay', '1');
+                u.searchParams.set('mute', muted ? '1' : '0');
+                return u.toString();
+            }
+        } catch (e) { }
+        return url;
+    };
+    const embedUrl = buildEmbedUrl(currentUrl);
 
     useEffect(() => {
         setIframeLoaded(false);
@@ -624,7 +645,7 @@ function LiveSalon({
                         }}
                     >
                         <iframe
-                            src={currentUrl}
+                            src={embedUrl}
                             className="w-full h-full"
                             allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
                             allowFullScreen
@@ -632,6 +653,15 @@ function LiveSalon({
                             scrolling="no"
                             onLoad={() => { setIframeLoaded(true); setShowBlockedMsg(false); }}
                         />
+                        {/* Unmute overlay — shown on first load */}
+                        {muted && iframeLoaded && (
+                            <button
+                                onClick={() => setMuted(false)}
+                                className="absolute bottom-2 right-2 flex items-center gap-1.5 bg-black/70 backdrop-blur-sm text-white text-[10px] font-bold px-3 py-1.5 rounded-full border border-white/20 hover:bg-black/90 transition-all"
+                            >
+                                🔇 Activer le son
+                            </button>
+                        )}
                     </div>
                 ) : (
                     <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
