@@ -358,6 +358,8 @@ function LiveSalon({
     streamUrl,
     backupUrl,
     platform,
+    proxyUrl,
+    originalUrl,
     userId,
     userName,
     onClose,
@@ -365,6 +367,8 @@ function LiveSalon({
     streamUrl: string;
     backupUrl: string;
     platform: string;
+    proxyUrl?: string;
+    originalUrl?: string;
     userId: string;
     userName: string;
     onClose: () => void;
@@ -376,12 +380,36 @@ function LiveSalon({
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const commentsEndRef = useRef<HTMLDivElement>(null);
 
+    // Proxy stream state
+    const [proxyStatus, setProxyStatus] = useState<'idle' | 'checking' | 'live'>('idle');
+    const [proxyStreamUrl, setProxyStreamUrl] = useState<string | null>(null);
+    const [proxyConnected, setProxyConnected] = useState(false);
+
+    // Check if proxy is live on mount
+    useEffect(() => {
+        if (!proxyUrl) return;
+        const checkProxy = async () => {
+            try {
+                const res = await fetch(`${proxyUrl}/api/status`, { signal: AbortSignal.timeout(4000) });
+                const data = await res.json();
+                if (data.status === 'live') {
+                    setProxyStatus('live');
+                    setProxyStreamUrl(`${proxyUrl}/stream/live.m3u8`);
+                    setProxyConnected(true);
+                }
+            } catch (e) { /* proxy not available */ }
+        };
+        checkProxy();
+    }, [proxyUrl]);
+
     // Fallback / blocked platform detection
     const [useBackup, setUseBackup] = useState(false);
     const [iframeLoaded, setIframeLoaded] = useState(false);
     const [showBlockedMsg, setShowBlockedMsg] = useState(false);
     const currentUrl = useBackup ? backupUrl : streamUrl;
     const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
+    // Use proxy video element if proxy is live (avoids 18s CDN token expiry)
+    const useProxyVideo = proxyStatus === 'live' && !!proxyStreamUrl && platform === 'facebook';
 
     useEffect(() => {
         setIframeLoaded(false);
@@ -563,9 +591,29 @@ function LiveSalon({
                 </Button>
             </header>
 
-            {/* Video — 9:16 for Facebook/TikTok/Instagram, 16:9 for others */}
+            {/* Video — use proxy HLS stream if available (avoids 18s CDN expiry), else iframe */}
             <div className={cn("shrink-0 bg-black flex items-center justify-center relative", isPortrait && !useBackup ? '' : 'w-full')}>
-                {currentUrl ? (
+                {useProxyVideo ? (
+                    // Proxy HLS stream — persistent, no CDN token expiry
+                    <div className="w-full relative" style={{ aspectRatio: '16/9', maxHeight: '35vh' }}>
+                        <video
+                            src={proxyStreamUrl!}
+                            autoPlay
+                            playsInline
+                            controls
+                            className="w-full h-full object-contain bg-black"
+                            onError={() => {
+                                // Fallback to iframe if HLS fails
+                                setProxyStatus('idle');
+                            }}
+                        />
+                        <div className="absolute top-2 left-2">
+                            <Badge className="bg-green-600/80 text-white text-[9px] px-2 py-0.5">
+                                🛰️ Proxy actif (sans VPN)
+                            </Badge>
+                        </div>
+                    </div>
+                ) : currentUrl ? (
                     <div className={cn(
                         "bg-black overflow-hidden mx-auto",
                         isPortrait && !useBackup ? "w-full max-w-[280px] sm:max-w-[340px]" : "w-full"
@@ -836,6 +884,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
         // Check if live is active from app settings
         if (appSettings) {
             setIsLiveActive(appSettings['live_stream_active'] === 'true');
+            // Use embed URL for iframe, but pass original URL to proxy
             setLiveStreamUrl(appSettings['live_stream_url'] || '');
         }
 
@@ -1137,6 +1186,8 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             streamUrl={liveStreamUrl}
                             backupUrl={appSettings?.['live_stream_url_backup'] || ''}
                             platform={appSettings?.['live_platform'] || 'youtube'}
+                            proxyUrl={appSettings?.['live_proxy_url'] || ''}
+                            originalUrl={appSettings?.['live_stream_original_url'] || liveStreamUrl}
                             userId={user?.id || ''}
                             userName={user?.name || 'Visiteur'}
                             onClose={() => setShowLiveSalon(false)}

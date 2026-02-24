@@ -145,13 +145,18 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_url_backup', 'live_platform', 'live_proxy_url', 'facebook_page_videos_url', 'video_gallery_enabled']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_original_url', 'live_stream_url_backup', 'live_stream_url_backup_original', 'live_platform', 'live_proxy_url', 'facebook_page_videos_url', 'video_gallery_enabled']);
 
             if (settings) {
                 settings.forEach(s => {
                     if (s.key === 'live_stream_active') setIsLiveActive(s.value === 'true');
-                    if (s.key === 'live_stream_url') setLiveStreamUrl(s.value || '');
-                    if (s.key === 'live_stream_url_backup') setLiveStreamUrlBackup(s.value || '');
+                    // Show original URL in the field (not the embed URL)
+                    if (s.key === 'live_stream_original_url') setLiveStreamUrl(s.value || '');
+                    if (s.key === 'live_stream_url_backup_original') setLiveStreamUrlBackup(s.value || '');
+                    // Fallback: if no original key yet, try to clean the embed URL
+                    if (s.key === 'live_stream_url' && !settings.find(x => x.key === 'live_stream_original_url')?.value) {
+                        setLiveStreamUrl(cleanEmbedUrl(s.value || ''));
+                    }
                     if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
                     if (s.key === 'live_proxy_url') setLiveProxyUrl(s.value || '');
                     if (s.key === 'facebook_page_videos_url') setFbPageVideosUrl(s.value || '');
@@ -284,11 +289,29 @@ export default function SocialPage() {
         return url.trim();
     };
 
+    // Strip embed wrapper → return original clean URL (for admin display)
+    const cleanEmbedUrl = (url: string): string => {
+        if (!url) return url;
+        try {
+            const u = new URL(url);
+            if (u.pathname.includes('/plugins/video.php') || u.pathname.includes('/plugins/post.php')) {
+                const href = u.searchParams.get('href');
+                if (href) return decodeURIComponent(href);
+            }
+            if (u.hostname.includes('youtube.com') && u.pathname.startsWith('/embed/')) {
+                const videoId = u.pathname.split('/embed/')[1]?.split('?')[0];
+                if (videoId) return `https://www.youtube.com/watch?v=${videoId}`;
+            }
+        } catch (e) { }
+        return url;
+    };
+
     const saveLiveSettings = async () => {
         setIsSaving(true);
         try {
             const embedUrl = convertToEmbed(liveStreamUrl, livePlatform);
-            // Auto-detect backup platform (try youtube first, then other)
+            const originalUrl = liveStreamUrl.trim(); // store original for display
+            // Auto-detect backup platform
             let backupPlatform = 'youtube';
             try {
                 const bu = new URL(liveStreamUrlBackup.trim());
@@ -300,8 +323,10 @@ export default function SocialPage() {
 
             await supabase.from('app_settings').upsert([
                 { key: 'live_stream_active', value: isLiveActive.toString() },
-                { key: 'live_stream_url', value: embedUrl },
+                { key: 'live_stream_url', value: embedUrl },              // embed URL for iframe display
+                { key: 'live_stream_original_url', value: originalUrl },  // original URL for admin display & proxy
                 { key: 'live_stream_url_backup', value: embedUrlBackup },
+                { key: 'live_stream_url_backup_original', value: liveStreamUrlBackup.trim() },
                 { key: 'live_platform', value: livePlatform },
                 { key: 'live_proxy_url', value: liveProxyUrl.trim() },
                 { key: 'facebook_page_videos_url', value: fbPageVideosUrl.trim() },
