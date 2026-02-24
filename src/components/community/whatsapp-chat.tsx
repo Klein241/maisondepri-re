@@ -3229,7 +3229,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
             {/* Chat Header */}
-            <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/80 backdrop-blur-sm">
+            <div className="sticky top-0 z-20 p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/90 backdrop-blur-md shrink-0">
                 <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
                     <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
@@ -3408,20 +3408,42 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 )}
             </AnimatePresence>
 
-            {/* Pinned Prayer Subject Banner */}
+            {/* Pinned Prayer Subject Banner — compact, dismissable, with admin unpin */}
             {currentGroup && (pinnedPrayer || currentGroup.description?.startsWith('📌')) && (
-                <div className="mx-2 sm:mx-4 mt-2 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/20 flex items-center gap-2">
-                    <Pin className="h-4 w-4 text-amber-400 shrink-0" />
-                    <p className="text-xs text-amber-200 flex-1 truncate">
-                        <span className="font-semibold">Sujet de prière :</span>{' '}
+                <div className="mx-2 sm:mx-4 mt-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 shrink-0">
+                    <Pin className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <p className="text-[11px] text-amber-200 flex-1 truncate">
+                        <span className="font-semibold">Épinglé :</span>{' '}
                         {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
                     </p>
+                    {/* User self-dismiss */}
+                    <button
+                        onClick={() => setPinnedPrayer(null)}
+                        className="p-0.5 rounded-full hover:bg-white/10 text-amber-400/60 hover:text-amber-200 transition-all shrink-0"
+                        title="Masquer pour moi"
+                    >
+                        <X className="h-3 w-3" />
+                    </button>
+                    {/* Admin unpin for all */}
+                    {isCreatorOrAdmin && (
+                        <button
+                            onClick={async () => {
+                                await supabase.from('prayer_groups').update({ description: null }).eq('id', currentGroup.id);
+                                setPinnedPrayer(null);
+                                toast.success('Sujet dépinglé');
+                            }}
+                            className="p-0.5 rounded-full hover:bg-red-500/20 text-red-400/70 hover:text-red-300 transition-all shrink-0"
+                            title="Dépingler pour tous"
+                        >
+                            <Pin className="h-3 w-3" />
+                        </button>
+                    )}
                 </div>
             )}
 
-            {/* Point 4: Pinned Notification Icons Bar */}
+            {/* Point 4: Pinned Notification Icons Bar — horizontal scroll, single row */}
             {view === 'group' && selectedGroup && pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).length > 0 && (
-                <div className="mx-2 sm:mx-4 mt-2 flex flex-wrap gap-2">
+                <div className="mx-2 sm:mx-4 mt-1 flex gap-2 overflow-x-auto scrollbar-none pb-0.5 shrink-0">
                     {pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).map(notif => {
                         const typeConfig: Record<string, {
                             icon: React.ReactNode; color: string; bg: string; border: string;
@@ -3597,8 +3619,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 </div>
             )}
 
-            {/* Messages */}
-            <ScrollArea className="flex-1 p-2 sm:p-4" style={{ minHeight: 0 }}>
+            {/* Messages — fills all remaining space */}
+            <ScrollArea className="flex-1 p-2 sm:p-4 min-h-0">
                 {isLoading ? (
                     <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
