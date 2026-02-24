@@ -107,6 +107,79 @@ export function NotificationListener() {
         return () => { channel.unsubscribe() }
     }, [user])
 
+    // ── Voice Salon join notifications ──────────────────────────────────
+    useEffect(() => {
+        if (!user) return;
+
+        // Listen to any new INSERT in salon_membres_actifs
+        const salonChan = supabase
+            .channel(`salon_join_notif_${user.id}`)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'salon_membres_actifs',
+            }, async (payload) => {
+                const { salon_id, user_id } = payload.new;
+                if (user_id === user.id) return; // Don't notify yourself
+
+                // Fetch salon + name of who joined
+                const [{ data: salon }, { data: profile }] = await Promise.all([
+                    supabase.from('salons').select('name, group_id').eq('id', salon_id).single(),
+                    supabase.from('profiles').select('full_name').eq('id', user_id).single(),
+                ]);
+
+                if (!salon) return;
+
+                // Check user is a member of that group
+                const { data: membership } = await supabase
+                    .from('prayer_group_members')
+                    .select('id')
+                    .eq('group_id', salon.group_id)
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (!membership) return; // Not a member of this group
+
+                const joinerName = profile?.full_name || 'Un membre';
+
+                // Show browser notification
+                if ('Notification' in window && Notification.permission === 'granted') {
+                    const notif = new Notification('🎙️ Salon vocal actif !', {
+                        body: `${joinerName} est dans le salon — rejoins la conversation !`,
+                        tag: `salon_vocal_${salon_id}`,
+                        icon: '/icon-192.png',
+                        requireInteraction: true,
+                    });
+                    notif.onclick = () => {
+                        window.focus();
+                        // Deep-link: open the group chat with voice salon
+                        setActiveTab('community' as any);
+                        setPendingNavigation({
+                            viewState: 'main',
+                            communityTab: 'chat',
+                            groupId: salon.group_id,
+                        });
+                        notif.close();
+                    };
+                }
+
+                // Also show in-app popup
+                const fakeId = `salon_${salon_id}_${Date.now()}`;
+                setPopups(prev => [...prev, {
+                    id: fakeId,
+                    title: '🎙️ Salon vocal actif !',
+                    message: `${joinerName} est dans le salon vocal — cliquez pour rejoindre !`,
+                    type: 'info',
+                    action_type: 'group_voice_salon',
+                    action_data: JSON.stringify({ communityTab: 'chat', groupId: salon.group_id }),
+                }]);
+                setTimeout(() => dismissPopup(fakeId), 12000);
+            })
+            .subscribe();
+
+        return () => { salonChan.unsubscribe(); };
+    }, [user]);
+
     const getIcon = (type: string) => {
         switch (type) {
             case 'success': return <CheckCircle2 className="h-6 w-6 text-green-500" />;
