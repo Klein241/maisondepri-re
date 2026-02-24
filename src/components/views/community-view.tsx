@@ -115,6 +115,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
     const [userLastSeen, setUserLastSeen] = useState<Record<string, string>>({});
     const [openChatGroupId, setOpenChatGroupId] = useState<string | null>(null);
+    const [openChatConversationId, setOpenChatConversationId] = useState<string | null>(null);
 
     // Open chat for a specific group
     const handleOpenChat = (groupId: string) => {
@@ -206,8 +207,15 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
             // If it's a chat navigation with a group ID, open that group chat
             if (nav.communityTab === 'chat' && nav.groupId) {
+                setOpenChatConversationId(null);
                 handleOpenChat(nav.groupId);
-                return; // Stop processing other viewStates if we're opening chat directly
+                return;
+            }
+            // If it's a chat navigation with a conversationId (DM), open that conversation
+            if (nav.communityTab === 'chat' && nav.conversationId) {
+                setOpenChatConversationId(nav.conversationId);
+                setActiveTab('chat');
+                return;
             }
         }
 
@@ -235,36 +243,10 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         });
                 }
             }
-            // If navigating to a DM conversation, open the chat tab and load conversation
-            else if (vs === 'conversation' && nav.conversationId) {
+            // If navigating to a DM conversation, open the chat tab and load conversation directly via WhatsAppChat
+            else if ((vs === 'conversation' || nav.conversationId) && nav.conversationId) {
                 setActiveTab('chat');
-                // Load the conversation details and open it
-                supabase
-                    .from('conversations')
-                    .select('*')
-                    .eq('id', nav.conversationId)
-                    .single()
-                    .then(async ({ data: conv }) => {
-                        if (!conv || !user) return;
-                        const partnerId = conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
-                        const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('id, full_name, avatar_url, is_online, last_seen')
-                            .eq('id', partnerId)
-                            .single();
-
-                        const conversation = {
-                            id: conv.id,
-                            otherUser: profile || { id: partnerId, full_name: 'Utilisateur', avatar_url: null },
-                            lastMessage: conv.last_message || '',
-                            lastMessageAt: conv.last_message_at || conv.created_at,
-                            unreadCount: 0,
-                        };
-                        setSelectedConversation(conversation);
-                        loadDirectMessages(conv.id);
-                        setViewState('conversation');
-                        if (onHideNav) onHideNav(true);
-                    });
+                setOpenChatConversationId(nav.conversationId);
             }
             // Otherwise, navigate to the specified viewState
             else {
@@ -2001,8 +1983,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </TabsContent>
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
-                                <TabsContent value="chat" className="mt-0 flex flex-col -mx-4">
-                                    <div className="relative flex-1" style={{ height: 'calc(100dvh - 320px)', minHeight: '350px', maxHeight: '600px' }}>
+                                <TabsContent value="chat" className="mt-0 flex flex-col -mx-4 h-full">
+                                    <div className="relative flex-1 h-full" style={{ height: 'calc(100dvh - 210px)', minHeight: '400px' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
@@ -2011,6 +1993,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             } : null}
                                             onHideNav={onHideNav}
                                             activeGroupId={openChatGroupId}
+                                            activeConversationId={openChatConversationId}
                                         />
                                     </div>
                                 </TabsContent>

@@ -8,7 +8,7 @@ import {
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
     BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar,
-    MessageCircle, Gamepad2, BarChart3, FileText, Heart, Bell
+    MessageCircle, Gamepad2, BarChart3, FileText, Heart, Bell, Radio
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -24,6 +24,7 @@ import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendG
 import { GroupToolsPanel } from './group-tools';
 import { EventCalendarButton } from './event-calendar';
 import { CallHistory } from './call-history';
+import { VoiceSalon } from './voice-salon';
 import { cn } from '@/lib/utils';
 import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
@@ -172,7 +173,7 @@ function VoiceMessagePlayer({ voiceUrl, duration }: { voiceUrl: string; duration
     );
 }
 
-export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatProps & { activeGroupId?: string | null }) {
+export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
     // View State
     const [view, setView] = useState<'list' | 'conversation' | 'group' | 'call_history'>('list');
 
@@ -276,6 +277,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     const [showPinTool, setShowPinTool] = useState(false);
     const [pinText, setPinText] = useState('');
 
+    // Reply-to state
+    const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
+
     // Event planning state
     const [showEventTool, setShowEventTool] = useState(false);
     const [eventTitle, setEventTitle] = useState('');
@@ -321,6 +325,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
         participants: string[]; groupId: string;
     } | null>(null);
     const [showNotificationPanel, setShowNotificationPanel] = useState(false);
+    const [showVoiceSalon, setShowVoiceSalon] = useState(false);
 
     // Refs to hold current values without causing re-subscriptions
     const selectedConversationRef = useRef(selectedConversation);
@@ -370,6 +375,41 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
             }
         }
     }, [activeGroupId, groups, adminGroups]);
+
+    // Handle activeConversationId deep-link (from notification click)
+    useEffect(() => {
+        if (!activeConversationId || !user) return;
+        (async () => {
+            try {
+                const { data: conv } = await supabase
+                    .from('conversations')
+                    .select('*')
+                    .eq('id', activeConversationId)
+                    .single();
+                if (!conv) return;
+                const partnerId = conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
+                const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, avatar_url, is_online, last_seen')
+                    .eq('id', partnerId)
+                    .single();
+                const conversation: Conversation = {
+                    id: conv.id,
+                    participantId: partnerId,
+                    participant: profile || { id: partnerId, full_name: 'Utilisateur', avatar_url: null },
+                    lastMessage: conv.last_message || '',
+                    lastMessageAt: conv.last_message_at || conv.created_at,
+                    unreadCount: 0,
+                };
+                setSelectedConversation(conversation);
+                setSelectedGroup(null);
+                setView('conversation');
+                loadMessages('conversation', conv.id);
+            } catch (e) {
+                console.error('[WhatsAppChat] Error opening conversation from notification:', e);
+            }
+        })();
+    }, [activeConversationId, user]);
 
     // Derived state for current view and call handling
     const currentRecipient = selectedConversation?.participant;
@@ -962,8 +1002,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
     const sendMessage = async () => {
         if (!newMessage.trim() || !user) return;
 
-        const msgContent = newMessage.trim();
+        // Prepend reply context if replying
+        let msgContent = newMessage.trim();
+        if (replyTo) {
+            msgContent = `↩ **${replyTo.senderName}**: "${replyTo.content.slice(0, 60)}${replyTo.content.length > 60 ? '…' : ''}"\n${msgContent}`;
+        }
         setNewMessage('');
+        setReplyTo(null);
         setIsSending(true);
         try {
             if (view === 'conversation' && selectedConversation) {
@@ -3330,42 +3375,33 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                 )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-0 sm:gap-1 shrink-0">
+                        <div className="flex items-center gap-1 shrink-0">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-7 w-7 sm:h-9 sm:w-9"
+                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-9 w-9"
                                 onClick={() => { setShowGroupTools(true); loadAllUsers(); loadGroupMembers(currentGroup!.id); }}
                                 title="Outils de groupe"
                             >
-                                <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                <Settings className="h-5 w-5" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-7 w-7 sm:h-9 sm:w-9"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-9 w-9"
                                 onClick={() => setShowGroupMembers(!showGroupMembers)}
                                 title="Voir les membres"
                             >
-                                <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                <Users className="h-5 w-5" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-7 w-7 sm:h-9 sm:w-9"
-                                onClick={() => startGroupMeeting('audio')}
-                                title="Démarrer une réunion vocale"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-9 w-9"
+                                onClick={() => setShowVoiceSalon(true)}
+                                title="Salon vocal (Discord/PTT)"
                             >
-                                <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-7 w-7 sm:h-9 sm:w-9"
-                                onClick={() => startGroupMeeting('video')}
-                                title="Démarrer une réunion vidéo"
-                            >
-                                <Video className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                                <Radio className="h-5 w-5" />
                             </Button>
                         </div>
                     </>
@@ -3788,6 +3824,26 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                                                 {commentCount} commentaire{commentCount > 1 ? 's' : ''}
                                             </button>
                                         )}
+
+                                        {/* Visible Reply button below each message */}
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setReplyTo({
+                                                    id: msg.id,
+                                                    content: msg.content,
+                                                    senderName: msg.sender?.full_name || 'Utilisateur'
+                                                });
+                                                inputRef.current?.focus();
+                                            }}
+                                            className={cn(
+                                                "flex items-center gap-1 mt-1 text-[10px] text-slate-500 hover:text-indigo-400 transition-colors",
+                                                isOwn ? "ml-auto" : ""
+                                            )}
+                                        >
+                                            <ArrowRightLeft className="h-3 w-3" />
+                                            Répondre
+                                        </button>
                                     </div>
                                 </motion.div>
                             );
@@ -3809,8 +3865,60 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                 )}
             </ScrollArea>
 
+            {/* Hidden file input for 📎 attachments */}
+            <input
+                id="chat-file-input"
+                type="file"
+                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.epub,.ppt,.pptx"
+                className="hidden"
+                onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !user) return;
+                    if (file.size > 10 * 1024 * 1024) { toast.error('Fichier trop grand (max 10MB)'); return; }
+                    const ext = file.name.split('.').pop() || 'bin';
+                    const path = `${user.id}/${Date.now()}.${ext}`;
+                    setIsSending(true);
+                    try {
+                        const { error: upErr } = await supabase.storage.from('chat-files').upload(path, file, { upsert: true });
+                        if (upErr) throw upErr;
+                        const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
+                        const fileUrl = urlData.publicUrl;
+                        const isImage = file.type.startsWith('image/');
+                        const msgContent = isImage ? `📷 [Photo]` : `📎 ${file.name}`;
+                        if (view === 'group' && selectedGroup) {
+                            await supabase.from('prayer_group_messages').insert({ group_id: selectedGroup.id, user_id: user.id, content: msgContent, type: isImage ? 'image' : 'text', image_url: isImage ? fileUrl : undefined });
+                        } else if (view === 'conversation' && selectedConversation) {
+                            await supabase.from('direct_messages').insert({ conversation_id: selectedConversation.id, sender_id: user.id, content: msgContent, type: 'text', is_read: false });
+                        }
+                        toast.success('Fichier envoyé !');
+                    } catch (err: any) { toast.error('Erreur upload: ' + err.message); }
+                    setIsSending(false);
+                    e.target.value = '';
+                }}
+            />
+
             {/* Input Area */}
             <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80">
+                {/* Reply-to Preview Bar */}
+                <AnimatePresence>
+                    {replyTo && (
+                        <motion.div
+                            initial={{ opacity: 0, y: 8 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 8 }}
+                            className="mb-2 flex items-center gap-2 bg-indigo-500/10 border-l-2 border-indigo-500 rounded-r-lg px-3 py-1.5"
+                        >
+                            <div className="flex-1 min-w-0">
+                                <p className="text-[10px] text-indigo-400 font-semibold">↩ {replyTo.senderName}</p>
+                                <p className="text-[11px] text-slate-400 truncate">{replyTo.content.slice(0, 80)}</p>
+                            </div>
+                            <button onClick={() => setReplyTo(null)} className="p-0.5 text-slate-500 hover:text-white">
+                                <X className="h-3.5 w-3.5" />
+                            </button>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+
                 {/* @Mention suggestions */}
                 <AnimatePresence>
                     {showMentions && view === 'group' && (
@@ -3872,6 +3980,17 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                             <AtSign className="h-4 w-4" />
                         </Button>
                     )}
+
+                    {/* 📎 File attachment button */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-slate-400 hover:text-amber-400 h-8 w-8 shrink-0"
+                        title="Joindre un fichier"
+                        onClick={() => document.getElementById('chat-file-input')?.click()}
+                    >
+                        <Paperclip className="h-4 w-4" />
+                    </Button>
 
                     {isRecording ? (
                         <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-red-500/20 rounded-full px-3 sm:px-4 py-2">
@@ -4829,6 +4948,20 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId }: WhatsAppChatPro
                     onReject={() => setIncomingCall(null)}
                 />
             )}
+
+            {/* ── Voice Salon Dialog (Discord/PTT) ── */}
+            <Dialog open={showVoiceSalon} onOpenChange={setShowVoiceSalon}>
+                <DialogContent className="max-w-sm p-0 bg-transparent border-0 shadow-none">
+                    {currentGroup && user && (
+                        <VoiceSalon
+                            groupId={currentGroup.id}
+                            groupName={currentGroup.name}
+                            user={user}
+                            onClose={() => setShowVoiceSalon(false)}
+                        />
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
