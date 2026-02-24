@@ -60,6 +60,7 @@ import {
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useAppStore } from '@/lib/store';
+import { useRouter } from 'next/navigation';
 import { getDay } from '@/lib/program-data';
 import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
@@ -71,7 +72,6 @@ import { fr } from 'date-fns/locale';
 import dynamic from 'next/dynamic';
 
 const VideoGallery = dynamic(() => import('@/components/community/video-gallery'), { ssr: false });
-const GlobalLiveSalon = dynamic(() => import('@/components/community/global-live-salon').then(m => ({ default: m.GlobalLiveSalon })), { ssr: false });
 
 interface HomeViewProps {
     onNavigateToDay: (day: number) => void;
@@ -349,6 +349,468 @@ function LiveRegistrationFlow({
                     )}
                 </AnimatePresence>
             </motion.div>
+        </motion.div>
+    );
+}
+
+// ===== LIVE SALON (full-screen with video + comments) =====
+function LiveSalon({
+    streamUrl,
+    backupUrl,
+    platform,
+    userId,
+    userName,
+    onClose,
+}: {
+    streamUrl: string;
+    backupUrl: string;
+    platform: string;
+    userId: string;
+    userName: string;
+    onClose: () => void;
+}) {
+    const [comments, setComments] = useState<LiveComment[]>([]);
+    const [newComment, setNewComment] = useState('');
+    const [replyTo, setReplyTo] = useState<LiveComment | null>(null);
+    const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
+    const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const commentsEndRef = useRef<HTMLDivElement>(null);
+
+    // Fallback / blocked platform detection
+    const [useBackup, setUseBackup] = useState(false);
+    const [iframeLoaded, setIframeLoaded] = useState(false);
+    const [showBlockedMsg, setShowBlockedMsg] = useState(false);
+    const currentUrl = useBackup ? backupUrl : streamUrl;
+    const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
+
+    useEffect(() => {
+        setIframeLoaded(false);
+        setShowBlockedMsg(false);
+        const timer = setTimeout(() => {
+            if (!iframeLoaded) {
+                setShowBlockedMsg(true);
+                if (backupUrl && !useBackup) {
+                    setUseBackup(true);
+                    toast.info('🔄 Basculement auto vers le lien de secours');
+                }
+            }
+        }, 6000);
+        return () => clearTimeout(timer);
+    }, [currentUrl, backupUrl]);
+
+    // Check if admin
+    const { user } = useAppStore();
+    const isAdmin = user?.role === 'admin';
+
+    // Load comments (from app_settings live stream — use a special livestream_id = 'global-live')
+    const GLOBAL_LIVE_ID = 'global-live';
+
+    const loadComments = useCallback(async () => {
+        try {
+            const { data, error } = await supabase
+                .from('livestream_comments')
+                .select('*')
+                .eq('livestream_id', GLOBAL_LIVE_ID)
+                .order('created_at', { ascending: true })
+                .limit(200);
+
+            if (error || !data) return;
+
+            // Load profiles
+            const userIds = [...new Set(data.map(c => c.user_id))];
+            if (userIds.length === 0) {
+                setComments([]);
+                return;
+            }
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, avatar_url')
+                .in('id', userIds);
+
+            const profileMap = new Map((profiles || []).map(p => [p.id, p]));
+
+            // Thread comments
+            const topLevel: LiveComment[] = [];
+            const repliesMap = new Map<string, LiveComment[]>();
+
+            data.forEach(c => {
+                const enriched: LiveComment = {
+                    ...c,
+                    profile: profileMap.get(c.user_id) || { full_name: null, avatar_url: null },
+                    replies: [],
+                };
+                if (c.parent_id) {
+                    const existing = repliesMap.get(c.parent_id) || [];
+                    existing.push(enriched);
+                    repliesMap.set(c.parent_id, existing);
+                } else {
+                    topLevel.push(enriched);
+                }
+            });
+
+            topLevel.forEach(c => {
+                c.replies = repliesMap.get(c.id) || [];
+            });
+
+            setComments(topLevel);
+        } catch (e) {
+            console.log('Comments not available');
+        }
+    }, []);
+
+    // Real-time subscription
+    useEffect(() => {
+        loadComments();
+
+        let channel: any = null;
+        try {
+            channel = supabase
+                .channel('global-live-comments')
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'livestream_comments',
+                    filter: `livestream_id=eq.${GLOBAL_LIVE_ID}`
+                }, () => loadComments())
+                .subscribe();
+        } catch (e) { /* table might not exist */ }
+
+        return () => { if (channel) supabase.removeChannel(channel); };
+    }, [loadComments]);
+
+    // Auto-scroll
+    useEffect(() => {
+        commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [comments]);
+
+    // Send comment
+    const handleSendComment = async () => {
+        if (!newComment.trim() || !userId) return;
+        try {
+            await supabase.from('livestream_comments').insert({
+                livestream_id: GLOBAL_LIVE_ID,
+                user_id: userId,
+                content: newComment.trim(),
+                parent_id: replyTo?.id || null,
+            });
+            setNewComment('');
+            setReplyTo(null);
+        } catch (e: any) {
+            toast.error("Erreur: " + (e.message || "Impossible d'envoyer"));
+        }
+    };
+
+    // Send reaction
+    const handleReaction = async (emoji: string) => {
+        const id = Date.now().toString();
+        const x = 20 + Math.random() * 60;
+        setFloatingReactions(prev => [...prev, { id, emoji, x }]);
+        setTimeout(() => setFloatingReactions(prev => prev.filter(r => r.id !== id)), 3000);
+        setShowEmojiPicker(false);
+
+        try {
+            await supabase.from('livestream_reactions').insert({
+                livestream_id: GLOBAL_LIVE_ID,
+                user_id: userId,
+                emoji,
+            });
+        } catch (e) { /* silent */ }
+    };
+
+    // Delete comment
+    const handleDeleteComment = async (commentId: string) => {
+        try {
+            await supabase.from('livestream_comments').delete().eq('id', commentId);
+            toast.success('Commentaire supprimé');
+        } catch (e: any) {
+            toast.error("Erreur");
+        }
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+        >
+            {/* Header */}
+            <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
+                <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0 h-9 w-9">
+                    <ArrowLeft className="h-5 w-5" />
+                </Button>
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <h1 className="font-black text-sm truncate">Diffusion en Direct</h1>
+                    </div>
+                </div>
+                <Badge className="bg-red-600/20 text-red-400 gap-1 text-[9px] px-2 py-0.5 shrink-0">
+                    <Radio className="h-2.5 w-2.5" />
+                    LIVE
+                </Badge>
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-400 h-7 text-[9px] px-2 shrink-0"
+                    onClick={() => {
+                        const url = `${window.location.origin}/?live=1`;
+                        navigator.clipboard?.writeText(url);
+                        toast.success('🔗 Lien copié !');
+                    }}
+                >
+                    <Share2 className="h-3 w-3" />
+                </Button>
+            </header>
+
+            {/* Video — 9:16 for Facebook/TikTok/Instagram, 16:9 for others */}
+            <div className={cn("shrink-0 bg-black flex items-center justify-center relative", isPortrait && !useBackup ? '' : 'w-full')}>
+                {currentUrl ? (
+                    <div className={cn(
+                        "bg-black overflow-hidden mx-auto",
+                        isPortrait && !useBackup ? "w-full max-w-[280px] sm:max-w-[340px]" : "w-full"
+                    )}
+                        style={{
+                            aspectRatio: isPortrait && !useBackup ? '9/16' : '16/9',
+                            maxHeight: isPortrait && !useBackup ? '45vh' : '35vh'
+                        }}
+                    >
+                        <iframe
+                            src={currentUrl}
+                            className="w-full h-full"
+                            allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
+                            allowFullScreen
+                            frameBorder="0"
+                            scrolling="no"
+                            onLoad={() => { setIframeLoaded(true); setShowBlockedMsg(false); }}
+                        />
+                    </div>
+                ) : (
+                    <div className="w-full flex items-center justify-center text-slate-500" style={{ height: '35vh' }}>
+                        <Loader2 className="h-8 w-8 animate-spin" />
+                    </div>
+                )}
+
+                {/* Floating Reactions */}
+                <AnimatePresence>
+                    {floatingReactions.map(r => (
+                        <motion.div
+                            key={r.id}
+                            initial={{ opacity: 1, y: 0 }}
+                            animate={{ opacity: 0, y: -150 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 2.5, ease: 'easeOut' }}
+                            className="absolute bottom-4 text-2xl pointer-events-none"
+                            style={{ left: `${r.x}%` }}
+                        >
+                            {r.emoji}
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
+
+            {/* Blocked platform warning + manual switch */}
+            {(showBlockedMsg || backupUrl) && (
+                <div className="px-3 py-1.5 flex items-center justify-between shrink-0 border-b border-white/5">
+                    {showBlockedMsg && !backupUrl && (
+                        <p className="text-[10px] text-amber-400">⚠️ Vidéo inaccessible. Activez un VPN.</p>
+                    )}
+                    {backupUrl && (
+                        <button
+                            onClick={() => { setUseBackup(!useBackup); setIframeLoaded(false); setShowBlockedMsg(false); }}
+                            className="text-[10px] font-bold text-blue-400 hover:text-blue-300"
+                        >
+                            {useBackup ? '⬅️ Lien principal' : '🔄 Vidéo bloquée ? Lien alternatif'}
+                        </button>
+                    )}
+                    {useBackup && <span className="text-[9px] text-green-400">✅ Secours</span>}
+                </div>
+            )}
+
+            {/* Quick reactions */}
+            <div className="px-3 sm:px-4 py-2 flex items-center gap-1 border-b border-white/5 overflow-x-auto">
+                {EMOJI_LIST.slice(0, 6).map(emoji => (
+                    <motion.button
+                        key={emoji}
+                        whileTap={{ scale: 1.4 }}
+                        onClick={() => handleReaction(emoji)}
+                        className="text-lg sm:text-xl p-1.5 rounded-xl hover:bg-white/10 transition-colors shrink-0"
+                    >
+                        {emoji}
+                    </motion.button>
+                ))}
+                <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-slate-400 h-8 shrink-0"
+                    onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+                >
+                    <Smile className="h-4 w-4" />
+                </Button>
+
+                <AnimatePresence>
+                    {showEmojiPicker && (
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.9 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            className="absolute bottom-16 right-4 bg-[#1a1f2e] border border-white/10 rounded-2xl p-3 shadow-2xl z-50"
+                        >
+                            <div className="grid grid-cols-6 gap-2">
+                                {EMOJI_LIST.map(emoji => (
+                                    <motion.button
+                                        key={emoji}
+                                        whileTap={{ scale: 1.3 }}
+                                        onClick={() => handleReaction(emoji)}
+                                        className="text-xl p-2 rounded-xl hover:bg-white/10 transition-colors"
+                                    >
+                                        {emoji}
+                                    </motion.button>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+                </AnimatePresence>
+            </div>
+
+            {/* Comments */}
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+                <ScrollArea className="flex-1 px-3 sm:px-4">
+                    <div className="py-3 space-y-3">
+                        {comments.length === 0 ? (
+                            <div className="text-center py-8 text-slate-500">
+                                <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
+                                <p className="text-sm">Soyez le premier à commenter le live !</p>
+                            </div>
+                        ) : (
+                            comments.map(comment => (
+                                <div key={comment.id} className="group">
+                                    <div className="flex items-start gap-2">
+                                        <Avatar className="h-7 w-7 sm:h-8 sm:w-8 shrink-0 mt-0.5">
+                                            <AvatarFallback className="bg-indigo-500/20 text-indigo-300 text-[10px]">
+                                                {(comment.profile?.full_name || '?')[0]}
+                                            </AvatarFallback>
+                                        </Avatar>
+                                        <div className="flex-1 min-w-0">
+                                            <div className={cn(
+                                                "inline-block rounded-2xl px-3 py-2 max-w-full",
+                                                comment.is_pinned
+                                                    ? "bg-amber-500/10 border border-amber-500/20"
+                                                    : "bg-white/5"
+                                            )}>
+                                                <span className="font-bold text-xs text-white">
+                                                    {comment.profile?.full_name || 'Utilisateur'}
+                                                </span>
+                                                {comment.is_pinned && <Pin className="h-2.5 w-2.5 text-amber-400 inline ml-1" />}
+                                                <p className="text-sm text-slate-200 break-words">{comment.content}</p>
+                                            </div>
+                                            <div className="flex items-center gap-3 mt-1 px-1">
+                                                <span className="text-[10px] text-slate-600">
+                                                    {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true, locale: fr })}
+                                                </span>
+                                                <button
+                                                    onClick={() => setReplyTo(comment)}
+                                                    className="text-[10px] font-bold text-slate-500 hover:text-indigo-400"
+                                                >
+                                                    Répondre
+                                                </button>
+                                                {(comment.user_id === userId || isAdmin) && (
+                                                    <button
+                                                        onClick={() => handleDeleteComment(comment.id)}
+                                                        className="text-[10px] text-red-500/50 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                    >
+                                                        Supprimer
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Replies */}
+                                    {comment.replies && comment.replies.length > 0 && (
+                                        <div className="ml-9 sm:ml-10 mt-2 space-y-2 border-l-2 border-white/5 pl-3">
+                                            {comment.replies.map(reply => (
+                                                <div key={reply.id} className="group/reply flex items-start gap-2">
+                                                    <Avatar className="h-6 w-6 shrink-0 mt-0.5">
+                                                        <AvatarFallback className="bg-purple-500/20 text-purple-300 text-[9px]">
+                                                            {(reply.profile?.full_name || '?')[0]}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="inline-block rounded-2xl px-3 py-1.5 bg-white/3">
+                                                            <span className="font-bold text-[11px] text-white">
+                                                                {reply.profile?.full_name || 'Utilisateur'}
+                                                            </span>
+                                                            <p className="text-xs text-slate-300 break-words">{reply.content}</p>
+                                                        </div>
+                                                        <div className="flex items-center gap-2 mt-0.5 px-1">
+                                                            <span className="text-[9px] text-slate-600">
+                                                                {formatDistanceToNow(new Date(reply.created_at), { addSuffix: true, locale: fr })}
+                                                            </span>
+                                                            {(reply.user_id === userId || isAdmin) && (
+                                                                <button
+                                                                    onClick={() => handleDeleteComment(reply.id)}
+                                                                    className="text-[9px] text-red-500/60 hover:text-red-400 opacity-0 group-hover/reply:opacity-100"
+                                                                >
+                                                                    Supprimer
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            ))
+                        )}
+                        <div ref={commentsEndRef} />
+                    </div>
+                </ScrollArea>
+
+                {/* Reply indicator */}
+                {replyTo && (
+                    <div className="px-3 py-2 bg-indigo-500/10 border-t border-indigo-500/20 flex items-center gap-2">
+                        <span className="text-xs text-indigo-300">
+                            Répondre à <b>{replyTo.profile?.full_name || 'Utilisateur'}</b>
+                        </span>
+                        <Button variant="ghost" size="icon" className="h-6 w-6 ml-auto" onClick={() => setReplyTo(null)}>
+                            <X className="h-3 w-3" />
+                        </Button>
+                    </div>
+                )}
+
+                {/* Comment input */}
+                <div className="px-3 sm:px-4 py-3 border-t border-white/5 flex items-center gap-2 bg-[#0a0d14]/80 backdrop-blur" style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+                    <Avatar className="h-8 w-8 shrink-0">
+                        <AvatarFallback className="bg-indigo-500/20 text-indigo-300 text-xs">
+                            {userName[0] || '?'}
+                        </AvatarFallback>
+                    </Avatar>
+                    <Input
+                        placeholder="Commentez en direct..."
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleSendComment();
+                            }
+                        }}
+                        className="flex-1 h-10 rounded-full bg-white/5 border-white/10 text-sm px-4"
+                    />
+                    <motion.div whileTap={{ scale: 0.9 }}>
+                        <Button
+                            size="icon"
+                            className="h-10 w-10 rounded-full bg-gradient-to-r from-red-600 to-pink-600 shrink-0"
+                            onClick={handleSendComment}
+                            disabled={!newComment.trim()}
+                        >
+                            <Send className="h-4 w-4" />
+                        </Button>
+                    </motion.div>
+                </div>
+            </div>
         </motion.div>
     );
 }
@@ -671,13 +1133,12 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                 {/* Live Salon (full screen) */}
                 <AnimatePresence>
                     {showLiveSalon && (
-                        <GlobalLiveSalon
-                            primaryUrl={liveStreamUrl}
+                        <LiveSalon
+                            streamUrl={liveStreamUrl}
                             backupUrl={appSettings?.['live_stream_url_backup'] || ''}
-                            platform={appSettings?.['live_platform'] || 'facebook'}
-                            proxyUrl={appSettings?.['live_proxy_url'] || ''}
-                            isPortrait={false}
-                            user={{ id: user?.id || 'anonymous', name: user?.name, role: user?.role }}
+                            platform={appSettings?.['live_platform'] || 'youtube'}
+                            userId={user?.id || ''}
+                            userName={user?.name || 'Visiteur'}
                             onClose={() => setShowLiveSalon(false)}
                         />
                     )}
@@ -791,8 +1252,8 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                         whileHover={{ scale: 1.02 }}
                                         whileTap={{ scale: 0.98 }}
                                         onClick={() => {
-                                            setSelectedReplay(replay);
                                             setShowReplaysDialog(false);
+                                            window.location.href = `/replay/${replay.id}`;
                                         }}
                                         className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 hover:border-purple-500/30 transition-all text-left"
                                     >
@@ -803,6 +1264,8 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                             <p className="font-bold text-sm text-white truncate">{replay.title}</p>
                                             <p className="text-[10px] text-slate-400">
                                                 {new Date(replay.recorded_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                {' · '}
+                                                <span className="text-purple-400">Commenter · Réagir</span>
                                             </p>
                                         </div>
                                         <Badge variant="outline" className="text-[9px] shrink-0 border-purple-500/30 text-purple-300">
@@ -815,85 +1278,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                     </DialogContent>
                 </Dialog>
 
-                {/* Selected Replay Viewer (full screen) */}
-                <AnimatePresence>
-                    {selectedReplay && (
-                        <motion.div
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0 }}
-                            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
-                        >
-                            <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
-                                <Button variant="ghost" size="icon" onClick={() => setSelectedReplay(null)} className="shrink-0 h-9 w-9">
-                                    <ArrowLeft className="h-5 w-5" />
-                                </Button>
-                                <div className="flex-1 min-w-0">
-                                    <h1 className="font-black text-sm truncate">{selectedReplay.title}</h1>
-                                    <p className="text-[10px] text-slate-500">
-                                        {new Date(selectedReplay.recorded_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}
-                                    </p>
-                                </div>
-                                <Badge className="bg-purple-600/20 text-purple-400 text-[9px] shrink-0">
-                                    REPLAY
-                                </Badge>
-                            </header>
-                            <div className="flex-1 flex items-start justify-center bg-black p-2">
-                                {(() => {
-                                    const rpIsPortrait = ['facebook', 'tiktok', 'instagram'].includes(selectedReplay.platform);
-
-                                    // Local state hack for proxy
-                                    const proxyEnabled = (window as any)._replayUseProxy || false;
-                                    const proxyUrl = appSettings?.['live_proxy_url'];
-
-                                    return (
-                                        <div className="w-full flex flex-col items-center">
-                                            <div className={cn(
-                                                "bg-black overflow-hidden mx-auto",
-                                                rpIsPortrait ? "w-full max-w-[300px]" : "w-full"
-                                            )}
-                                                style={{
-                                                    aspectRatio: rpIsPortrait ? '9/16' : '16/9',
-                                                    maxHeight: '70vh'
-                                                }}
-                                            >
-                                                {proxyEnabled && proxyUrl ? (
-                                                    <video
-                                                        src={`${proxyUrl}/api/videos/stream?url=${encodeURIComponent(selectedReplay.embed_url)}`}
-                                                        controls autoPlay playsInline
-                                                        className="w-full h-full"
-                                                    />
-                                                ) : (
-                                                    <iframe
-                                                        src={selectedReplay.embed_url}
-                                                        className="w-full h-full"
-                                                        allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
-                                                        allowFullScreen
-                                                        frameBorder="0"
-                                                    />
-                                                )}
-                                            </div>
-                                            {proxyUrl && (
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className={cn("mt-4 text-[10px]", proxyEnabled ? "text-green-400" : "text-blue-400")}
-                                                    onClick={(e) => {
-                                                        (window as any)._replayUseProxy = !proxyEnabled;
-                                                        // Force re-render
-                                                        setSelectedReplay({ ...selectedReplay });
-                                                    }}
-                                                >
-                                                    {proxyEnabled ? "✅ Proxy Actif" : "📡 Vidéo bloquée ? Regarder via Proxy"}
-                                                </Button>
-                                            )}
-                                        </div>
-                                    );
-                                })()}
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                {/* Replay Viewer: now redirect to /replay/[id] page */}
 
                 {/* Video Gallery (full screen) */}
                 {showVideoGallery && appSettings?.['live_proxy_url'] && appSettings?.['facebook_page_videos_url'] && (
