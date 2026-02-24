@@ -30,12 +30,21 @@ try { supabaseJs = require('@supabase/supabase-js'); } catch (e) { console.warn(
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
+    cors: { origin: '*', methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'] },
     pingTimeout: 60000,
     pingInterval: 25000,
 });
 
-app.use(cors());
+// ── CORS : allow ALL origins (Netlify, localhost, etc.) ──
+const corsOptions = {
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+    credentials: false,
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions)); // Handle preflight for ALL routes
+
 app.use(express.json({ limit: '10mb' }));
 app.use('/streams', express.static(path.join(__dirname, 'streams')));
 app.use('/replays', express.static(path.join(__dirname, 'replays')));

@@ -394,7 +394,7 @@ function LiveSalon({
                 const data = await res.json();
                 if (data.status === 'live') {
                     setProxyStatus('live');
-                    setProxyStreamUrl(`${proxyUrl}/stream/live.m3u8`);
+                    setProxyStreamUrl(`${proxyUrl}/streams/live/playlist.m3u8`);
                     setProxyConnected(true);
                 }
             } catch (e) { /* proxy not available */ }
