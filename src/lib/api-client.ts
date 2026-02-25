@@ -22,31 +22,60 @@ export interface GroupMessage {
     };
 }
 
+// ── In-memory cache for group messages (WhatsApp-like local cache) ────────
+const MSG_CACHE_TTL = 60_000; // 60 seconds
+interface MsgCacheEntry { messages: GroupMessage[]; fetchedAt: number; }
+const msgMemCache: Record<string, MsgCacheEntry> = {};
+
+function getCached(groupId: string): GroupMessage[] | null {
+    const entry = msgMemCache[groupId];
+    if (entry && Date.now() - entry.fetchedAt < MSG_CACHE_TTL) return entry.messages;
+    return null;
+}
+function setCache(groupId: string, messages: GroupMessage[]) {
+    msgMemCache[groupId] = { messages, fetchedAt: Date.now() };
+}
+
+/** Call this from realtime handlers to force a fresh load next time */
+export function invalidateGroupMsgCache(groupId: string) {
+    delete msgMemCache[groupId];
+}
+
 /**
- * Load group messages (replaces GET /api/group-messages)
+ * Load group messages — cache-first, last 50 only (fastest opening)
  */
-export async function loadGroupMessages(groupId: string): Promise<GroupMessage[]> {
+export async function loadGroupMessages(groupId: string, forceRefresh = false): Promise<GroupMessage[]> {
+    if (!forceRefresh) {
+        const cached = getCached(groupId);
+        if (cached) return cached;
+    }
     try {
-        // Try direct query with join first
+        // Load last 50 with inline join — descending then reverse for correct order
         const { data: messages, error } = await supabase
             .from('prayer_group_messages')
             .select('id, group_id, user_id, content, type, voice_url, voice_duration, created_at, profiles(full_name, avatar_url)')
             .eq('group_id', groupId)
-            .order('created_at', { ascending: true });
+            .order('created_at', { ascending: false })
+            .limit(50);
 
         if (error) {
-            // Fallback: load messages without join, then fetch profiles separately
             console.warn('[group-messages] Join failed, using fallback:', error.message);
-            return await loadGroupMessagesFallback(groupId);
+            const result = await loadGroupMessagesFallback(groupId);
+            setCache(groupId, result);
+            return result;
         }
 
-        return (messages || []).map((m: any) => ({
+        const result = ((messages || []) as any[]).reverse().map((m: any) => ({
             ...m,
             profiles: m.profiles || { full_name: 'Utilisateur', avatar_url: null },
         }));
+        setCache(groupId, result);
+        return result;
     } catch (e) {
         console.error('[group-messages] Error:', e);
-        return await loadGroupMessagesFallback(groupId);
+        const result = await loadGroupMessagesFallback(groupId);
+        setCache(groupId, result);
+        return result;
     }
 }
 

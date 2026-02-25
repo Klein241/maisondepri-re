@@ -20,7 +20,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { supabase } from '@/lib/supabase';
 import { WebRTCCall } from './webrtc-call';
 import { initiateCall } from './call-system';
-import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendGroupMessageClient, fetchBiblePassage } from '@/lib/api-client';
+import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendGroupMessageClient, fetchBiblePassage, invalidateGroupMsgCache } from '@/lib/api-client';
+import { getCachedGroupMessages, cacheMessages, appendCachedMessage, getCachedConversationMessages } from '@/lib/local-storage-service';
 import { GroupToolsPanel } from './group-tools';
 import { EventCalendarButton } from './event-calendar';
 import { CallHistory } from './call-history';
@@ -606,14 +607,23 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         .eq('id', msg.user_id)
                         .single();
 
+                    const newMsg = {
+                        ...msg,
+                        sender_id: msg.user_id,
+                        sender,
+                        is_read: true
+                    };
                     setMessages(prev => {
                         if (prev.find(m => m.id === msg.id)) return prev;
-                        return [...prev, {
-                            ...msg,
-                            sender_id: msg.user_id,
-                            sender,
-                            is_read: true
-                        }];
+                        return [...prev, newMsg];
+                    });
+                    // Invalidate memory cache + append to IndexedDB
+                    invalidateGroupMsgCache(msg.group_id);
+                    appendCachedMessage({
+                        id: msg.id, group_id: msg.group_id, user_id: msg.user_id,
+                        content: msg.content, type: msg.type || 'text',
+                        created_at: msg.created_at, sender_name: sender?.full_name,
+                        sender_avatar: sender?.avatar_url,
                     });
                 } else if (!currentGroup) {
                     // User is on the list view — reload groups to update last message
@@ -813,23 +823,29 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
                 if (groupError) throw groupError;
 
+                // Batch-fetch all member counts in ONE query using group_by trick
+                const { data: memberCounts } = await supabase
+                    .from('prayer_group_members')
+                    .select('group_id')
+                    .in('group_id', groupIds);
+
+                const countMap: Record<string, number> = {};
+                (memberCounts || []).forEach(m => {
+                    countMap[m.group_id] = (countMap[m.group_id] || 0) + 1;
+                });
+
                 // Separate admin-created from prayer-request groups
                 const userGroups: ChatGroup[] = [];
                 const adminGroupsList: ChatGroup[] = [];
 
                 for (const g of (groupData || [])) {
-                    // Get member count
-                    const { count } = await supabase
-                        .from('prayer_group_members')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('group_id', g.id);
 
                     const group: ChatGroup = {
                         id: g.id,
                         name: g.name,
                         description: g.description,
                         is_urgent: g.is_urgent || false,
-                        member_count: count || 0,
+                        member_count: countMap[g.id] || 0,
                         unreadCount: 0,
                         is_admin_created: !g.prayer_request_id,
                         prayer_request_id: g.prayer_request_id,
@@ -932,13 +948,22 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         setIsLoading(true);
         try {
             if (type === 'conversation') {
-                setMessages([]); // Clear for conversations (fast load)
+                // Show cached messages instantly
+                const cached = await getCachedConversationMessages(id);
+                if (cached.length > 0) {
+                    setMessages(cached.map((m: any) => ({
+                        ...m,
+                        sender: { id: m.user_id, full_name: m.sender_name || 'Utilisateur', avatar_url: m.sender_avatar || null },
+                    })));
+                    setIsLoading(false);
+                }
                 // id here is the conversation_id (from conversations table)
                 const { data, error } = await supabase
                     .from('direct_messages')
                     .select('*')
                     .eq('conversation_id', id)
-                    .order('created_at', { ascending: true });
+                    .order('created_at', { ascending: true })
+                    .limit(100);
 
                 if (error) throw error;
 
@@ -962,6 +987,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 }));
                 setMessages(messagesWithSenders);
 
+                // Cache to IndexedDB for next time
+                cacheMessages(messagesWithSenders.map((m: any) => ({
+                    id: m.id, conversation_id: id, user_id: m.sender_id,
+                    content: m.content, type: m.type || 'text',
+                    created_at: m.created_at, sender_name: m.sender?.full_name,
+                    sender_avatar: m.sender?.avatar_url,
+                })));
+
                 // Mark messages from others as read
                 supabase
                     .from('direct_messages')
@@ -971,13 +1004,26 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     .eq('is_read', false)
                     .then(() => { });
             } else {
-                // Load group messages (direct Supabase call, no serverless)
+                // ── GROUPS: Show IndexedDB cache INSTANTLY ──────────────
+                const cached = await getCachedGroupMessages(id);
+                if (cached.length > 0) {
+                    setMessages(cached.map((m: any) => ({
+                        ...m,
+                        sender: { id: m.user_id, full_name: m.sender_name || 'Membre', avatar_url: m.sender_avatar || null },
+                        sender_id: m.user_id, is_read: true,
+                    })));
+                    setIsLoading(false); // Instantly visible!
+                }
+
+                // Load fresh from Supabase
                 let groupMsgs: any[] = [];
                 try {
                     const rawMessages = await loadGroupMessagesClient(id);
                     groupMsgs = rawMessages.map((m: any) => ({
                         ...m,
-                        sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
+                        sender: m.profiles
+                            ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url }
+                            : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
                         sender_id: m.user_id,
                         is_read: true
                     }));
@@ -985,6 +1031,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     console.warn('[loadMessages] Error loading group messages:', apiErr);
                 }
                 setMessages(groupMsgs);
+
+                // Persist to IndexedDB
+                cacheMessages(groupMsgs.map((m: any) => ({
+                    id: m.id, group_id: id, user_id: m.user_id,
+                    content: m.content, type: m.type || 'text',
+                    voice_url: m.voice_url, voice_duration: m.voice_duration,
+                    created_at: m.created_at, sender_name: m.sender?.full_name,
+                    sender_avatar: m.sender?.avatar_url,
+                })));
                 // Load reactions, comments, notifications, game session, and active meeting for this group
                 loadReactions(id);
                 loadCommentCounts(id, groupMsgs.map((m: any) => m.id));
@@ -3825,7 +3880,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                             </button>
                                         )}
 
-                                        {/* Visible Reply button below each message */}
+                                        {/* Visible Reply button below each message — WhatsApp style */}
                                         <button
                                             onClick={(e) => {
                                                 e.stopPropagation();
@@ -3837,12 +3892,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 inputRef.current?.focus();
                                             }}
                                             className={cn(
-                                                "flex items-center gap-1 mt-1 text-[10px] text-slate-500 hover:text-indigo-400 transition-colors",
+                                                "flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all",
+                                                "bg-white/5 border-white/10 text-slate-400 hover:bg-indigo-500/15 hover:text-indigo-300 hover:border-indigo-500/30",
                                                 isOwn ? "ml-auto" : ""
                                             )}
                                         >
                                             <ArrowRightLeft className="h-3 w-3" />
-                                            Répondre
+                                            Répondre à ce message
                                         </button>
                                     </div>
                                 </motion.div>
