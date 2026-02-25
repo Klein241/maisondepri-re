@@ -69,6 +69,7 @@ function openDB(): Promise<IDBDatabase> {
 }
 
 // ── Generic IDB Helpers ───────────────────────────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function idbGet<T>(store: string, key: string): Promise<T | undefined> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
@@ -100,6 +101,7 @@ async function idbGetByIndex<T>(store: string, indexName: string, keyValue: stri
     });
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function idbDelete(store: string, key: string): Promise<void> {
     const db = await openDB();
     return new Promise((resolve, reject) => {
