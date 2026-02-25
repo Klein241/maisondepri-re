@@ -17,6 +17,13 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
 
+// Required for Next.js static export with dynamic routes
+// IDs are loaded at runtime via Supabase (no pre-generation needed)
+export function generateStaticParams() {
+    return [];
+}
+
+
 interface Replay {
     id: string;
     title: string;
