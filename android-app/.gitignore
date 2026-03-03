@@ -1,0 +1,19 @@
+# Android build artifacts
+*.iml
+.gradle/
+local.properties
+/.idea/
+.DS_Store
+build/
+app/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Keystore (NEVER commit your signing key!)
+*.keystore
+*.jks
+
+# Generated files
+app/release/
+app/debug/

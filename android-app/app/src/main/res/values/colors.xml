@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark theme colors matching the PWA -->
+    <color name="colorPrimary">#6366F1</color>        <!-- Indigo-500 -->
+    <color name="colorPrimaryDark">#0F172A</color>     <!-- Slate-900 -->
+    <color name="colorAccent">#818CF8</color>          <!-- Indigo-400 -->
+
+    <!-- Status bar & Navigation bar -->
+    <color name="navigationBarColor">#0F172A</color>
+    <color name="navigationBarColorDark">#020617</color>
+
+    <!-- Splash screen background (matches PWA theme_color) -->
+    <color name="splashBackground">#0F172A</color>
+
+    <!-- White for text -->
+    <color name="white">#FFFFFF</color>
+</resources>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App Name -->
+    <string name="app_name">Maison de Prière</string>
+
+    <!--
+        ═══════════════════════════════════════════════════════
+        🔑 DIGITAL ASSET LINKS — CRITICAL FOR TWA
+        ═══════════════════════════════════════════════════════
+        
+        This tells Chrome that your app is authorized to show
+        your website without the address bar.
+        
+        STEPS TO GET YOUR SHA256 FINGERPRINT:
+        
+        1. Generate your signing keystore:
+           keytool -genkey -v -keystore maisondepriere.keystore \
+             -alias maisondepriere -keyalg RSA -keysize 2048 -validity 36500
+        
+        2. Get the SHA256 fingerprint:
+           keytool -list -v -keystore maisondepriere.keystore -alias maisondepriere
+        
+        3. Replace the placeholder below with your actual fingerprint
+        
+        4. Also update: public/.well-known/assetlinks.json on your website
+    -->
+    <string name="asset_statements">
+        [{
+            \"relation\": [\"delegate_permission/common.handle_all_urls\"],
+            \"target\": {
+                \"namespace\": \"web\",
+                \"site\": \"https://maisondepriere.netlify.app\"
+            }
+        }]
+    </string>
+
+    <!--
+        Additional trusted origins for content loaded from other domains.
+        Your Supabase storage URLs and CDN URLs go here.
+    -->
+    <string-array name="additional_trusted_origins">
+        <item>https://maisondepriere.netlify.app</item>
+        <!-- Add your Supabase storage domain -->
+        <!-- <item>https://your-project.supabase.co</item> -->
+    </string-array>
+</resources>
