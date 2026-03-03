@@ -335,13 +335,23 @@ export function NotificationBell() {
             if (notif.type === 'message') {
                 actionData.tab = 'community';
                 actionData.communityTab = 'chat';
-                // Extract conversationId from dm_{msg_id} if possible  
-                if (notif.id.startsWith('dm_')) {
-                    actionData.viewState = 'messages';
+                // Try to infer conversationId from dm_{msg_id} notifications
+                if (notif.id.startsWith('dm_') && !actionData.conversationId) {
+                    actionData.viewState = 'conversation';
+                    // Attempt to find conversation by sender
+                    if (notif.sender_name) {
+                        actionData.viewState = 'messages';
+                    }
                 }
             } else if (notif.type === 'group') {
                 actionData.tab = 'community';
-                actionData.viewState = 'groups';
+                actionData.communityTab = 'chat';
+                // If we have a groupId, deep-link directly into the group
+                if (actionData.groupId) {
+                    actionData.viewState = 'group-detail';
+                } else {
+                    actionData.viewState = 'groups';
+                }
             } else if (notif.type === 'friend_request') {
                 actionData.tab = 'community';
                 actionData.viewState = 'friends';

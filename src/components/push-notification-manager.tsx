@@ -11,10 +11,10 @@ import { useAppStore } from '@/lib/store';
  * 
  * Flow:
  * 1. Register /sw.js
- * 2. Get VAPID public key from the proxy server
+ * 2. Get VAPID public key from the Cloudflare Worker API
  * 3. Subscribe to push via the browser
- * 4. Send subscription to the proxy server
- * 5. Server sends push when new notifications arrive in Supabase
+ * 4. Send subscription to the Cloudflare Worker (stored in KV)
+ * 5. Worker sends push via Supabase webhook or admin broadcast
  */
 export function PushNotificationManager() {
     const user = useAppStore(s => s.user);
@@ -23,8 +23,8 @@ export function PushNotificationManager() {
 
     useEffect(() => {
         if (!user?.id || initialized.current) return;
-        const proxyUrl = appSettings?.['live_proxy_url'];
-        if (!proxyUrl) return;
+        const workerUrl = appSettings?.['live_proxy_url']; // Now points to Cloudflare Worker
+        if (!workerUrl) return;
 
         initialized.current = true;
 
@@ -40,11 +40,11 @@ export function PushNotificationManager() {
                 const registration = await navigator.serviceWorker.register('/sw.js');
                 console.log('✅ SW registered');
 
-                // 3. Get VAPID key from proxy
-                const vapidRes = await fetch(`${proxyUrl}/api/push/vapid-key`);
+                // 3. Get VAPID key from Cloudflare Worker
+                const vapidRes = await fetch(`${workerUrl}/api/push/vapid-key`);
                 const { publicKey } = await vapidRes.json();
                 if (!publicKey) {
-                    console.log('No VAPID key configured on proxy');
+                    console.log('No VAPID key configured on Worker');
                     return;
                 }
 
@@ -67,16 +67,16 @@ export function PushNotificationManager() {
                     console.log('✅ Push subscribed');
                 }
 
-                // 6. Send subscription to proxy server
-                await fetch(`${proxyUrl}/api/push/register`, {
+                // 6. Send subscription to Cloudflare Worker (persisted in KV)
+                await fetch(`${workerUrl}/api/push/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        userId: user.id,
+                        userId: user!.id,
                         subscription: subscription.toJSON(),
                     }),
                 });
-                console.log('✅ Push registered with proxy');
+                console.log('✅ Push registered with Cloudflare Worker');
             } catch (e) {
                 console.warn('Push registration failed:', e);
             }

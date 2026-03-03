@@ -17,88 +17,9 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 
-// ── PROXY CONFIG ────────────────────────────────────────
-// URL of the Fly.io proxy server (set in app_settings key: 'live_proxy_url')
-// Default: empty = disabled, use iframe embeds
-// If set: use HLS player via the proxy
-const DEFAULT_PROXY_URL = '';
-
-// ── HLS Player Component ────────────────────────────────
-function HlsPlayer({ src, className, style }: { src: string; className?: string; style?: React.CSSProperties }) {
-    const videoRef = useRef<HTMLVideoElement>(null);
-
-    useEffect(() => {
-        if (!src || !videoRef.current) return;
-
-        const video = videoRef.current;
-
-        // Check if HLS is natively supported (Safari)
-        if (video.canPlayType('application/vnd.apple.mpegurl')) {
-            video.src = src;
-            video.play().catch(() => { });
-            return;
-        }
-
-        // Load hls.js dynamically
-        let hls: any = null;
-        import('hls.js').then((HlsModule) => {
-            const Hls = HlsModule.default;
-            if (!Hls.isSupported()) {
-                console.warn('HLS not supported in this browser');
-                // Fallback: try direct play
-                video.src = src;
-                video.play().catch(() => { });
-                return;
-            }
-            hls = new Hls({
-                lowLatencyMode: true,
-                liveSyncDurationCount: 3,
-                liveMaxLatencyDurationCount: 6,
-                maxBufferLength: 5,
-                maxMaxBufferLength: 10,
-            });
-            hls.loadSource(src);
-            hls.attachMedia(video);
-            hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                video.play().catch(() => { });
-            });
-            hls.on(Hls.Events.ERROR, (_: any, data: any) => {
-                if (data.fatal) {
-                    console.error('HLS fatal error:', data);
-                    if (data.type === 'networkError') {
-                        setTimeout(() => hls?.startLoad(), 3000);
-                    }
-                }
-            });
-        }).catch(err => {
-            console.warn('hls.js not available, using direct video:', err);
-            video.src = src;
-            video.play().catch(() => { });
-        });
-
-        return () => {
-            if (hls) {
-                hls.destroy();
-            }
-        };
-    }, [src]);
-
-    return (
-        <video
-            ref={videoRef}
-            className={className}
-            style={style}
-            controls
-            autoPlay
-            playsInline
-            muted={false}
-        />
-    );
-}
-
 // ── Global Live Comments ─────────────────────────────────
-export function GlobalLiveComments({ userId, userName, proxySocket }: {
-    userId: string; userName: string; proxySocket?: any;
+export function GlobalLiveComments({ userId, userName }: {
+    userId: string; userName: string;
 }) {
     const [comments, setComments] = useState<any[]>([]);
     const [newComment, setNewComment] = useState('');
@@ -161,26 +82,6 @@ export function GlobalLiveComments({ userId, userName, proxySocket }: {
         return () => { if (channel) supabase.removeChannel(channel); };
     }, [loadComments]);
 
-    // Also listen for proxy WebSocket comments
-    useEffect(() => {
-        if (!proxySocket) return;
-        const handleNewComment = (comment: any) => {
-            // Proxy comments are added to the list directly
-            setComments(prev => {
-                if (comment.parentId) {
-                    return prev.map(c =>
-                        c.id === comment.parentId
-                            ? { ...c, replies: [...(c.replies || []), { ...comment, profile: { full_name: comment.userName } }] }
-                            : c
-                    );
-                }
-                return [...prev, { ...comment, id: comment.id, content: comment.text, profile: { full_name: comment.userName }, replies: [], created_at: comment.timestamp }];
-            });
-        };
-        proxySocket.on('new_comment', handleNewComment);
-        return () => { proxySocket.off('new_comment', handleNewComment); };
-    }, [proxySocket]);
-
     useEffect(() => {
         commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [comments]);
@@ -198,15 +99,6 @@ export function GlobalLiveComments({ userId, userName, proxySocket }: {
                 console.error('Comment insert error:', error);
                 toast.error("Impossible d'envoyer: " + error.message);
                 return;
-            }
-            // Also send to proxy WebSocket
-            if (proxySocket) {
-                proxySocket.emit('comment', {
-                    text: newComment.trim(),
-                    userName,
-                    userId,
-                    parentId: replyTo?.id || null,
-                });
             }
             setNewComment('');
             setReplyTo(null);
@@ -324,113 +216,44 @@ function FloatingReaction({ emoji, x }: { emoji: string; x: number }) {
 }
 
 // ── MAIN: Global Live Salon ─────────────────────────────
-export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, proxyUrl, user, onClose }: {
+export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, user, onClose }: {
     platform: string;
     isPortrait: boolean;
     primaryUrl: string;
     backupUrl: string;
-    proxyUrl: string;
     user: { id: string; name?: string | null; role?: string };
     onClose: () => void;
 }) {
     const [useBackup, setUseBackup] = useState(false);
-    const [useProxy, setUseProxy] = useState(!!proxyUrl);
     const [iframeLoaded, setIframeLoaded] = useState(false);
     const [showBlockedMsg, setShowBlockedMsg] = useState(false);
-    const [viewerCount, setViewerCount] = useState(0);
     const [floatingReactions, setFloatingReactions] = useState<{ id: string; emoji: string; x: number }[]>([]);
-    const [proxySocket, setProxySocket] = useState<any>(null);
-    const [proxyStatus, setProxyStatus] = useState<string>('unknown');
 
-    // Determine current video source
-    const hlsUrl = proxyUrl ? `${proxyUrl}/streams/live/playlist.m3u8` : '';
     const iframeUrl = useBackup ? backupUrl : primaryUrl;
-    const isUsingHls = useProxy && hlsUrl;
 
-    // Connect to proxy WebSocket
+    // Auto-detect blocked platform
     useEffect(() => {
-        if (!proxyUrl) return;
-
-        let socket: any = null;
-        import('socket.io-client').then(({ io }) => {
-            socket = io(proxyUrl, {
-                transports: ['websocket', 'polling'],
-                reconnection: true,
-                reconnectionAttempts: 10,
-                reconnectionDelay: 2000,
-            });
-
-            socket.on('connect', () => {
-                console.log('🔌 Connected to proxy');
-            });
-
-            socket.on('connection_ready', (data: any) => {
-                setProxyStatus(data.status);
-                setViewerCount(data.viewers || 0);
-                if (data.status === 'live' && data.stream_url) {
-                    setUseProxy(true);
-                }
-            });
-
-            socket.on('proxy_status', (data: any) => {
-                setProxyStatus(data.status);
-            });
-
-            socket.on('viewer_count', (count: number) => {
-                setViewerCount(count);
-            });
-
-            socket.on('new_reaction', (data: any) => {
-                setFloatingReactions(prev => [
-                    ...prev.slice(-15),
-                    { id: `${Date.now()}-${Math.random()}`, emoji: data.emoji, x: 10 + Math.random() * 80 }
-                ]);
-            });
-
-            socket.on('live_ended', () => {
-                setProxyStatus('idle');
-                toast.info('Le live est terminé');
-            });
-
-            setProxySocket(socket);
-        }).catch(err => {
-            console.warn('socket.io-client not available:', err);
-        });
-
-        return () => {
-            if (socket) socket.disconnect();
-        };
-    }, [proxyUrl]);
-
-    // Auto-detect blocked platform (iframe mode only)
-    useEffect(() => {
-        if (isUsingHls) return; // Skip for HLS mode
         setIframeLoaded(false);
         setShowBlockedMsg(false);
         const timer = setTimeout(() => {
             if (!iframeLoaded) {
                 setShowBlockedMsg(true);
-                if (proxyUrl && !useProxy) {
-                    setUseProxy(true);
-                    toast.info('🔄 Basculement vers le proxy (sans VPN)');
-                } else if (backupUrl && !useBackup) {
+                if (backupUrl && !useBackup) {
                     setUseBackup(true);
                     toast.info('🔄 Basculement vers le lien de secours');
                 }
             }
         }, 6000);
         return () => clearTimeout(timer);
-    }, [iframeUrl, isUsingHls]);
+    }, [iframeUrl]);
 
     // Send reaction
     const sendReaction = async (emoji: string) => {
-        // Add floating animation
         setFloatingReactions(prev => [
             ...prev.slice(-15),
             { id: `${Date.now()}-${Math.random()}`, emoji, x: 10 + Math.random() * 80 }
         ]);
 
-        // Save to Supabase
         try {
             const { error } = await supabase.from('livestream_reactions').insert({
                 livestream_id: 'global-live',
@@ -443,11 +266,6 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, p
             }
         } catch (e) {
             toast.error('Réaction impossible');
-        }
-
-        // Also send to proxy
-        if (proxySocket) {
-            proxySocket.emit('reaction', { emoji, userId: user.id, userName: user.name || 'Utilisateur' });
         }
     };
 
@@ -504,12 +322,6 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, p
                         <h1 className="font-black text-sm truncate">Diffusion en Direct</h1>
                     </div>
                 </div>
-                {viewerCount > 0 && (
-                    <Badge variant="outline" className="text-[9px] gap-1 border-white/10 text-slate-400 shrink-0">
-                        <Eye className="h-2.5 w-2.5" />
-                        {viewerCount}
-                    </Badge>
-                )}
                 <Badge className="bg-red-600/20 text-red-400 gap-1 text-[9px] px-2 py-0.5 shrink-0">
                     <Radio className="h-2.5 w-2.5" />
                     LIVE
@@ -520,19 +332,9 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, p
                 </Button>
             </header>
 
-            {/* Video Player */}
-            <div className={cn("shrink-0 bg-black flex items-center justify-center relative", (!isPortrait || isUsingHls) && 'w-full')}>
-                {isUsingHls ? (
-                    /* HLS Player via proxy — no VPN needed */
-                    <div className="w-full" style={{ maxHeight: '40vh' }}>
-                        <HlsPlayer
-                            src={hlsUrl}
-                            className="w-full"
-                            style={{ maxHeight: '40vh' }}
-                        />
-                    </div>
-                ) : iframeUrl ? (
-                    /* Iframe embed — needs VPN if platform blocked */
+            {/* Video Player — iframe only */}
+            <div className={cn("shrink-0 bg-black flex items-center justify-center relative", 'w-full')}>
+                {iframeUrl ? (
                     <div className={cn(
                         "bg-black overflow-hidden mx-auto",
                         isPortrait && !useBackup ? "w-full max-w-[280px] sm:max-w-[340px]" : "w-full"
@@ -567,19 +369,9 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, p
             </div>
 
             {/* Source switch bar */}
-            {(showBlockedMsg || backupUrl || proxyUrl) && (
+            {(showBlockedMsg || backupUrl) && (
                 <div className="px-3 py-1.5 flex items-center gap-2 shrink-0 border-b border-white/5 flex-wrap">
-                    {proxyUrl && (
-                        <button
-                            onClick={() => { setUseProxy(!useProxy); }}
-                            className={cn("text-[10px] font-bold px-2 py-0.5 rounded-full transition-all",
-                                useProxy ? "bg-green-500/20 text-green-400" : "bg-blue-500/10 text-blue-400 hover:bg-blue-500/20"
-                            )}
-                        >
-                            {useProxy ? '📡 Proxy actif (sans VPN)' : '📡 Utiliser le proxy'}
-                        </button>
-                    )}
-                    {backupUrl && !useProxy && (
+                    {backupUrl && (
                         <button
                             onClick={() => { setUseBackup(!useBackup); setIframeLoaded(false); setShowBlockedMsg(false); }}
                             className="text-[10px] font-bold text-blue-400 hover:text-blue-300"
@@ -587,7 +379,7 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, p
                             {useBackup ? '⬅️ Lien principal' : '🔄 Lien alternatif'}
                         </button>
                     )}
-                    {showBlockedMsg && !backupUrl && !proxyUrl && (
+                    {showBlockedMsg && !backupUrl && (
                         <p className="text-[10px] text-amber-400">⚠️ Vidéo inaccessible. Activez un VPN.</p>
                     )}
                 </div>
@@ -607,7 +399,6 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, p
             <GlobalLiveComments
                 userId={user.id}
                 userName={user.name || 'Utilisateur'}
-                proxySocket={proxySocket}
             />
         </motion.div>
     );

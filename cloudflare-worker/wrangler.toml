@@ -1,0 +1,18 @@
+name = "maisondepriere-api"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+# KV namespace for push subscriptions
+# Create with: npx wrangler kv namespace create PUSH_KV
+# Then paste the id below
+[[kv_namespaces]]
+binding = "PUSH_KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+VAPID_EMAIL = "mailto:admin@maisondepriere.app"
+
+# ── Secrets (set via CLI, not here) ──────────────────────
+# npx wrangler secret put VAPID_PUBLIC_KEY
+# npx wrangler secret put VAPID_PRIVATE_KEY
+# npx wrangler secret put ADMIN_KEY

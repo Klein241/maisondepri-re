@@ -93,8 +93,6 @@ export default function SocialPage() {
     const [liveStreamUrlBackup, setLiveStreamUrlBackup] = useState('');
     const [liveProxyUrl, setLiveProxyUrl] = useState('');
     const [proxyStatus, setProxyStatus] = useState<string>('idle');
-    const [fbPageVideosUrl, setFbPageVideosUrl] = useState('');
-    const [videoGalleryEnabled, setVideoGalleryEnabled] = useState(false);
     const [newVideoTitle, setNewVideoTitle] = useState('');
     const [newVideoUrl, setNewVideoUrl] = useState('');
     const [newVideoCategory, setNewVideoCategory] = useState('predication');
@@ -145,7 +143,7 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_original_url', 'live_stream_url_backup', 'live_stream_url_backup_original', 'live_platform', 'live_proxy_url', 'facebook_page_videos_url', 'video_gallery_enabled']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_original_url', 'live_stream_url_backup', 'live_stream_url_backup_original', 'live_platform', 'live_proxy_url']);
 
             if (settings) {
                 settings.forEach(s => {
@@ -159,8 +157,6 @@ export default function SocialPage() {
                     }
                     if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
                     if (s.key === 'live_proxy_url') setLiveProxyUrl(s.value || '');
-                    if (s.key === 'facebook_page_videos_url') setFbPageVideosUrl(s.value || '');
-                    if (s.key === 'video_gallery_enabled') setVideoGalleryEnabled(s.value === 'true');
                 });
             }
 
@@ -323,14 +319,12 @@ export default function SocialPage() {
 
             await supabase.from('app_settings').upsert([
                 { key: 'live_stream_active', value: isLiveActive.toString() },
-                { key: 'live_stream_url', value: embedUrl },              // embed URL for iframe display
-                { key: 'live_stream_original_url', value: originalUrl },  // original URL for admin display & proxy
+                { key: 'live_stream_url', value: embedUrl },
+                { key: 'live_stream_original_url', value: originalUrl },
                 { key: 'live_stream_url_backup', value: embedUrlBackup },
                 { key: 'live_stream_url_backup_original', value: liveStreamUrlBackup.trim() },
                 { key: 'live_platform', value: livePlatform },
                 { key: 'live_proxy_url', value: liveProxyUrl.trim() },
-                { key: 'facebook_page_videos_url', value: fbPageVideosUrl.trim() },
-                { key: 'video_gallery_enabled', value: videoGalleryEnabled.toString() },
             ], { onConflict: 'key' });
 
             setLiveStreamUrl(embedUrl);
@@ -656,209 +650,45 @@ export default function SocialPage() {
                         </div>
                     </div>
 
-                    {/* ── PROXY SERVER ── */}
+                    {/* ── CLOUDFLARE WORKER API ── */}
                     <div className="space-y-2 p-4 rounded-xl border border-green-500/20 bg-green-500/5">
                         <Label className="flex items-center gap-2 text-green-400 font-bold">
-                            📡 Serveur Proxy (sans VPN pour les utilisateurs)
+                            ☁️ Cloudflare Worker (API notifications & link preview)
                         </Label>
                         <p className="text-xs text-muted-foreground">
-                            Si vous avez déployé le serveur proxy sur Fly.io, entrez son URL ici.
-                            Il permet aux utilisateurs de regarder le live <b>sans VPN</b> même si Facebook est bloqué.
+                            URL de votre Cloudflare Worker pour les notifications push, lien preview et analytics.
                         </p>
                         <Input
-                            placeholder="Ex: https://maisondepriere-live.fly.dev"
+                            placeholder="Ex: https://maisondepriere-api.votre-compte.workers.dev"
                             value={liveProxyUrl}
                             onChange={(e) => setLiveProxyUrl(e.target.value)}
                         />
                         {liveProxyUrl && (
                             <div className="flex items-center gap-2 flex-wrap">
-                                <Badge variant="outline" className={cn(
-                                    "text-[10px]",
-                                    proxyStatus === 'live' ? 'border-green-500 text-green-400' :
-                                        proxyStatus === 'extracting' ? 'border-amber-500 text-amber-400' :
-                                            'border-slate-500 text-slate-400'
-                                )}>
-                                    {proxyStatus === 'live' ? '🟢 Proxy en direct' :
-                                        proxyStatus === 'extracting' ? '⏳ Extraction...' :
-                                            '⚪ Proxy inactif'}
-                                </Badge>
                                 <Button
                                     variant="outline"
                                     size="sm"
                                     className="text-xs h-7"
                                     onClick={async () => {
                                         try {
-                                            const res = await fetch(`${liveProxyUrl}/api/status`);
+                                            const res = await fetch(`${liveProxyUrl}/health`);
                                             const data = await res.json();
                                             setProxyStatus(data.status || 'idle');
-                                            toast.success(`Proxy: ${data.status} | ${data.viewers || 0} viewers`);
+                                            toast.success(`Worker: ${data.status} | VAPID: ${data.vapid_configured ? '✅' : '❌'}`);
                                         } catch (e) {
-                                            toast.error('Impossible de contacter le proxy');
+                                            toast.error('Impossible de contacter le Worker');
                                         }
                                     }}
                                 >
                                     Vérifier statut
                                 </Button>
-                                <Button
-                                    size="sm"
-                                    className="text-xs h-7 bg-green-600 hover:bg-green-500"
-                                    disabled={!liveStreamUrl}
-                                    onClick={async () => {
-                                        try {
-                                            const res = await fetch(`${liveProxyUrl}/api/start-proxy`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({
-                                                    url: liveStreamUrl,
-                                                    admin_key: 'maison-de-priere-admin-2026',
-                                                }),
-                                            });
-                                            const data = await res.json();
-                                            if (data.success) {
-                                                setProxyStatus('extracting');
-                                                toast.success('🔴 Proxy démarré ! Le flux sera disponible dans ~10s');
-                                            } else {
-                                                toast.error(data.error || 'Erreur proxy');
-                                            }
-                                        } catch (e) {
-                                            toast.error('Impossible de démarrer le proxy');
-                                        }
-                                    }}
-                                >
-                                    ▶ Démarrer le proxy
-                                </Button>
-                                <Button
-                                    variant="destructive"
-                                    size="sm"
-                                    className="text-xs h-7"
-                                    onClick={async () => {
-                                        try {
-                                            await fetch(`${liveProxyUrl}/api/stop-proxy`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ admin_key: 'maison-de-priere-admin-2026' }),
-                                            });
-                                            setProxyStatus('idle');
-                                            toast.success('Proxy arrêté');
-                                        } catch (e) {
-                                            toast.error('Erreur');
-                                        }
-                                    }}
-                                >
-                                    ⏹ Arrêter
-                                </Button>
+                                <Badge variant="outline" className={cn(
+                                    "text-[10px]",
+                                    proxyStatus === 'ok' ? 'border-green-500 text-green-400' : 'border-slate-500 text-slate-400'
+                                )}>
+                                    {proxyStatus === 'ok' ? '🟢 Worker actif' : '⚪ Non vérifié'}
+                                </Badge>
                             </div>
-                        )}
-                    </div>
-
-                    {/* ── VIDEO GALLERY ── */}
-                    <div className="space-y-3 p-4 rounded-xl border border-blue-500/20 bg-blue-500/5">
-                        <div className="flex items-center justify-between">
-                            <Label className="flex items-center gap-2 text-blue-400 font-bold">
-                                📺 Galerie Vidéos (sans VPN)
-                            </Label>
-                            <Button
-                                variant={videoGalleryEnabled ? "default" : "outline"}
-                                size="sm"
-                                className={cn("text-xs h-7", videoGalleryEnabled && "bg-blue-600 hover:bg-blue-500")}
-                                onClick={() => setVideoGalleryEnabled(!videoGalleryEnabled)}
-                            >
-                                {videoGalleryEnabled ? '✅ Activé' : '❌ Désactivé'}
-                            </Button>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                            Ajoutez des liens de vidéos Facebook. Les utilisateurs les regarderont <b>sans VPN</b> via le proxy.
-                        </p>
-
-                        {/* Add video form */}
-                        <div className="space-y-2 p-3 rounded-lg bg-slate-800/50 border border-slate-700/50">
-                            <Label className="text-xs text-blue-300">➕ Ajouter une vidéo</Label>
-                            <Input
-                                placeholder="Titre de la vidéo"
-                                value={newVideoTitle}
-                                onChange={(e) => setNewVideoTitle(e.target.value)}
-                                className="text-xs h-8"
-                            />
-                            <Input
-                                placeholder="https://www.facebook.com/MDPJESUS/videos/12345..."
-                                value={newVideoUrl}
-                                onChange={(e) => setNewVideoUrl(e.target.value)}
-                                className="text-xs h-8"
-                            />
-                            <div className="flex gap-2">
-                                <Select value={newVideoCategory} onValueChange={setNewVideoCategory}>
-                                    <SelectTrigger className="text-xs h-8 flex-1">
-                                        <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="predication">🎤 Prédication</SelectItem>
-                                        <SelectItem value="louange">🎵 Louange</SelectItem>
-                                        <SelectItem value="temoignage">💬 Témoignage</SelectItem>
-                                        <SelectItem value="enseignement">📖 Enseignement</SelectItem>
-                                        <SelectItem value="priere">🙏 Prière</SelectItem>
-                                        <SelectItem value="autre">📺 Autre</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                                <Button
-                                    size="sm"
-                                    className="h-8 text-xs bg-blue-600 hover:bg-blue-500"
-                                    disabled={!newVideoTitle.trim() || !newVideoUrl.trim()}
-                                    onClick={async () => {
-                                        try {
-                                            const { error } = await supabase.from('video_gallery').insert({
-                                                title: newVideoTitle.trim(),
-                                                video_url: newVideoUrl.trim(),
-                                                category: newVideoCategory,
-                                                platform: 'facebook',
-                                            });
-                                            if (error) throw error;
-                                            toast.success('Vidéo ajoutée !');
-                                            setNewVideoTitle('');
-                                            setNewVideoUrl('');
-                                            loadGalleryVideos();
-                                        } catch (e: any) {
-                                            toast.error(e.message || 'Erreur');
-                                        }
-                                    }}
-                                >
-                                    <Plus className="h-3 w-3 mr-1" /> Ajouter
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Video list */}
-                        {galleryVideos.length > 0 && (
-                            <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                                <Label className="text-[10px] text-slate-500">{galleryVideos.length} vidéo(s)</Label>
-                                {galleryVideos.map(v => (
-                                    <div key={v.id} className="flex items-center gap-2 p-2 rounded-lg bg-slate-800/30 border border-slate-700/30">
-                                        <Play className="h-3 w-3 text-blue-400 shrink-0" />
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-[11px] font-bold truncate">{v.title}</p>
-                                            <p className="text-[9px] text-slate-500 truncate">{v.video_url}</p>
-                                        </div>
-                                        <Badge className="text-[7px] bg-purple-600/20 text-purple-300 px-1 py-0 shrink-0">
-                                            {v.category}
-                                        </Badge>
-                                        <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 text-red-400 hover:text-red-300 shrink-0"
-                                            onClick={async () => {
-                                                await supabase.from('video_gallery').delete().eq('id', v.id);
-                                                toast.success('Supprimée');
-                                                loadGalleryVideos();
-                                            }}
-                                        >
-                                            <Trash2 className="h-3 w-3" />
-                                        </Button>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-
-                        {!liveProxyUrl && videoGalleryEnabled && (
-                            <p className="text-[10px] text-amber-400">⚠️ Configurez l'URL du proxy ci-dessus.</p>
                         )}
                     </div>
                     {/* Preview */}

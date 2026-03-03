@@ -71,7 +71,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import dynamic from 'next/dynamic';
 
-const VideoGallery = dynamic(() => import('@/components/community/video-gallery'), { ssr: false });
+
 
 interface HomeViewProps {
     onNavigateToDay: (day: number) => void;
@@ -358,7 +358,6 @@ function LiveSalon({
     streamUrl,
     backupUrl,
     platform,
-    proxyUrl,
     originalUrl,
     userId,
     userName,
@@ -367,7 +366,6 @@ function LiveSalon({
     streamUrl: string;
     backupUrl: string;
     platform: string;
-    proxyUrl?: string;
     originalUrl?: string;
     userId: string;
     userName: string;
@@ -380,28 +378,6 @@ function LiveSalon({
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const commentsEndRef = useRef<HTMLDivElement>(null);
 
-    // Proxy stream state
-    const [proxyStatus, setProxyStatus] = useState<'idle' | 'checking' | 'live'>('idle');
-    const [proxyStreamUrl, setProxyStreamUrl] = useState<string | null>(null);
-    const [proxyConnected, setProxyConnected] = useState(false);
-
-    // Check if proxy is live on mount
-    useEffect(() => {
-        if (!proxyUrl) return;
-        const checkProxy = async () => {
-            try {
-                const res = await fetch(`${proxyUrl}/api/status`, { signal: AbortSignal.timeout(4000) });
-                const data = await res.json();
-                if (data.status === 'live') {
-                    setProxyStatus('live');
-                    setProxyStreamUrl(`${proxyUrl}/streams/live/playlist.m3u8`);
-                    setProxyConnected(true);
-                }
-            } catch (e) { /* proxy not available */ }
-        };
-        checkProxy();
-    }, [proxyUrl]);
-
     // Fallback / blocked platform detection
     const [useBackup, setUseBackup] = useState(false);
     const [iframeLoaded, setIframeLoaded] = useState(false);
@@ -409,8 +385,6 @@ function LiveSalon({
     const [muted, setMuted] = useState(true); // Start muted for autoplay guarantee
     const currentUrl = useBackup ? backupUrl : streamUrl;
     const isPortrait = ['facebook', 'tiktok', 'instagram'].includes(platform);
-    // Use proxy video element if proxy is live (avoids 18s CDN token expiry)
-    const useProxyVideo = proxyStatus === 'live' && !!proxyStreamUrl && platform === 'facebook';
 
     // Build muted/unmuted embed URL for guaranteed autoplay
     const buildEmbedUrl = (url: string) => {
@@ -612,29 +586,9 @@ function LiveSalon({
                 </Button>
             </header>
 
-            {/* Video — use proxy HLS stream if available (avoids 18s CDN expiry), else iframe */}
+            {/* Video — iframe embed */}
             <div className={cn("shrink-0 bg-black flex items-center justify-center relative", isPortrait && !useBackup ? '' : 'w-full')}>
-                {useProxyVideo ? (
-                    // Proxy HLS stream — persistent, no CDN token expiry
-                    <div className="w-full relative" style={{ aspectRatio: '16/9', maxHeight: '35vh' }}>
-                        <video
-                            src={proxyStreamUrl!}
-                            autoPlay
-                            playsInline
-                            controls
-                            className="w-full h-full object-contain bg-black"
-                            onError={() => {
-                                // Fallback to iframe if HLS fails
-                                setProxyStatus('idle');
-                            }}
-                        />
-                        <div className="absolute top-2 left-2">
-                            <Badge className="bg-green-600/80 text-white text-[9px] px-2 py-0.5">
-                                🛰️ Proxy actif (sans VPN)
-                            </Badge>
-                        </div>
-                    </div>
-                ) : currentUrl ? (
+                {currentUrl ? (
                     <div className={cn(
                         "bg-black overflow-hidden mx-auto",
                         isPortrait && !useBackup ? "w-full max-w-[280px] sm:max-w-[340px]" : "w-full"
@@ -905,7 +859,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
     const [showSocialDialog, setShowSocialDialog] = useState(false);
     const [showEventsDialog, setShowEventsDialog] = useState(false);
     const [showReplaysDialog, setShowReplaysDialog] = useState(false);
-    const [showVideoGallery, setShowVideoGallery] = useState(false);
+
     const [replays, setReplays] = useState<any[]>([]);
     const [selectedReplay, setSelectedReplay] = useState<any | null>(null);
     const [socialLinks, setSocialLinks] = useState<SocialLink[]>([]);
@@ -1060,25 +1014,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                         </motion.button>
                     )}
 
-                    {/* Video Gallery Button */}
-                    {appSettings?.['live_proxy_url'] && appSettings?.['facebook_page_videos_url'] && appSettings?.['video_gallery_enabled'] === 'true' && (
-                        <motion.button
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ delay: 0.15 }}
-                            onClick={() => setShowVideoGallery(true)}
-                            className="w-full flex items-center gap-3 p-3 rounded-2xl bg-gradient-to-r from-blue-900/40 to-cyan-900/40 border border-blue-500/20 hover:border-blue-400/40 transition-all"
-                        >
-                            <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center border border-blue-500/10">
-                                <Play className="w-5 h-5 text-blue-300 fill-blue-300" />
-                            </div>
-                            <div className="flex-1 text-left">
-                                <p className="font-bold text-sm text-white">📺 Vidéos & Prédications</p>
-                                <p className="text-[10px] text-blue-300">Regarder sans VPN</p>
-                            </div>
-                            <ArrowLeft className="w-4 h-4 text-blue-400 rotate-180" />
-                        </motion.button>
-                    )}
+
 
                     {/* Main Progression Card */}
                     {user && (
@@ -1216,7 +1152,6 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             streamUrl={liveStreamUrl}
                             backupUrl={appSettings?.['live_stream_url_backup'] || ''}
                             platform={appSettings?.['live_platform'] || 'youtube'}
-                            proxyUrl={appSettings?.['live_proxy_url'] || ''}
                             originalUrl={appSettings?.['live_stream_original_url'] || liveStreamUrl}
                             userId={user?.id || ''}
                             userName={user?.name || 'Visiteur'}
@@ -1334,7 +1269,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                         whileTap={{ scale: 0.98 }}
                                         onClick={() => {
                                             setShowReplaysDialog(false);
-                                            window.location.href = `/replay/${replay.id}`;
+                                            window.location.href = `/replay?id=${replay.id}`;
                                         }}
                                         className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 hover:border-purple-500/30 transition-all text-left"
                                     >
@@ -1359,16 +1294,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                     </DialogContent>
                 </Dialog>
 
-                {/* Replay Viewer: now redirect to /replay/[id] page */}
 
-                {/* Video Gallery (full screen) */}
-                {showVideoGallery && appSettings?.['live_proxy_url'] && appSettings?.['facebook_page_videos_url'] && (
-                    <VideoGallery
-                        proxyUrl={appSettings['live_proxy_url']}
-                        pageUrl={appSettings['facebook_page_videos_url']}
-                        onClose={() => setShowVideoGallery(false)}
-                    />
-                )}
             </div>
         </div>
     );

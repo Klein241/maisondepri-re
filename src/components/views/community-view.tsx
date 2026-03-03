@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,7 +28,6 @@ import { EmojiPicker } from "@/components/ui/emoji-picker";
 import { NotificationBell } from "@/components/notification-bell";
 import { IncomingCallOverlay, useCallListener, DMCallButtons, CallSignal } from "@/components/community/call-system";
 import { WebRTCCall } from "@/components/community/webrtc-call";
-import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendGroupMessageClient } from '@/lib/api-client';
 import { EventCalendarButton } from "@/components/community/event-calendar";
 import { PrayerCard } from "@/components/community/prayer-card";
 import { TestimonyCard } from "@/components/community/testimony-card";
@@ -39,6 +38,11 @@ import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
 import { notifyNewPrayer, notifyPrayerPrayed, notifyGroupNewMessage, notifyGroupAccessRequest, notifyGroupAccessApproved, notifyDirectMessage } from "@/lib/notifications";
+import { usePresence } from "@/hooks/use-presence";
+import { useVoiceRecording } from "@/hooks/use-voice-recording";
+import { useGroups } from "@/hooks/use-groups";
+import { useConversations } from "@/hooks/use-conversations";
+import { useCommunityChat } from "@/hooks/use-community-chat";
 
 // Dynamic imports for heavy components to prevent TDZ errors in production bundles
 const WhatsAppChat = dynamic(() => import("@/components/community/whatsapp-chat").then(m => ({ default: m.WhatsAppChat })), { ssr: false, loading: () => <div className="flex items-center justify-center h-64"><Loader2 className="h-8 w-8 animate-spin text-indigo-400" /></div> });
@@ -85,35 +89,59 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    // Chat State
-    const [chatMessages, setChatMessages] = useState<any[]>([]);
-    const [newMessage, setNewMessage] = useState('');
-    const [loadingMessages, setLoadingMessages] = useState(false);
-    const chatScrollRef = useRef<HTMLDivElement>(null);
+    // ===== CUSTOM HOOKS =====
+    const userInfo = user ? { id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar } : null;
 
-    // Groups State
-    const [groups, setGroups] = useState<PrayerGroup[]>([]);
-    const [selectedGroup, setSelectedGroup] = useState<PrayerGroup | null>(null);
-    const [groupMessages, setGroupMessages] = useState<any[]>([]);
-    const [loadingGroupMessages, setLoadingGroupMessages] = useState(false);
+    // Presence (online/offline tracking) — replaces ~140 lines + fixes duplicate heartbeat
+    const { onlineUsers, userLastSeen } = usePresence(user?.id);
 
-    // Private Messages State
-    const [conversations, setConversations] = useState<any[]>([]);
-    const [selectedConversation, setSelectedConversation] = useState<any | null>(null);
-    const [directMessages, setDirectMessages] = useState<any[]>([]);
-    const [loadingConversations, setLoadingConversations] = useState(false);
-    const [loadingDMs, setLoadingDMs] = useState(false);
-    const [allUsers, setAllUsers] = useState<any[]>([]); // For selecting new conversation partner
-    const [activeLiveStream, setActiveLiveStream] = useState<any | null>(null); // Active livestream data
-    const [showGlobalLive, setShowGlobalLive] = useState(false); // Global live salon
+    // Groups management — replaces ~600 lines
+    const groupsHook = useGroups(userInfo);
+
+    // Conversations (DMs) — replaces ~400 lines
+    const convoHook = useConversations(userInfo);
+
+    // Community chat — replaces ~250 lines
+    const chatHook = useCommunityChat(userInfo, activeTab);
+
+    // Voice recording — replaces ~200 lines
+    const voiceHook = useVoiceRecording();
+
+    // Destructure for easier JSX access
+    const {
+        groups, setGroups, userGroups, setUserGroups, selectedGroup, setSelectedGroup,
+        groupMembers, groupJoinRequests, pendingRequestCounts,
+        showMembersPanel, setShowMembersPanel,
+        showCreateGroupDialog, setShowCreateGroupDialog,
+        newGroupName, setNewGroupName, newGroupDescription, setNewGroupDescription, creatingGroup,
+        loadGroups, loadUserGroups, loadPendingJoinRequests,
+        joinGroup, leaveGroup, requestJoinGroup, approveJoinRequest, rejectJoinRequest,
+        loadGroupMembers, removeGroupMember, createGroup, generateSlug,
+    } = groupsHook;
+
+    const {
+        conversations, selectedConversation, setSelectedConversation,
+        directMessages, setDirectMessages, loadingConversations, loadingDMs, allUsers,
+        userFriends, isFriendWithChatPartner,
+        loadConversations, loadUsers, loadUserFriends, loadDirectMessages,
+        sendDirectMessage, checkFriendshipWithPartner, sendFriendRequestFromChat,
+    } = convoHook;
+
+    const {
+        chatMessages, newMessage, setNewMessage, loadingMessages,
+        groupMessages, setGroupMessages, loadingGroupMessages, chatScrollRef,
+        loadChatMessages, sendChatMessage, loadGroupMessages, sendGroupMessage,
+    } = chatHook;
+
+    const {
+        isRecording, recordingTime, isUploadingVoice,
+        startRecording, stopRecording, cancelRecording, formatRecordingTime,
+    } = voiceHook;
+
+    // Private Messages State (kept local as it's view-specific)
+    const [activeLiveStream, setActiveLiveStream] = useState<any | null>(null);
+    const [showGlobalLive, setShowGlobalLive] = useState(false);
     const [showLiveRegistration, setShowLiveRegistration] = useState(false);
-    const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
-    const [newGroupName, setNewGroupName] = useState('');
-    const [newGroupDescription, setNewGroupDescription] = useState('');
-    const [creatingGroup, setCreatingGroup] = useState(false);
-    const [userGroups, setUserGroups] = useState<string[]>([]); // Groups user has joined
-    const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
-    const [userLastSeen, setUserLastSeen] = useState<Record<string, string>>({});
     const [openChatGroupId, setOpenChatGroupId] = useState<string | null>(null);
     const [openChatConversationId, setOpenChatConversationId] = useState<string | null>(null);
 
@@ -134,14 +162,6 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [showDMEmojiPicker, setShowDMEmojiPicker] = useState(false);
     const [showGroupEmojiPicker, setShowGroupEmojiPicker] = useState(false);
 
-    // Voice recording states
-    const [isRecording, setIsRecording] = useState(false);
-    const [recordingTime, setRecordingTime] = useState(0);
-    const [isUploadingVoice, setIsUploadingVoice] = useState(false);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const audioChunksRef = useRef<Blob[]>([]);
-    const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
-
     // Global WebRTC Call State
     const [activeGlobalCall, setActiveGlobalCall] = useState<{
         type: 'audio' | 'video';
@@ -156,17 +176,9 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     // Create group with prayer request
     const [createGroupWithPrayer, setCreateGroupWithPrayer] = useState(false);
 
-    // Group join request system
-    const [groupJoinRequests, setGroupJoinRequests] = useState<PrayerGroupJoinRequest[]>([]);
-    const [pendingRequestCounts, setPendingRequestCounts] = useState<Record<string, number>>({});
-    const [showMembersPanel, setShowMembersPanel] = useState(false);
-    const [groupMembers, setGroupMembers] = useState<any[]>([]);
+    // Pinned prayer
     const [showPinnedPrayer, setShowPinnedPrayer] = useState(false);
     const [showGroupTools, setShowGroupTools] = useState(false);
-
-    // User friends for suggestions
-    const [userFriends, setUserFriends] = useState<string[]>([]);
-    const [isFriendWithChatPartner, setIsFriendWithChatPartner] = useState(false);
 
     // Guest auth prompt
     const [showAuthPrompt, setShowAuthPrompt] = useState(false);
@@ -188,30 +200,21 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     // Handle deep-linking from notifications
     useEffect(() => {
         if (!pendingNavigation) return;
-
         const nav = pendingNavigation;
-        setPendingNavigation(null); // Consume it
+        setPendingNavigation(null);
 
-        // Navigate to the right community sub-tab
         if (nav.communityTab) {
             const tabMap: Record<string, 'prayers' | 'testimonials' | 'chat'> = {
-                prieres: 'prayers',
-                prayers: 'prayers',
-                temoignages: 'testimonials',
-                testimonials: 'testimonials',
+                prieres: 'prayers', prayers: 'prayers',
+                temoignages: 'testimonials', testimonials: 'testimonials',
                 chat: 'chat',
             };
-            if (tabMap[nav.communityTab]) {
-                setActiveTab(tabMap[nav.communityTab]);
-            }
-
-            // If it's a chat navigation with a group ID, open that group chat
+            if (tabMap[nav.communityTab]) setActiveTab(tabMap[nav.communityTab]);
             if (nav.communityTab === 'chat' && nav.groupId) {
                 setOpenChatConversationId(null);
                 handleOpenChat(nav.groupId);
                 return;
             }
-            // If it's a chat navigation with a conversationId (DM), open that conversation
             if (nav.communityTab === 'chat' && nav.conversationId) {
                 setOpenChatConversationId(nav.conversationId);
                 setActiveTab('chat');
@@ -219,1241 +222,89 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             }
         }
 
-        // Navigate to a specific viewState (e.g., group-detail, groups, conversation)
         if (nav.viewState) {
             const vs = nav.viewState as ViewState;
-
-            // If navigating to a group-detail, load the group
             if (vs === 'group-detail' && nav.groupId) {
                 setViewState(vs);
                 const group = groups.find((g: any) => g.id === nav.groupId);
                 if (group) {
                     setSelectedGroup(group);
                 } else {
-                    // Load the specific group
                     supabase
                         .from('prayer_groups')
                         .select('*, profiles:created_by(full_name, avatar_url)')
                         .eq('id', nav.groupId)
                         .single()
-                        .then(({ data }) => {
-                            if (data) {
-                                setSelectedGroup(data as any);
-                            }
-                        });
+                        .then(({ data }) => { if (data) setSelectedGroup(data as any); });
                 }
-            }
-            // If navigating to a DM conversation, open the chat tab and load conversation directly via WhatsAppChat
-            else if ((vs === 'conversation' || nav.conversationId) && nav.conversationId) {
+            } else if ((vs === 'conversation' || nav.conversationId) && nav.conversationId) {
                 setActiveTab('chat');
                 setOpenChatConversationId(nav.conversationId);
-            }
-            // Otherwise, navigate to the specified viewState
-            else {
+            } else {
                 setViewState(vs);
             }
         }
     }, [pendingNavigation]);
 
-    // Watch for DM refresh signals (RLS workaround: when notification arrives, reload messages)
+    // Watch for DM refresh signals
     const dmRefreshSignal = useAppStore(s => s.dmRefreshSignal);
     useEffect(() => {
         if (!dmRefreshSignal) return;
-        // If we're viewing the conversation that just got a new message, reload messages
         if (viewState === 'conversation' && selectedConversation && selectedConversation.id === dmRefreshSignal.conversationId) {
             loadDirectMessages(dmRefreshSignal.conversationId);
         }
-        // Also reload conversation list to update unread counts
         if (viewState === 'messages' && user) {
-            // Debounce to avoid excessive reloads
-            const timer = setTimeout(() => {
-                loadConversations();
-            }, 500);
+            const timer = setTimeout(() => loadConversations(), 500);
             return () => clearTimeout(timer);
         }
     }, [dmRefreshSignal]);
 
-    // Track online presence with robust updates
-    useEffect(() => {
-        if (!user) return;
-
-        // Set user online when component mounts
-        const setOnline = async () => {
-            try {
-                await supabase
-                    .from('profiles')
-                    .update({ is_online: true, last_seen: new Date().toISOString() })
-                    .eq('id', user.id);
-            } catch (e) {
-                console.log('Online status columns may not exist yet');
-            }
-        };
-
-        const setOffline = async () => {
-            try {
-                await supabase
-                    .from('profiles')
-                    .update({ is_online: false, last_seen: new Date().toISOString() })
-                    .eq('id', user.id);
-            } catch (e) {
-                // Ignore
-            }
-        };
-
-        setOnline();
-
-        // Fetch ALL profiles with online status + auto-cleanup stale users
-        const fetchOnlineUsers = async () => {
-            try {
-                const { data, error } = await supabase
-                    .from('profiles')
-                    .select('id, is_online, last_seen');
-
-                if (!error && data) {
-                    const onlineMap: Record<string, boolean> = {};
-                    const lastSeenMap: Record<string, string> = {};
-                    const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
-
-                    data.forEach(u => {
-                        // Auto-cleanup: if user hasn't been seen in 2 min, consider offline
-                        const lastSeenTime = u.last_seen ? new Date(u.last_seen).getTime() : 0;
-                        const isReallyOnline = u.is_online === true && lastSeenTime > twoMinutesAgo;
-                        onlineMap[u.id] = isReallyOnline;
-                        if (u.last_seen) lastSeenMap[u.id] = u.last_seen;
-                    });
-                    setOnlineUsers(onlineMap);
-                    setUserLastSeen(lastSeenMap);
-                }
-            } catch (e) {
-                console.log('Online status feature not available yet');
-            }
-        };
-        fetchOnlineUsers();
-
-        // Heartbeat: update last_seen every 30s to prove we're still online
-        const heartbeatInterval = setInterval(async () => {
-            try {
-                await supabase
-                    .from('profiles')
-                    .update({ is_online: true, last_seen: new Date().toISOString() })
-                    .eq('id', user.id);
-            } catch (e) {
-                // Ignore
-            }
-        }, 30000);
-
-        // Subscribe to presence changes via realtime
-        const presenceChannel = supabase.channel('online-users-presence')
-            .on('postgres_changes', {
-                event: 'UPDATE',
-                schema: 'public',
-                table: 'profiles'
-            }, (payload) => {
-                const profile = payload.new as any;
-                if (profile.id) {
-                    // Check if last_seen is recent (within 2 min)
-                    const lastSeenTime = profile.last_seen ? new Date(profile.last_seen).getTime() : 0;
-                    const isReallyOnline = profile.is_online === true && lastSeenTime > (Date.now() - 2 * 60 * 1000);
-                    setOnlineUsers(prev => ({ ...prev, [profile.id]: isReallyOnline }));
-                    if (profile.last_seen) {
-                        setUserLastSeen(prev => ({ ...prev, [profile.id]: profile.last_seen }));
-                    }
-                }
-            })
-            .subscribe();
-
-        // Handle page visibility changes
-        const handleVisibilityChange = () => {
-            if (document.visibilityState === 'visible') {
-                setOnline();
-            } else {
-                // When tab is hidden, update last_seen but keep online
-                // (the heartbeat will stop if the tab is closed)
-                supabase.from('profiles')
-                    .update({ last_seen: new Date().toISOString() })
-                    .eq('id', user.id)
-                    .then(() => { });
-            }
-        };
-        document.addEventListener('visibilitychange', handleVisibilityChange);
-
-        // CRITICAL: Handle browser/tab close - set offline immediately
-        const handleBeforeUnload = () => {
-            // Use sendBeacon for reliable delivery on page close
-            const payload = JSON.stringify({
-                is_online: false,
-                last_seen: new Date().toISOString()
-            });
-
-            // Try sendBeacon first (most reliable for page unload)
-            if (navigator.sendBeacon) {
-                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-                const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-                if (supabaseUrl && supabaseKey) {
-                    const url = `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`;
-                    const blob = new Blob([payload], { type: 'application/json' });
-                    navigator.sendBeacon(url, blob); // May not work due to auth headers
-                }
-            }
-
-            // Also try synchronous fetch (backup)
-            try {
-                setOffline();
-            } catch (e) {
-                // Ignore
-            }
-        };
-        window.addEventListener('beforeunload', handleBeforeUnload);
-
-        // Set offline on unmount
-        return () => {
-            clearInterval(heartbeatInterval);
-            document.removeEventListener('visibilitychange', handleVisibilityChange);
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            setOffline();
-            presenceChannel.unsubscribe();
-        };
-    }, [user]);
-
-    // Heartbeat to keep user online - every 90s to stay within the 2-minute online window
-    useEffect(() => {
-        if (!user) return;
-        const interval = setInterval(async () => {
-            try {
-                await supabase.from('profiles').update({
-                    is_online: true,
-                    last_seen: new Date().toISOString()
-                }).eq('id', user.id);
-            } catch (e) {
-                // Silently fail if columns don't exist
-            }
-        }, 90000); // Every 90 seconds - must be less than the 2-minute online window
-
-        return () => clearInterval(interval);
-    }, [user]);
-
-    // Real-time subscription for prayer_requests deletions - sync across all clients
-    useEffect(() => {
-        const { removePrayerRequest } = useAppStore.getState();
-        const prayerChannel = supabase.channel('prayer-realtime')
-            .on('postgres_changes', {
-                event: 'DELETE',
-                schema: 'public',
-                table: 'prayer_requests'
-            }, (payload) => {
-                const deletedId = (payload.old as any)?.id;
-                if (deletedId) {
-                    removePrayerRequest(deletedId);
-                }
-            })
-            .subscribe();
-
-        return () => {
-            prayerChannel.unsubscribe();
-        };
-    }, []);
-
-    // Load chat messages
-    useEffect(() => {
-        if (activeTab === 'chat') {
-            loadChatMessages();
-            const subscription = supabase
-                .channel('community_messages_realtime')
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'community_messages' }, async (payload) => {
-                    const newMessage = payload.new;
-                    // Fetch profile for the new message
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('full_name, avatar_url')
-                        .eq('id', newMessage.user_id)
-                        .single();
-
-                    setChatMessages(prev => [...prev, { ...newMessage, profiles: profile }]);
-                })
-                .subscribe();
-
-            return () => {
-                subscription.unsubscribe();
-            };
-        }
-    }, [activeTab]);
-
-    // Scroll to bottom on new messages
-    useEffect(() => {
-        if (chatScrollRef.current) {
-            chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-        }
-    }, [chatMessages, directMessages, groupMessages]);
-
-    const loadChatMessages = async () => {
-        setLoadingMessages(true);
-        try {
-            const { data, error } = await supabase
-                .from('community_messages')
-                .select(`
-                    *,
-                    profiles:user_id (full_name, avatar_url)
-                `)
-                .order('created_at', { ascending: true })
-                .limit(50);
-
-            if (error) throw error;
-            setChatMessages(data || []);
-        } catch (e) {
-            console.error('Error loading messages:', e);
-        }
-        setLoadingMessages(false);
-    };
-
-    const loadGroups = async () => {
-        try {
-            // First try with full query
-            let { data, error } = await supabase
-                .from('prayer_groups')
-                .select(`
-                    *,
-                    profiles:created_by (full_name, avatar_url)
-                `)
-                .order('created_at', { ascending: false });
-
-            if (error) {
-                console.log('Groups query error, trying simpler query:', error.message);
-                // Fallback to simpler query
-                const simpleResult = await supabase
-                    .from('prayer_groups')
-                    .select('*')
-                    .order('created_at', { ascending: false });
-                data = simpleResult.data;
-            }
-
-            if (data) {
-                // Fetch real member counts for all groups
-                const groupsWithCounts = await Promise.all(data.map(async (g) => {
-                    const { count } = await supabase
-                        .from('prayer_group_members')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('group_id', g.id);
-                    return { ...g, memberCount: count || 0 };
-                }));
-                setGroups(groupsWithCounts);
-            } else {
-                setGroups([]);
-            }
-        } catch (e) {
-            console.error('Error loading groups:', e);
-        }
-    };
-
-    // Load private conversations
-    const loadConversations = async () => {
-        if (!user) return;
-        setLoadingConversations(true);
-        try {
-            // Try with profiles join
-            let { data, error } = await supabase
-                .from('conversations')
-                .select('*')
-                .or(`participant1_id.eq.${user.id},participant2_id.eq.${user.id}`)
-                .order('last_message_at', { ascending: false });
-
-            if (!error && data) {
-                // Fetch profiles separately for each conversation
-                const formattedConversations = await Promise.all(data.map(async (conv) => {
-                    const otherUserId = conv.participant1_id === user.id ? conv.participant2_id : conv.participant1_id;
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('id, full_name, avatar_url')
-                        .eq('id', otherUserId)
-                        .single();
-                    return {
-                        ...conv,
-                        otherUser: profile || { id: otherUserId, full_name: 'Utilisateur', avatar_url: null }
-                    };
-                }));
-                setConversations(formattedConversations);
-            } else if (error) {
-                console.log('Conversations table may not exist yet:', error.message);
-                setConversations([]);
-            }
-        } catch (e) {
-            console.error('Error loading conversations:', e);
-            setConversations([]);
-        }
-        setLoadingConversations(false);
-    };
-
-    // Load users for new conversation
-    const loadUsers = async () => {
-        if (!user) return;
-        try {
-            const { data, error } = await supabase
-                .from('profiles')
-                .select('id, full_name, avatar_url')
-                .neq('id', user.id)
-                .limit(50);
-
-            if (!error && data) {
-                setAllUsers(data);
-            }
-        } catch (e) {
-            console.error('Error loading users:', e);
-        }
-    };
-
-    // Load user's friends
-    const loadUserFriends = async () => {
-        if (!user) return;
-        try {
-            const { data, error } = await supabase
-                .from('friendships')
-                .select('sender_id, receiver_id')
-                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
-                .eq('status', 'accepted');
-
-            if (!error && data) {
-                const friendIds = data.map(f =>
-                    f.sender_id === user.id ? f.receiver_id : f.sender_id
-                );
-                setUserFriends(friendIds);
-            }
-        } catch (e) {
-            console.log('Friends not loaded:', e);
-        }
-    };
-
-    // Load pending join requests for groups the user created
-    const loadPendingJoinRequests = async () => {
-        if (!user) return;
-        try {
-            // Get groups created by the user
-            const { data: myGroups } = await supabase
-                .from('prayer_groups')
-                .select('id')
-                .eq('created_by', user.id);
-
-            if (!myGroups || myGroups.length === 0) return;
-
-            const groupIds = myGroups.map(g => g.id);
-            const { data: requests, error } = await supabase
-                .from('prayer_group_join_requests')
-                .select(`
-                    *,
-                    profiles:user_id(full_name, avatar_url)
-                `)
-                .in('group_id', groupIds)
-                .eq('status', 'pending');
-
-            if (!error && requests) {
-                setGroupJoinRequests(requests);
-                // Count per group
-                const counts: Record<string, number> = {};
-                requests.forEach(r => {
-                    counts[r.group_id] = (counts[r.group_id] || 0) + 1;
-                });
-                setPendingRequestCounts(counts);
-            }
-        } catch (e) {
-            console.log('Join requests table may not exist yet');
-        }
-    };
-
-    // Request to join a group - or directly join if group is open
-    const requestJoinGroup = async (groupId: string) => {
-        if (!user) return;
-
-        // Check if this is an open group - if so, join directly
-        const targetGroup = groups.find(g => g.id === groupId);
-        if (targetGroup?.isOpen) {
-            await joinGroup(groupId);
-            return;
-        }
-
-        try {
-            // Check if already requested
-            let alreadyRequested = false;
-            try {
-                const { data: existing } = await supabase
-                    .from('prayer_group_join_requests')
-                    .select('id')
-                    .eq('group_id', groupId)
-                    .eq('user_id', user.id)
-                    .maybeSingle();
-
-                if (existing) {
-                    toast.info('Vous avez déjà envoyé une demande pour ce groupe');
-                    return;
-                }
-            } catch (checkErr: any) {
-                // If the check fails due to RLS, proceed with insert anyway
-                console.log('Check existing request failed, proceeding:', checkErr?.message);
-            }
-
-            const { error } = await supabase
-                .from('prayer_group_join_requests')
-                .insert({
-                    group_id: groupId,
-                    user_id: user.id,
-                    status: 'pending'
-                });
-
-            if (error) {
-                // Fallback: if table doesn't exist or RLS error, use direct join  
-                if (error.message.includes('does not exist') || error.code === '42P01' || error.code === '42P17') {
-                    await joinGroup(groupId);
-                    return;
-                }
-                throw error;
-            }
-
-            // Send notification to group creator
-            const { data: group } = await supabase
-                .from('prayer_groups')
-                .select('created_by, name')
-                .eq('id', groupId)
-                .single();
-
-            if (group) {
-                notifyGroupAccessRequest({
-                    groupOwnerId: group.created_by,
-                    groupId,
-                    groupName: group.name,
-                    requesterName: user.name,
-                }).catch(console.error);
-            }
-
-            toast.success('✅ Demande envoyée! Le créateur du groupe sera notifié.');
-        } catch (e) {
-            console.error('Error requesting join:', e);
-            toast.error("Erreur lors de l'envoi de la demande");
-        }
-    };
-
-    // Approve a join request
-    const approveJoinRequest = async (requestId: string, groupId: string, userId: string) => {
-        try {
-            // First add the user as a member (before deleting request)
-            const { error: memberError } = await supabase
-                .from('prayer_group_members')
-                .insert({ group_id: groupId, user_id: userId, role: 'member' });
-
-            // Ignore duplicate key errors (user already a member)
-            if (memberError && !memberError.message.includes('duplicate')) {
-                console.error('Member insert error:', memberError);
-            }
-
-            // DELETE the request completely (not update) to prevent it from reappearing
-            await supabase
-                .from('prayer_group_join_requests')
-                .delete()
-                .eq('id', requestId);
-
-            // Notify the user that their request was approved
-            const groupData = groups.find(g => g.id === groupId);
-            notifyGroupAccessApproved({
-                userId,
-                groupId,
-                groupName: groupData?.name || selectedGroup?.name || 'Groupe de prière',
-            }).catch(console.error);
-
-            // Update local state
-            setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));
-            setPendingRequestCounts(prev => ({
-                ...prev,
-                [groupId]: Math.max(0, (prev[groupId] || 0) - 1)
-            }));
-
-            toast.success('✅ Membre approuvé!');
-            loadGroups();
-        } catch (e) {
-            console.error('Error approving request:', e);
-            toast.error("Erreur lors de l'approbation");
-        }
-    };
-
-    // Reject a join request - DELETE it completely
-    const rejectJoinRequest = async (requestId: string, groupId: string) => {
-        try {
-            await supabase
-                .from('prayer_group_join_requests')
-                .delete()
-                .eq('id', requestId);
-
-            setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));
-            setPendingRequestCounts(prev => ({
-                ...prev,
-                [groupId]: Math.max(0, (prev[groupId] || 0) - 1)
-            }));
-
-            toast.info('Demande refusée');
-        } catch (e) {
-            console.error('Error rejecting request:', e);
-        }
-    };
-
-    // Load group members  
-    const loadGroupMembers = async (groupId: string) => {
-        try {
-            const { data, error } = await supabase
-                .from('prayer_group_members')
-                .select(`
-                    *,
-                    profiles:user_id(id, full_name, avatar_url)
-                `)
-                .eq('group_id', groupId);
-
-            if (!error && data) {
-                setGroupMembers(data);
-            }
-        } catch (e) {
-            console.error('Error loading members:', e);
-        }
-    };
-
-    // Remove a member from group (owner only)
-    const removeGroupMember = async (groupId: string, memberId: string) => {
-        if (!user) return;
-        try {
-            await supabase
-                .from('prayer_group_members')
-                .delete()
-                .eq('group_id', groupId)
-                .eq('user_id', memberId);
-
-            setGroupMembers(prev => prev.filter(m => m.user_id !== memberId));
-            toast.success('Membre retiré du groupe');
-            loadGroups();
-        } catch (e) {
-            console.error('Error removing member:', e);
-            toast.error("Erreur lors du retrait du membre");
-        }
-    };
-
-    // Check if chat partner is a friend
-    const checkFriendshipWithPartner = async (partnerId: string) => {
-        if (!user) return;
-        try {
-            const { data, error } = await supabase
-                .from('friendships')
-                .select('id')
-                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
-                .eq('status', 'accepted')
-                .maybeSingle();
-
-            setIsFriendWithChatPartner(!!data);
-        } catch (e) {
-            setIsFriendWithChatPartner(false);
-        }
-    };
-
-    // Send friend request from DM
-    const sendFriendRequestFromChat = async (partnerId: string) => {
-        if (!user) return;
-        try {
-            // Check if already sent
-            const { data: existing } = await supabase
-                .from('friendships')
-                .select('id')
-                .or(`and(sender_id.eq.${user.id},receiver_id.eq.${partnerId}),and(sender_id.eq.${partnerId},receiver_id.eq.${user.id})`)
-                .maybeSingle();
-
-            if (existing) {
-                toast.info('Demande déjà envoyée ou vous êtes déjà amis');
-                return;
-            }
-
-            await supabase.from('friendships').insert({
-                sender_id: user.id,
-                receiver_id: partnerId,
-                status: 'pending'
-            });
-
-            toast.success("Demande d'ami envoyée! 🤝");
-        } catch (e) {
-            console.error('Error sending friend request:', e);
-            toast.error("Erreur lors de l'envoi de la demande d'ami");
-        }
-    };
-
-
-    // Load direct messages for a conversation
-    const loadDirectMessages = async (conversationId: string) => {
-        setLoadingDMs(true);
-        try {
-            const { data, error } = await supabase
-                .from('direct_messages')
-                .select('*')
-                .eq('conversation_id', conversationId)
-                .order('created_at', { ascending: true })
-                .limit(100);
-
-            if (!error && data) {
-                // Fetch sender profiles separately
-                const messagesWithSenders = await Promise.all(data.map(async (msg) => {
-                    const { data: profile } = await supabase
-                        .from('profiles')
-                        .select('id, full_name, avatar_url')
-                        .eq('id', msg.sender_id)
-                        .single();
-                    return { ...msg, sender: profile };
-                }));
-                setDirectMessages(messagesWithSenders);
-            } else {
-                console.log('Direct messages error:', error?.message);
-                setDirectMessages([]);
-            }
-        } catch (e) {
-            console.error('Error loading DMs:', e);
-            setDirectMessages([]);
-        }
-        setLoadingDMs(false);
-    };
-
-    // Send direct message with optimistic update
-    const sendDirectMessage = async () => {
-        if (!newMessage.trim() || !user || !selectedConversation) return;
-
-        const messageContent = newMessage.trim();
-        const tempId = `temp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-        // Optimistic update: add message to UI immediately
-        const optimisticMessage = {
-            id: tempId,
-            conversation_id: selectedConversation.id,
-            sender_id: user.id,
-            content: messageContent,
-            type: 'text',
-            created_at: new Date().toISOString(),
-            sender: { id: user.id, full_name: user.name || 'Moi', avatar_url: user.avatar || null }
-        };
-
-        setDirectMessages(prev => [...prev, optimisticMessage]);
-        setNewMessage('');
-
-        // Scroll to bottom immediately
-        requestAnimationFrame(() => {
-            if (chatScrollRef.current) {
-                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-            }
-        });
-
-        try {
-            const { data, error } = await supabase
-                .from('direct_messages')
-                .insert({
-                    conversation_id: selectedConversation.id,
-                    sender_id: user.id,
-                    content: messageContent,
-                    type: 'text'
-                })
-                .select()
-                .single();
-
-            if (error) throw error;
-
-            // Replace temp message with real one from server
-            if (data) {
-                setDirectMessages(prev =>
-                    prev.map(m => m.id === tempId
-                        ? { ...data, sender: optimisticMessage.sender }
-                        : m
-                    )
-                );
-            }
-
-            // Update conversation's last_message timestamp
-            await supabase
-                .from('conversations')
-                .update({ last_message_at: new Date().toISOString(), last_message: messageContent })
-                .eq('id', selectedConversation.id);
-
-            // Send notification to conversation partner
-            if (selectedConversation.otherUser?.id) {
-                notifyDirectMessage({
-                    recipientId: selectedConversation.otherUser.id,
-                    senderId: user.id,
-                    senderName: user.name || 'Utilisateur',
-                    messagePreview: messageContent,
-                    conversationId: selectedConversation.id,
-                });
-            }
-
-        } catch (e) {
-            console.error('Error sending DM:', e);
-            // Remove optimistic message on error
-            setDirectMessages(prev => prev.filter(m => m.id !== tempId));
-            setNewMessage(messageContent); // Restore the message
-            toast.error("Erreur lors de l'envoi du message");
-        }
-    };
-
-    // Load group messages (direct Supabase call, no serverless)
-    const loadGroupMessages = async (groupId: string) => {
-        setLoadingGroupMessages(true);
-        try {
-            const messages = await loadGroupMessagesClient(groupId);
-            setGroupMessages(messages);
-        } catch (e) {
-            console.error('Error loading group messages:', e);
-        }
-        setLoadingGroupMessages(false);
-    };
-
-    // Send group message with optimistic update (via server API to bypass RLS)
-    const sendGroupMessage = async () => {
-        if (!newMessage.trim() || !user || !selectedGroup) return;
-
-        const messageContent = newMessage.trim();
-        const tempId = `temp_grp_${Date.now()}_${Math.random().toString(36).substring(7)}`;
-
-        // Optimistic update
-        const optimisticMsg = {
-            id: tempId,
-            group_id: selectedGroup.id,
-            user_id: user.id,
-            content: messageContent,
-            type: 'text',
-            created_at: new Date().toISOString(),
-            profiles: { full_name: user.name || 'Moi', avatar_url: user.avatar || null }
-        };
-
-        setGroupMessages(prev => [...prev, optimisticMsg]);
-        setNewMessage('');
-
-        // Scroll to bottom
-        requestAnimationFrame(() => {
-            if (chatScrollRef.current) {
-                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-            }
-        });
-
-        try {
-            const savedMessage = await sendGroupMessageClient({
-                groupId: selectedGroup.id,
-                userId: user.id,
-                content: messageContent,
-                type: 'text',
-            });
-
-            // Replace temp with real
-            if (savedMessage) {
-                setGroupMessages(prev =>
-                    prev.map(m => m.id === tempId
-                        ? { ...savedMessage, profiles: optimisticMsg.profiles }
-                        : m
-                    )
-                );
-
-                // Notify other group members of new message
-                notifyGroupNewMessage({
-                    groupId: selectedGroup.id,
-                    groupName: selectedGroup.name || 'Groupe de prière',
-                    senderId: user.id,
-                    senderName: user.name,
-                    messagePreview: messageContent,
-                }).catch(console.error);
-            }
-        } catch (e) {
-            console.error('Error sending group message:', e);
-            setGroupMessages(prev => prev.filter(m => m.id !== tempId));
-            setNewMessage(messageContent);
-            toast.error("Erreur lors de l'envoi du message");
-        }
-    };
-
-    // ========== VOICE RECORDING FUNCTIONS ==========
-
-    // Start recording voice message
-    const startRecording = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
-            mediaRecorderRef.current = mediaRecorder;
-            audioChunksRef.current = [];
-
-            mediaRecorder.ondataavailable = (event) => {
-                if (event.data.size > 0) {
-                    audioChunksRef.current.push(event.data);
-                }
-            };
-
-            mediaRecorder.start(100); // Collect data every 100ms
-            setIsRecording(true);
-            setRecordingTime(0);
-
-            // Start timer
-            recordingIntervalRef.current = setInterval(() => {
-                setRecordingTime(prev => prev + 1);
-            }, 1000);
-
-            toast.info("🎤 Enregistrement en cours...");
-        } catch (error) {
-            console.error('Error starting recording:', error);
-            toast.error("Impossible d'accéder au microphone");
-        }
-    };
-
-    // Stop recording and send
-    const stopRecording = async (mode: 'dm' | 'group') => {
-        if (!mediaRecorderRef.current || !isRecording) return;
-
-        return new Promise<void>((resolve) => {
-            mediaRecorderRef.current!.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                const duration = recordingTime;
-
-                // Stop all tracks
-                mediaRecorderRef.current?.stream.getTracks().forEach(track => track.stop());
-
-                // Clear interval
-                if (recordingIntervalRef.current) {
-                    clearInterval(recordingIntervalRef.current);
-                }
-
-                setIsRecording(false);
-                setRecordingTime(0);
-
-                // Send the voice message
-                if (mode === 'dm') {
-                    await sendVoiceMessageDM(audioBlob, duration);
-                } else {
-                    await sendVoiceMessageGroup(audioBlob, duration);
-                }
-
-                resolve();
-            };
-
-            mediaRecorderRef.current!.stop();
-        });
-    };
-
-    // Cancel recording
-    const cancelRecording = () => {
-        if (mediaRecorderRef.current && isRecording) {
-            mediaRecorderRef.current.stop();
-            mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
-        }
-
-        if (recordingIntervalRef.current) {
-            clearInterval(recordingIntervalRef.current);
-        }
-
-        setIsRecording(false);
-        setRecordingTime(0);
-        audioChunksRef.current = [];
-        toast.info("Enregistrement annulé");
-    };
-
-    // Send voice message for DM
-    const sendVoiceMessageDM = async (audioBlob: Blob, duration: number) => {
-        if (!user || !selectedConversation) return;
-
-        setIsUploadingVoice(true);
-        try {
-            // Generate unique filename
-            const filename = `voice-messages/${user.id}/${Date.now()}.webm`;
-
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('chat-media')
-                .upload(filename, audioBlob, {
-                    contentType: 'audio/webm',
-                    upsert: false
-                });
-
-            if (uploadError) throw uploadError;
-
-            // Get public URL
-            const { data: urlData } = supabase.storage
-                .from('chat-media')
-                .getPublicUrl(filename);
-
-            const voiceUrl = urlData.publicUrl;
-
-            // Insert message with voice data
-            const { error: insertError } = await supabase
-                .from('direct_messages')
-                .insert({
-                    conversation_id: selectedConversation.id,
-                    sender_id: user.id,
-                    content: '🎤 Message vocal',
-                    type: 'voice',
-                    voice_url: voiceUrl,
-                    voice_duration: duration
-                });
-
-            if (insertError) throw insertError;
-
-            toast.success("Message vocal envoyé! 🎤");
-            loadDirectMessages(selectedConversation.id);
-        } catch (error) {
-            console.error('Error sending voice message:', error);
-            toast.error("Erreur lors de l'envoi du message vocal");
-        }
-        setIsUploadingVoice(false);
-    };
-
-    // Send voice message for Group
-    const sendVoiceMessageGroup = async (audioBlob: Blob, duration: number) => {
-        if (!user || !selectedGroup) return;
-
-        setIsUploadingVoice(true);
-        try {
-            // Generate unique filename
-            const filename = `voice-messages/${user.id}/${Date.now()}.webm`;
-
-            // Upload to Supabase Storage
-            const { data: uploadData, error: uploadError } = await supabase.storage
-                .from('chat-media')
-                .upload(filename, audioBlob, {
-                    contentType: 'audio/webm',
-                    upsert: false
-                });
-
-            if (uploadError) throw uploadError;
-
-            // Get public URL
-            const { data: urlData } = supabase.storage
-                .from('chat-media')
-                .getPublicUrl(filename);
-
-            const voiceUrl = urlData.publicUrl;
-
-            // Insert message with voice data (direct Supabase call)
-            const savedVoiceMsg = await sendGroupMessageClient({
-                groupId: selectedGroup.id,
-                userId: user.id,
-                content: '🎤 Message vocal',
-                type: 'voice',
-                voiceUrl: voiceUrl,
-                voiceDuration: duration,
-            });
-
-            if (!savedVoiceMsg) throw new Error('Failed to send voice message');
-
-            toast.success("Message vocal envoyé! 🎤");
-            loadGroupMessages(selectedGroup.id);
-        } catch (error) {
-            console.error('Error sending voice message:', error);
-            toast.error("Erreur lors de l'envoi du message vocal");
-        }
-        setIsUploadingVoice(false);
-    };
-
-    // Format recording time
-    const formatRecordingTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = seconds % 60;
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    // Join prayer group
-    const joinGroup = async (groupId: string) => {
-        if (!user) return;
-        try {
-            const { error } = await supabase
-                .from('prayer_group_members')
-                .insert({
-                    group_id: groupId,
-                    user_id: user.id
-                });
-
-            if (error && !error.message.includes('duplicate')) throw error;
-            toast.success('Vous avez rejoint le groupe!');
-            setUserGroups(prev => [...prev, groupId]);
-            loadGroups(); // Refresh
-        } catch (e) {
-            console.error('Error joining group:', e);
-            toast.error("Erreur lors de l'adhésion au groupe");
-        }
-    };
-
-    // Leave prayer group
-    const leaveGroup = async (groupId: string) => {
-        if (!user) return;
-        try {
-            const { error } = await supabase
-                .from('prayer_group_members')
-                .delete()
-                .eq('group_id', groupId)
-                .eq('user_id', user.id);
-
-            if (error) throw error;
-            toast.success('Vous avez quitté le groupe');
-            setUserGroups(prev => prev.filter(id => id !== groupId));
-            loadGroups();
-        } catch (e) {
-            console.error('Error leaving group:', e);
-            toast.error("Erreur lors de la désinscription du groupe");
-        }
-    };
-
-    // Create prayer group - Fixed version with direct insert fallback
-    // Generate a URL-safe slug from a name
-    const generateSlug = (name: string): string => {
-        return name
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // remove accents
-            .toLowerCase()
-            .replace(/[^a-z0-9\s-]/g, '') // remove special chars
-            .replace(/\s+/g, '-')          // spaces to dashes
-            .replace(/-+/g, '-')           // collapse multiple dashes
-            .replace(/^-|-$/g, '')         // trim leading/trailing dashes
-            .substring(0, 80);             // max 80 chars
-    };
-
-    const createGroup = async () => {
-        if (!user || !newGroupName.trim()) return;
-        setCreatingGroup(true);
-        try {
-            const trimmedName = newGroupName.trim();
-            const slug = generateSlug(trimmedName) + '-' + Date.now().toString(36);
-            const avatarUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(trimmedName)}&backgroundColor=6366f1,8b5cf6,a855f7`;
-
-            // Try RPC first
-            let groupId: string | null = null;
-            const { data: rpcData, error: rpcError } = await supabase.rpc('create_prayer_group', {
-                group_name: trimmedName,
-                group_description: newGroupDescription.trim() || null,
-                is_public_group: true
-            });
-
-            if (rpcError) {
-                console.log('RPC failed, using direct insert:', rpcError.message);
-                // Fallback to direct insert
-                const { data: insertData, error: insertError } = await supabase
-                    .from('prayer_groups')
-                    .insert({
-                        name: trimmedName,
-                        description: newGroupDescription.trim() || null,
-                        created_by: user.id,
-                        is_open: true,
-                        slug,
-                        avatar_url: avatarUrl
-                    })
-                    .select()
-                    .single();
-
-                if (insertError) throw insertError;
-                groupId = insertData?.id;
-
-                // Add creator as admin
-                if (groupId) {
-                    await supabase.from('prayer_group_members').insert({
-                        group_id: groupId,
-                        user_id: user.id,
-                        role: 'admin'
-                    });
-                }
-            } else {
-                groupId = rpcData;
-                // Update slug and avatar for RPC-created group
-                if (groupId) {
-                    await supabase.from('prayer_groups')
-                        .update({ slug, avatar_url: avatarUrl })
-                        .eq('id', groupId);
-                }
-            }
-
-            toast.success('🙏 Groupe de prière créé avec succès!');
-            setNewGroupName('');
-            setNewGroupDescription('');
-            setShowCreateGroupDialog(false);
-            if (groupId) {
-                setUserGroups(prev => [...prev, groupId!]);
-            }
-            loadGroups();
-        } catch (e) {
-            console.error('Error creating group:', e);
-            toast.error("Erreur lors de la création du groupe");
-        }
-        setCreatingGroup(false);
-    };
-
-    // Load user's joined groups
-    const loadUserGroups = async () => {
-        if (!user) return;
-        try {
-            const { data, error } = await supabase
-                .from('prayer_group_members')
-                .select('group_id')
-                .eq('user_id', user.id);
-
-            if (!error && data) {
-                setUserGroups(data.map(m => m.group_id));
-            }
-        } catch (e) {
-            console.error('Error loading user groups:', e);
-        }
-    };
-
-    // Setup real-time subscription for group messages AND load initial messages
+    // Setup real-time subscription for group messages when viewing group-detail
     useEffect(() => {
         if (viewState === 'group-detail' && selectedGroup) {
-            // ALWAYS load group messages when entering group-detail view
-            // This ensures new members see old messages immediately
             const groupId = selectedGroup.id;
             loadGroupMessages(groupId).then(() => {
-                // Auto-scroll to bottom after loading
                 requestAnimationFrame(() => {
-                    if (chatScrollRef.current) {
-                        chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-                    }
+                    if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
                 });
             });
 
-            // Setup real-time subscription for new messages
             const subscription = supabase
                 .channel(`group_rt_${groupId}_${Date.now()}`)
                 .on('postgres_changes', {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'prayer_group_messages',
+                    event: 'INSERT', schema: 'public', table: 'prayer_group_messages',
                     filter: `group_id=eq.${groupId}`
                 }, async (payload) => {
                     const newMsg = payload.new as any;
-
-                    // Skip if already exists (from optimistic update)
                     setGroupMessages(prev => {
                         if (prev.some(m => m.id === newMsg.id)) return prev;
-                        // If own message, replace temp
                         if (newMsg.user_id === user?.id) {
-                            const tempIdx = prev.findIndex(m =>
-                                typeof m.id === 'string' && m.id.startsWith('temp_grp_')
-                            );
+                            const tempIdx = prev.findIndex(m => typeof m.id === 'string' && m.id.startsWith('temp_grp_'));
                             if (tempIdx !== -1) {
                                 const updated = [...prev];
                                 updated[tempIdx] = { ...newMsg, profiles: prev[tempIdx].profiles };
                                 return updated;
                             }
                         }
-                        return prev; // Will be added after profile fetch below
+                        return prev;
                     });
 
-                    // Fetch profile for new message from another user
                     if (newMsg.user_id !== user?.id) {
                         const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('full_name, avatar_url')
-                            .eq('id', newMsg.user_id)
-                            .single();
-
+                            .from('profiles').select('full_name, avatar_url')
+                            .eq('id', newMsg.user_id).single();
                         setGroupMessages(prev => {
                             if (prev.some(m => m.id === newMsg.id)) return prev;
                             return [...prev, { ...newMsg, profiles: profile || { full_name: 'Utilisateur', avatar_url: null } }];
                         });
-
-                        // Scroll to see new message
                         requestAnimationFrame(() => {
-                            if (chatScrollRef.current) {
-                                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-                            }
+                            if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
                         });
                     }
                 })
                 .subscribe();
 
-            return () => {
-                subscription.unsubscribe();
-            };
+            return () => { subscription.unsubscribe(); };
         }
     }, [viewState, selectedGroup]);
 
@@ -1464,23 +315,13 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             loadUserFriends();
             loadPendingJoinRequests();
 
-            // Listen for group deletions by admin
             const groupDeleteSub = supabase
                 .channel('group_deletions_sync')
-                .on('postgres_changes', {
-                    event: 'DELETE',
-                    schema: 'public',
-                    table: 'prayer_groups'
-                }, (payload) => {
+                .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'prayer_groups' }, (payload) => {
                     const deletedGroupId = payload.old?.id;
                     if (!deletedGroupId) return;
-
-                    // Remove from groups list
                     setGroups((prev: PrayerGroup[]) => prev.filter(g => g.id !== deletedGroupId));
-                    // Remove from user's joined groups
                     setUserGroups((prev: string[]) => prev.filter(id => id !== deletedGroupId));
-
-                    // If user is viewing this group, redirect back
                     if (selectedGroup?.id === deletedGroupId) {
                         setViewState('main');
                         toast.info('Ce groupe a été supprimé par un administrateur');
@@ -1488,112 +329,66 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                 })
                 .subscribe();
 
-            return () => {
-                groupDeleteSub.unsubscribe();
-            };
+            return () => { groupDeleteSub.unsubscribe(); };
         }
     }, [user, selectedGroup?.id]);
 
-    // Load conversations and users when accessing messages view
+    // Load conversations when accessing messages view
     useEffect(() => {
         if (viewState === 'messages' && user) {
             loadConversations();
             loadUsers();
-            loadGroups(); // Also load groups for the combined view
+            loadGroups();
         }
     }, [viewState, user]);
 
     // Real-time subscription for direct messages
     useEffect(() => {
         if (viewState === 'conversation' && selectedConversation) {
-            // Initial load
             loadDirectMessages(selectedConversation.id);
-
-            // Check if chat partner is a friend
             if (selectedConversation.otherUser?.id) {
                 checkFriendshipWithPartner(selectedConversation.otherUser.id);
             }
 
-            // Setup realtime subscription
             const channelName = `dm_cv_${selectedConversation.id}_${Date.now()}`;
             const subscription = supabase
                 .channel(channelName)
                 .on('postgres_changes', {
-                    event: 'INSERT',
-                    schema: 'public',
-                    table: 'direct_messages',
+                    event: 'INSERT', schema: 'public', table: 'direct_messages',
                     filter: `conversation_id=eq.${selectedConversation.id}`
                 }, async (payload) => {
                     const newMsg = payload.new as any;
-
-                    // Skip if we already have this message (optimistic or duplicate)
                     setDirectMessages(prev => {
                         if (prev.some(m => m.id === newMsg.id)) return prev;
-                        // If this is our own message, replace the temp one
                         if (newMsg.sender_id === user?.id) {
-                            const tempIdx = prev.findIndex(m =>
-                                typeof m.id === 'string' && m.id.startsWith('temp_') && m.sender_id === user?.id
-                            );
+                            const tempIdx = prev.findIndex(m => typeof m.id === 'string' && m.id.startsWith('temp_') && m.sender_id === user?.id);
                             if (tempIdx !== -1) {
                                 const updated = [...prev];
                                 updated[tempIdx] = { ...newMsg, sender: prev[tempIdx].sender };
                                 return updated;
                             }
-                            // No temp found but we don't have it - add it
                             return [...prev, { ...newMsg, sender: { id: user!.id, full_name: user!.name || 'Moi' } }];
                         }
-                        // Message from other user - add it immediately
                         return [...prev, { ...newMsg, sender: { id: newMsg.sender_id, full_name: '...' } }];
                     });
 
-                    // If message is from other user, fetch their profile and update
                     if (newMsg.sender_id !== user?.id) {
                         const { data: profile } = await supabase
-                            .from('profiles')
-                            .select('id, full_name, avatar_url')
-                            .eq('id', newMsg.sender_id)
-                            .single();
-
+                            .from('profiles').select('id, full_name, avatar_url')
+                            .eq('id', newMsg.sender_id).single();
                         if (profile) {
-                            setDirectMessages(prev =>
-                                prev.map(m => m.id === newMsg.id ? { ...m, sender: profile } : m)
-                            );
+                            setDirectMessages(prev => prev.map(m => m.id === newMsg.id ? { ...m, sender: profile } : m));
                         }
-
-                        // Scroll to see new message
                         requestAnimationFrame(() => {
-                            if (chatScrollRef.current) {
-                                chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-                            }
+                            if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
                         });
                     }
                 })
                 .subscribe();
 
-            return () => {
-                subscription.unsubscribe();
-            };
+            return () => { subscription.unsubscribe(); };
         }
     }, [viewState, selectedConversation?.id]);
-
-    const sendChatMessage = async () => {
-        if (!newMessage.trim() || !user) return;
-
-        try {
-            const { error } = await supabase
-                .from('community_messages')
-                .insert({
-                    user_id: user.id,
-                    content: newMessage.trim()
-                });
-
-            if (error) throw error;
-            setNewMessage('');
-        } catch (e) {
-            console.error('Error sending message:', e);
-            toast.error("Erreur lors de l'envoi du message");
-        }
-    };
 
     const handlePublish = async () => {
         if (!newContent.trim() || !user) return;
@@ -1726,7 +521,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         remoteUser={activeGlobalCall.remoteUser ? {
                             id: activeGlobalCall.remoteUser.id,
                             name: activeGlobalCall.remoteUser.name,
-                            avatar: activeGlobalCall.remoteUser.avatar,
+                            avatar: activeGlobalCall.remoteUser.avatar ?? undefined,
                         } : undefined}
                         conversationId={activeGlobalCall.conversationId}
                         groupId={activeGlobalCall.groupId}
@@ -2711,7 +1506,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                onClick={() => stopRecording('group')}
+                                                onClick={() => stopRecording('group', { userId: user!.id, groupId: selectedGroup!.id, onGroupSent: (gId) => loadGroupMessages(gId) })}
                                                 className="text-green-400 hover:text-green-300 h-8 w-8"
                                             >
                                                 <Send className="h-4 w-4" />
@@ -2727,7 +1522,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             placeholder="Écrire un message..."
                                             value={newMessage}
                                             onChange={(e) => setNewMessage(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && sendGroupMessage()}
+                                            onKeyDown={(e) => e.key === 'Enter' && selectedGroup && sendGroupMessage(selectedGroup.id, selectedGroup.name)}
                                             className="flex-1 h-10 rounded-full bg-white/5 border-white/10 px-4"
                                         />
                                     )}
@@ -2738,7 +1533,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             <Button
                                                 size="icon"
                                                 className="h-10 w-10 rounded-full bg-indigo-600 hover:bg-indigo-500"
-                                                onClick={sendGroupMessage}
+                                                onClick={() => selectedGroup && sendGroupMessage(selectedGroup.id, selectedGroup.name)}
                                             >
                                                 <Send className="h-5 w-5" />
                                             </Button>
@@ -2830,7 +1625,6 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             isPortrait={isPortrait}
                             primaryUrl={primaryUrl}
                             backupUrl={backupUrl}
-                            proxyUrl={appSettings?.['live_proxy_url'] || ''}
                             user={user}
                             onClose={() => setViewState('main')}
                         />

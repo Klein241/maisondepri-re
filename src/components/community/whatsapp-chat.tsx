@@ -8,7 +8,7 @@ import {
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
     BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar,
-    MessageCircle, Gamepad2, BarChart3, FileText, Heart, Bell, Radio
+    MessageCircle, Gamepad2, BarChart3, FileText, Heart, Bell, Radio, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -79,10 +79,12 @@ interface GroupMember {
 interface Message {
     id: string;
     content: string;
-    type: 'text' | 'voice' | 'image';
+    type: 'text' | 'voice' | 'image' | 'file';
     voice_url?: string;
     voice_duration?: number;
     image_url?: string;
+    file_url?: string;
+    file_name?: string;
     sender_id: string;
     sender?: ChatUser;
     created_at: string;
@@ -1331,23 +1333,45 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         loadMessages('conversation', conv.id);
     };
 
-    // Open group
-    const openGroup = (group: ChatGroup) => {
+    // Open group — OPTIMIZED: cache-first + parallel loading
+    const openGroup = async (group: ChatGroup) => {
         setSelectedGroup(group);
         setSelectedConversation(null);
         setView('group');
         setShowGroupTools(false);
-        loadMessages('group', group.id);
-        loadGroupMembers(group.id);
 
-        // Load pinned prayer from group description
+        // Load pinned prayer subject immediately (sync, no API)
         if (group.description?.startsWith('📌')) {
             setPinnedPrayer(group.description.replace('📌 ', ''));
         } else {
             setPinnedPrayer(null);
         }
 
-        // Start polling fallback for group messages (direct Supabase, no serverless)
+        // Load cached messages from IndexedDB FIRST (instant display)
+        try {
+            const cached = await getCachedGroupMessages(group.id);
+            if (cached && cached.length > 0) {
+                setMessages(cached.map(m => ({
+                    id: m.id,
+                    content: m.content,
+                    type: (m.type || 'text') as any,
+                    sender_id: m.user_id,
+                    sender: { id: m.user_id, full_name: m.sender_name || null, avatar_url: m.sender_avatar || null },
+                    created_at: m.created_at,
+                    is_read: true,
+                })));
+            }
+        } catch (e) {
+            // IndexedDB not available
+        }
+
+        // Load fresh data in PARALLEL (much faster than sequential)
+        Promise.all([
+            loadMessages('group', group.id),
+            loadGroupMembers(group.id),
+        ]);
+
+        // Start polling fallback for group messages
         if (groupPollRef.current) clearInterval(groupPollRef.current);
         groupPollRef.current = setInterval(async () => {
             try {
@@ -3328,10 +3352,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
-            {/* Chat Header */}
-            <div className="sticky top-0 z-20 p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/90 backdrop-blur-md shrink-0">
-                <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
-                    <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
+            {/* Chat Header — sticky, compact, WhatsApp-style */}
+            <div className="sticky top-0 z-20 px-2 py-1.5 sm:px-3 sm:py-2 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0">
+                <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-9 w-9">
+                    <ArrowLeft className="h-5 w-5" />
                 </Button>
 
                 {currentRecipient && (
@@ -3357,11 +3381,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1.5">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                                className="rounded-full text-green-400 hover:text-green-300 hover:bg-green-500/15 h-10 w-10"
                                 onClick={async () => {
                                     setActiveCall({ type: 'audio', mode: 'private' });
                                     await initiateCall({
@@ -3379,7 +3403,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
+                                className="rounded-full text-blue-400 hover:text-blue-300 hover:bg-blue-500/15 h-10 w-10"
                                 onClick={async () => {
                                     setActiveCall({ type: 'video', mode: 'private' });
                                     await initiateCall({
@@ -3430,11 +3454,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
+                        <div className="flex items-center gap-0.5 shrink-0">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-9 w-9"
+                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/15 h-10 w-10"
                                 onClick={() => { setShowGroupTools(true); loadAllUsers(); loadGroupMembers(currentGroup!.id); }}
                                 title="Outils de groupe"
                             >
@@ -3443,7 +3467,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-9 w-9"
+                                className="rounded-full text-blue-400 hover:text-blue-300 hover:bg-blue-500/15 h-10 w-10"
                                 onClick={() => setShowGroupMembers(!showGroupMembers)}
                                 title="Voir les membres"
                             >
@@ -3452,11 +3476,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-9 w-9"
+                                className="rounded-full text-green-400 hover:text-green-300 hover:bg-green-500/15 h-10 w-10"
                                 onClick={() => setShowVoiceSalon(true)}
-                                title="Salon vocal (Discord/PTT)"
+                                title="Salon vocal (Push-to-Talk)"
                             >
-                                <Radio className="h-5 w-5" />
+                                <Phone className="h-5 w-5" />
                             </Button>
                         </div>
                     </>
@@ -3501,34 +3525,40 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
             {/* Pinned Prayer Subject Banner — compact, dismissable, with admin unpin */}
             {currentGroup && (pinnedPrayer || currentGroup.description?.startsWith('📌')) && (
-                <div className="mx-2 sm:mx-4 mt-1.5 px-3 py-1.5 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 shrink-0">
-                    <Pin className="h-3.5 w-3.5 text-amber-400 shrink-0" />
-                    <p className="text-[11px] text-amber-200 flex-1 truncate">
-                        <span className="font-semibold">Épinglé :</span>{' '}
-                        {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
-                    </p>
-                    {/* User self-dismiss */}
-                    <button
-                        onClick={() => setPinnedPrayer(null)}
-                        className="p-0.5 rounded-full hover:bg-white/10 text-amber-400/60 hover:text-amber-200 transition-all shrink-0"
-                        title="Masquer pour moi"
-                    >
-                        <X className="h-3 w-3" />
-                    </button>
-                    {/* Admin unpin for all */}
-                    {isCreatorOrAdmin && (
+                <div className="mx-2 sm:mx-4 mt-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 shrink-0">
+                    <div className="flex items-center gap-2">
+                        <Pin className="h-4 w-4 text-amber-400 shrink-0" />
+                        <p className="text-xs text-amber-200 flex-1 line-clamp-2">
+                            <span className="font-semibold">📌 Sujet épinglé :</span>{' '}
+                            {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
+                        </p>
+                    </div>
+                    <div className="flex items-center gap-2 mt-1.5 justify-end">
+                        {/* User self-dismiss */}
                         <button
-                            onClick={async () => {
-                                await supabase.from('prayer_groups').update({ description: null }).eq('id', currentGroup.id);
-                                setPinnedPrayer(null);
-                                toast.success('Sujet dépinglé');
-                            }}
-                            className="p-0.5 rounded-full hover:bg-red-500/20 text-red-400/70 hover:text-red-300 transition-all shrink-0"
-                            title="Dépingler pour tous"
+                            onClick={() => setPinnedPrayer(null)}
+                            className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white transition-all"
+                            title="Masquer pour moi"
                         >
-                            <Pin className="h-3 w-3" />
+                            <X className="h-3 w-3" />
+                            Masquer
                         </button>
-                    )}
+                        {/* Admin unpin for all */}
+                        {isCreatorOrAdmin && (
+                            <button
+                                onClick={async () => {
+                                    await supabase.from('prayer_groups').update({ description: null }).eq('id', currentGroup.id);
+                                    setPinnedPrayer(null);
+                                    toast.success('Sujet dépinglé pour tous');
+                                }}
+                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 border border-red-500/20 transition-all"
+                                title="Dépingler pour tous"
+                            >
+                                <Pin className="h-3 w-3" />
+                                Dépingler
+                            </button>
+                        )}
+                    </div>
                 </div>
             )}
 
@@ -3828,6 +3858,37 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     voiceUrl={msg.voice_url}
                                                     duration={msg.voice_duration}
                                                 />
+                                            ) : msg.type === 'image' && msg.image_url ? (
+                                                <div className="space-y-1">
+                                                    <img
+                                                        src={msg.image_url}
+                                                        alt="Photo"
+                                                        className="max-w-[240px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+                                                        onClick={(e) => { e.stopPropagation(); window.open(msg.image_url, '_blank'); }}
+                                                    />
+                                                    {msg.content && msg.content !== '📷 [Photo]' && (
+                                                        <ExpandableMessage content={msg.content} />
+                                                    )}
+                                                </div>
+                                            ) : msg.content?.startsWith('📎 ') ? (
+                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
+                                                    <FileText className="h-5 w-5 text-amber-400 shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium truncate">{msg.content.replace('📎 ', '')}</p>
+                                                        <p className="text-[10px] text-slate-400">Fichier partagé</p>
+                                                    </div>
+                                                    {msg.file_url && (
+                                                        <a
+                                                            href={msg.file_url}
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded-full hover:bg-white/10 transition-colors"
+                                                            onClick={(e) => e.stopPropagation()}
+                                                        >
+                                                            <ExternalLink className="h-4 w-4" />
+                                                        </a>
+                                                    )}
+                                                </div>
                                             ) : (
                                                 <ExpandableMessage content={msg.content} />
                                             )}
@@ -3892,13 +3953,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 inputRef.current?.focus();
                                             }}
                                             className={cn(
-                                                "flex items-center gap-1.5 mt-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all",
-                                                "bg-white/5 border-white/10 text-slate-400 hover:bg-indigo-500/15 hover:text-indigo-300 hover:border-indigo-500/30",
+                                                "flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95",
+                                                "bg-indigo-500/10 border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20 hover:text-indigo-300 hover:border-indigo-500/40",
                                                 isOwn ? "ml-auto" : ""
                                             )}
                                         >
-                                            <ArrowRightLeft className="h-3 w-3" />
-                                            Répondre à ce message
+                                            <ArrowRightLeft className="h-3.5 w-3.5" />
+                                            Répondre
                                         </button>
                                     </div>
                                 </motion.div>
@@ -3930,23 +3991,61 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file || !user) return;
-                    if (file.size > 10 * 1024 * 1024) { toast.error('Fichier trop grand (max 10MB)'); return; }
+                    if (file.size > 25 * 1024 * 1024) { toast.error('Fichier trop grand (max 25MB)'); return; }
                     const ext = file.name.split('.').pop() || 'bin';
                     const path = `${user.id}/${Date.now()}.${ext}`;
                     setIsSending(true);
+                    toast.info(`📤 Envoi de ${file.name}...`);
                     try {
                         const { error: upErr } = await supabase.storage.from('chat-files').upload(path, file, { upsert: true });
                         if (upErr) throw upErr;
                         const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
                         const fileUrl = urlData.publicUrl;
                         const isImage = file.type.startsWith('image/');
-                        const msgContent = isImage ? `📷 [Photo]` : `📎 ${file.name}`;
+                        const isVideo = file.type.startsWith('video/');
+                        const msgContent = isImage ? `📷 [Photo]` : isVideo ? `🎬 ${file.name}` : `📎 ${file.name}`;
+                        const msgType = isImage ? 'image' : 'file';
                         if (view === 'group' && selectedGroup) {
-                            await supabase.from('prayer_group_messages').insert({ group_id: selectedGroup.id, user_id: user.id, content: msgContent, type: isImage ? 'image' : 'text', image_url: isImage ? fileUrl : undefined });
+                            await supabase.from('prayer_group_messages').insert({
+                                group_id: selectedGroup.id,
+                                user_id: user.id,
+                                content: msgContent,
+                                type: msgType,
+                                image_url: isImage ? fileUrl : undefined,
+                            });
+                            // Optimistic add for file messages
+                            setMessages(prev => [...prev, {
+                                id: `temp_file_${Date.now()}`,
+                                content: `${msgContent}\n🔗 ${fileUrl}`,
+                                type: msgType as any,
+                                sender_id: user.id,
+                                sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                                created_at: new Date().toISOString(),
+                                is_read: true,
+                                image_url: isImage ? fileUrl : undefined,
+                                file_url: fileUrl,
+                                file_name: file.name,
+                            }]);
                         } else if (view === 'conversation' && selectedConversation) {
-                            await supabase.from('direct_messages').insert({ conversation_id: selectedConversation.id, sender_id: user.id, content: msgContent, type: 'text', is_read: false });
+                            const linkMsg = `${msgContent}\n🔗 ${fileUrl}`;
+                            await supabase.from('direct_messages').insert({
+                                conversation_id: selectedConversation.id,
+                                sender_id: user.id,
+                                content: linkMsg,
+                                type: 'text',
+                                is_read: false,
+                            });
+                            setMessages(prev => [...prev, {
+                                id: `temp_file_${Date.now()}`,
+                                content: linkMsg,
+                                type: 'text',
+                                sender_id: user.id,
+                                sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                                created_at: new Date().toISOString(),
+                                is_read: false,
+                            }]);
                         }
-                        toast.success('Fichier envoyé !');
+                        toast.success(`✅ ${file.name} envoyé !`);
                     } catch (err: any) { toast.error('Erreur upload: ' + err.message); }
                     setIsSending(false);
                     e.target.value = '';

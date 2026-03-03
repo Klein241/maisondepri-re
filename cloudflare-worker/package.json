@@ -1,0 +1,14 @@
+{
+    "name": "maisondepriere-api",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Cloudflare Worker API — Push Notifications (VAPID), Link Preview, Webhook",
+    "scripts": {
+        "dev": "npx wrangler dev",
+        "deploy": "npx wrangler deploy",
+        "kv:create": "npx wrangler kv namespace create PUSH_KV"
+    },
+    "devDependencies": {
+        "wrangler": "^3.99.0"
+    }
+}
