@@ -3350,10 +3350,20 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Conversation/Group View
 
+    // ── Generate unique color per user (HSL from user ID hash) ──
+    const getUserColor = useCallback((userId: string): string => {
+        let hash = 0;
+        for (let i = 0; i < userId.length; i++) {
+            hash = userId.charCodeAt(i) + ((hash << 5) - hash);
+        }
+        const hue = Math.abs(hash) % 360;
+        return `hsla(${hue}, 55%, 35%, 0.6)`;
+    }, []);
+
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
-            {/* Chat Header — sticky, compact, WhatsApp-style */}
-            <div className="sticky top-0 z-20 px-2 py-1.5 sm:px-3 sm:py-2 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0">
+            {/* Chat Header — FIXED at top, never scrolls */}
+            <div className="z-20 px-2 py-1.5 sm:px-3 sm:py-2 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0">
                 <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-9 w-9">
                     <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -3741,7 +3751,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             )}
 
             {/* Messages — fills all remaining space */}
-            <ScrollArea className="flex-1 p-2 sm:p-4 min-h-0">
+            <ScrollArea className="flex-1 p-2 sm:p-4 min-h-0 overflow-y-auto">
                 {isLoading ? (
                     <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
@@ -3839,12 +3849,17 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 setSelectedMessageId(isSelected ? null : msg.id);
                                             }}
                                             className={cn(
-                                                "rounded-2xl px-3 sm:px-4 py-2 cursor-pointer transition-all",
+                                                "rounded-2xl px-3 sm:px-4 py-2 cursor-pointer transition-all text-white",
                                                 isOwn
-                                                    ? "bg-indigo-600 text-white rounded-br-sm"
-                                                    : "bg-white/10 text-white rounded-bl-sm",
+                                                    ? "rounded-br-sm"
+                                                    : "rounded-bl-sm",
                                                 isSelected && "ring-1 ring-white/30"
                                             )}
+                                            style={{
+                                                backgroundColor: isOwn
+                                                    ? 'rgba(79, 70, 229, 0.7)' // indigo for own messages
+                                                    : getUserColor(msg.sender_id) // unique color per sender
+                                            }}
                                         >
                                             {!isOwn && view === 'group' && showAvatar && (
                                                 <p className="text-xs text-indigo-400 font-medium mb-1">
@@ -4052,8 +4067,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 }}
             />
 
-            {/* Input Area */}
-            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80">
+            {/* Input Area — FIXED at bottom, never scrolls */}
+            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80 shrink-0">
                 {/* Reply-to Preview Bar */}
                 <AnimatePresence>
                     {replyTo && (

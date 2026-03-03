@@ -16,6 +16,7 @@ const BibleView = dynamic(() => import('@/components/views/bible-view').then(m =
 const JournalView = dynamic(() => import('@/components/views/journal-view').then(m => ({ default: m.JournalView })), { ssr: false });
 const CommunityView = dynamic(() => import('@/components/views/community-view').then(m => ({ default: m.CommunityView })), { ssr: false });
 const ProfileView = dynamic(() => import('@/components/views/profile-view').then(m => ({ default: m.ProfileView })), { ssr: false });
+const GamesView = dynamic(() => import('@/components/views/games-view').then(m => ({ default: m.GamesView })), { ssr: false });
 const AuthView = dynamic(() => import('@/components/views/auth-view').then(m => ({ default: m.AuthView })), { ssr: false });
 
 // Splash screen component
@@ -157,6 +158,8 @@ export default function Home() {
         return <JournalView />;
       case 'community':
         return <CommunityView onHideNav={handleHideNav} />;
+      case 'games':
+        return <GamesView />;
       case 'profile':
         return <ProfileView />;
       default:

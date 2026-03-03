@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Users, Plus, Lock, Unlock, AlertTriangle, Check,
     Loader2, X, ChevronRight, UserPlus, Crown, MessageCircle,
-    Search, Send, UserCheck, Mail
+    Search, Send, UserCheck, Mail, Camera, ImagePlus
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -92,6 +92,13 @@ export function PrayerGroupManager({
     const [isOpen, setIsOpen] = useState(true);
     const [isUrgent, setIsUrgent] = useState(false);
     const [maxMembers, setMaxMembers] = useState(50);
+    const [groupPhoto, setGroupPhoto] = useState<File | null>(null);
+    const [groupPhotoPreview, setGroupPhotoPreview] = useState<string | null>(null);
+    const [selectedInvites, setSelectedInvites] = useState<string[]>([]);
+    const [createFriends, setCreateFriends] = useState<FriendProfile[]>([]);
+    const [loadingCreateFriends, setLoadingCreateFriends] = useState(false);
+    const [createFriendSearch, setCreateFriendSearch] = useState('');
+    const groupPhotoRef = useRef<HTMLInputElement>(null);
 
     // Invite friends
     const [friends, setFriends] = useState<FriendProfile[]>([]);
@@ -302,16 +309,41 @@ export function PrayerGroupManager({
         setLoadingFriends(false);
     };
 
+    // Load friends for create form member selection
+    const loadCreateFriends = useCallback(async () => {
+        if (!currentUserId) return;
+        setLoadingCreateFriends(true);
+        try {
+            const { data: friendships } = await supabase
+                .from('friendships')
+                .select('sender_id, receiver_id')
+                .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
+                .eq('status', 'accepted');
+            if (!friendships || friendships.length === 0) { setCreateFriends([]); setLoadingCreateFriends(false); return; }
+            const friendIds = friendships.map(f => f.sender_id === currentUserId ? f.receiver_id : f.sender_id);
+            const { data: profiles } = await supabase.from('profiles').select('id, full_name, avatar_url').in('id', friendIds);
+            if (profiles) setCreateFriends(profiles);
+        } catch (e) { console.error('Error loading friends for create:', e); }
+        setLoadingCreateFriends(false);
+    }, [currentUserId]);
+
     const handleCreateGroup = async () => {
         if (!groupName.trim()) {
             toast.error("Donnez un nom au groupe");
+            return;
+        }
+        if (!groupPhoto) {
+            toast.error("📷 Ajoutez une photo de profil pour le groupe");
+            return;
+        }
+        if (selectedInvites.length < 1) {
+            toast.error("👥 Invitez au moins 1 personne (minimum 2 membres)");
             return;
         }
 
         setIsSaving(true);
         try {
             const trimmedName = groupName.trim();
-            // Generate slug from name
             const slug = trimmedName
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
                 .toLowerCase()
@@ -321,7 +353,16 @@ export function PrayerGroupManager({
                 .replace(/^-|-$/g, '')
                 .substring(0, 80)
                 + '-' + Date.now().toString(36);
-            const avatarUrl = `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(trimmedName)}&backgroundColor=6366f1,8b5cf6,a855f7`;
+
+            // Upload group photo to Supabase Storage
+            const ext = groupPhoto.name.split('.').pop() || 'jpg';
+            const photoPath = `group-avatars/${slug}.${ext}`;
+            const { error: uploadError } = await supabase.storage
+                .from('chat-files')
+                .upload(photoPath, groupPhoto, { upsert: true });
+            if (uploadError) throw uploadError;
+            const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(photoPath);
+            const avatarUrl = urlData.publicUrl;
 
             const { data: newGroup, error: createError } = await supabase
                 .from('prayer_groups')
@@ -348,7 +389,32 @@ export function PrayerGroupManager({
                 role: 'admin'
             });
 
-            toast.success("Groupe de prière créé!");
+            // Add all selected invites as members
+            if (selectedInvites.length > 0) {
+                const inviteRows = selectedInvites.map(uid => ({
+                    group_id: newGroup.id,
+                    user_id: uid,
+                    role: 'member' as const
+                }));
+                await supabase.from('prayer_group_members').insert(inviteRows);
+
+                // Get creator name for notification
+                const { data: profile } = await supabase.from('profiles').select('full_name').eq('id', currentUserId!).maybeSingle();
+                // Notify all invited members
+                for (const uid of selectedInvites) {
+                    notifyGroupInvitation({
+                        userId: uid,
+                        inviterName: profile?.full_name || 'Un ami',
+                        groupId: newGroup.id,
+                        groupName: trimmedName,
+                    }).catch(console.error);
+                }
+            }
+
+            toast.success(`✅ Groupe créé avec ${selectedInvites.length + 1} membres !`);
+            setGroupPhoto(null);
+            setGroupPhotoPreview(null);
+            setSelectedInvites([]);
             setView('main');
             await loadGroup();
         } catch (e: any) {
@@ -540,8 +606,13 @@ export function PrayerGroupManager({
 
     // ========== CREATE GROUP VIEW ==========
     if (view === 'create') {
+        const filteredCreateFriends = createFriends.filter(f => {
+            if (!createFriendSearch.trim()) return true;
+            return (f.full_name || '').toLowerCase().includes(createFriendSearch.toLowerCase());
+        });
+
         return (
-            <div className="space-y-4 sm:space-y-6">
+            <div className="space-y-4 sm:space-y-5">
                 <div className="flex items-center gap-2">
                     <Button variant="ghost" size="icon" onClick={() => setView('main')} className="shrink-0">
                         <X className="h-4 w-4" />
@@ -552,6 +623,50 @@ export function PrayerGroupManager({
                 <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
                     <p className="text-xs text-indigo-400 mb-1">Pour la demande :</p>
                     <p className="text-sm text-slate-300 line-clamp-2">{prayerContent}</p>
+                </div>
+
+                {/* ── PHOTO DU GROUPE (OBLIGATOIRE) ── */}
+                <div className="flex flex-col items-center gap-2">
+                    <Label className="text-sm font-semibold">📷 Photo du groupe *</Label>
+                    <input
+                        ref={groupPhotoRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            if (file.size > 5 * 1024 * 1024) { toast.error('Image trop grande (max 5MB)'); return; }
+                            setGroupPhoto(file);
+                            setGroupPhotoPreview(URL.createObjectURL(file));
+                        }}
+                    />
+                    <button
+                        onClick={() => groupPhotoRef.current?.click()}
+                        className={cn(
+                            "relative w-24 h-24 rounded-full overflow-hidden border-2 border-dashed transition-all group",
+                            groupPhotoPreview
+                                ? "border-green-500/50"
+                                : "border-white/20 hover:border-indigo-500/50"
+                        )}
+                    >
+                        {groupPhotoPreview ? (
+                            <img src={groupPhotoPreview} alt="" className="w-full h-full object-cover" />
+                        ) : (
+                            <div className="flex flex-col items-center justify-center h-full bg-white/5 group-hover:bg-indigo-500/10 transition-colors">
+                                <ImagePlus className="h-8 w-8 text-slate-500 group-hover:text-indigo-400" />
+                            </div>
+                        )}
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Camera className="h-6 w-6 text-white" />
+                        </div>
+                    </button>
+                    {!groupPhoto && (
+                        <p className="text-[10px] text-amber-400/80">⚠️ Photo obligatoire</p>
+                    )}
+                    {groupPhoto && (
+                        <p className="text-[10px] text-green-400">✅ {groupPhoto.name}</p>
+                    )}
                 </div>
 
                 <div className="space-y-3 sm:space-y-4">
@@ -571,7 +686,7 @@ export function PrayerGroupManager({
                             placeholder="Décrivez le groupe..."
                             value={groupDescription}
                             onChange={(e) => setGroupDescription(e.target.value)}
-                            rows={3}
+                            rows={2}
                             className="bg-white/5 border-white/10 text-sm resize-none"
                         />
                     </div>
@@ -588,34 +703,114 @@ export function PrayerGroupManager({
                         />
                     </div>
 
-                    <div className="flex items-center justify-between p-3 sm:p-4 rounded-xl bg-white/5 border border-white/10">
-                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                            {isOpen ? (
-                                <Unlock className="h-4 w-4 sm:h-5 sm:w-5 text-green-500 shrink-0" />
-                            ) : (
-                                <Lock className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500 shrink-0" />
-                            )}
+                    {/* ── INVITER DES MEMBRES (MINIMUM 1, donc 2 au total) ── */}
+                    <div className="space-y-2">
+                        <Label className="text-sm font-semibold flex items-center gap-2">
+                            👥 Inviter des membres *
+                            <Badge className={cn(
+                                "text-[10px]",
+                                selectedInvites.length >= 1 ? "bg-green-500/20 text-green-400" : "bg-amber-500/20 text-amber-400"
+                            )}>
+                                {selectedInvites.length + 1} / 2 min
+                            </Badge>
+                        </Label>
+                        <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                            <Input
+                                placeholder="Rechercher un ami..."
+                                value={createFriendSearch}
+                                onChange={(e) => setCreateFriendSearch(e.target.value)}
+                                onFocus={() => { if (createFriends.length === 0) loadCreateFriends(); }}
+                                className="pl-9 bg-white/5 border-white/10 text-sm h-9"
+                            />
+                        </div>
+
+                        {/* Selected members chips */}
+                        {selectedInvites.length > 0 && (
+                            <div className="flex flex-wrap gap-1">
+                                {selectedInvites.map(uid => {
+                                    const fr = createFriends.find(f => f.id === uid);
+                                    return (
+                                        <Badge key={uid} className="bg-indigo-500/20 text-indigo-300 text-[10px] gap-1 pr-1">
+                                            {fr?.full_name || 'Membre'}
+                                            <button onClick={() => setSelectedInvites(prev => prev.filter(id => id !== uid))} className="hover:text-white">
+                                                <X className="h-2.5 w-2.5" />
+                                            </button>
+                                        </Badge>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Friend list */}
+                        {(createFriends.length > 0 || loadingCreateFriends) && (
+                            <div className="max-h-32 overflow-y-auto rounded-lg border border-white/10 bg-slate-800/50">
+                                {loadingCreateFriends ? (
+                                    <div className="flex items-center justify-center py-4">
+                                        <Loader2 className="h-4 w-4 animate-spin text-indigo-500" />
+                                        <span className="ml-2 text-xs text-slate-400">Chargement...</span>
+                                    </div>
+                                ) : filteredCreateFriends.length === 0 ? (
+                                    <p className="text-center py-3 text-xs text-slate-500">Aucun ami trouvé</p>
+                                ) : (
+                                    filteredCreateFriends.map(friend => {
+                                        const isSelected = selectedInvites.includes(friend.id);
+                                        return (
+                                            <button
+                                                key={friend.id}
+                                                onClick={() => {
+                                                    if (isSelected) {
+                                                        setSelectedInvites(prev => prev.filter(id => id !== friend.id));
+                                                    } else {
+                                                        setSelectedInvites(prev => [...prev, friend.id]);
+                                                    }
+                                                }}
+                                                className={cn(
+                                                    "w-full flex items-center gap-2 px-3 py-2 text-left transition-colors",
+                                                    isSelected ? "bg-indigo-500/15" : "hover:bg-white/5"
+                                                )}
+                                            >
+                                                <Avatar className="h-7 w-7 shrink-0">
+                                                    <AvatarImage src={friend.avatar_url || undefined} />
+                                                    <AvatarFallback className="bg-slate-600 text-[10px]">
+                                                        {getInitials(friend.full_name)}
+                                                    </AvatarFallback>
+                                                </Avatar>
+                                                <span className="text-xs text-slate-300 flex-1 truncate">{friend.full_name || 'Utilisateur'}</span>
+                                                {isSelected ? (
+                                                    <Check className="h-4 w-4 text-green-400 shrink-0" />
+                                                ) : (
+                                                    <Plus className="h-4 w-4 text-slate-500 shrink-0" />
+                                                )}
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        )}
+
+                        {selectedInvites.length < 1 && (
+                            <p className="text-[10px] text-amber-400/80">⚠️ Invitez au moins 1 personne (2 membres minimum)</p>
+                        )}
+                    </div>
+
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-white/5 border border-white/10">
+                        <div className="flex items-center gap-2 min-w-0">
+                            {isOpen ? <Unlock className="h-4 w-4 text-green-500 shrink-0" /> : <Lock className="h-4 w-4 text-orange-500 shrink-0" />}
                             <div className="min-w-0">
                                 <Label className="text-sm">Groupe ouvert</Label>
-                                <p className="text-[10px] sm:text-xs text-slate-400 truncate">
-                                    {isOpen
-                                        ? "Tout le monde peut rejoindre"
-                                        : "Approbation requise"
-                                    }
-                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">{isOpen ? "Tout le monde peut rejoindre" : "Approbation requise"}</p>
                             </div>
                         </div>
                         <Switch checked={isOpen} onCheckedChange={setIsOpen} />
                     </div>
 
-                    <div className="flex items-center justify-between p-3 sm:p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-                        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-                            <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-red-500 shrink-0" />
+                    <div className="flex items-center justify-between p-3 rounded-xl bg-red-500/10 border border-red-500/20">
+                        <div className="flex items-center gap-2 min-w-0">
+                            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
                             <div className="min-w-0">
                                 <Label className="text-sm text-red-400">Urgent</Label>
-                                <p className="text-[10px] sm:text-xs text-slate-400 truncate">
-                                    Le groupe sera mis en avant
-                                </p>
+                                <p className="text-[10px] text-slate-400 truncate">Le groupe sera mis en avant</p>
                             </div>
                         </div>
                         <Switch checked={isUrgent} onCheckedChange={setIsUrgent} />
@@ -624,15 +819,15 @@ export function PrayerGroupManager({
 
                 <Button
                     onClick={handleCreateGroup}
-                    disabled={isSaving || !groupName.trim()}
-                    className="w-full bg-indigo-600 hover:bg-indigo-500 h-11 sm:h-12 text-sm sm:text-base"
+                    disabled={isSaving || !groupName.trim() || !groupPhoto || selectedInvites.length < 1}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 h-11 sm:h-12 text-sm sm:text-base disabled:opacity-40"
                 >
                     {isSaving ? (
                         <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                     ) : (
                         <Plus className="h-4 w-4 mr-2" />
                     )}
-                    Créer le groupe
+                    Créer le groupe ({selectedInvites.length + 1} membres)
                 </Button>
             </div>
         );
