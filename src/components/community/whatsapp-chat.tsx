@@ -1615,38 +1615,32 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         );
     };
 
-    // "Lire la suite" component for long messages
+    // "Lire la suite" — uses <details> to avoid useState inside parent component
+    // (inline components with hooks cause React error #310)
     const ExpandableMessage = ({ content }: { content: string }) => {
-        const [expanded, setExpanded] = useState(false);
         const MAX_LEN = 300;
         const isLong = content.length > MAX_LEN;
 
-        if (!isLong || expanded) {
-            return (
-                <div>
-                    {renderMessageContent(content, true)}
-                    {isLong && (
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
-                            className="text-indigo-400 text-xs font-semibold mt-1 hover:underline"
-                        >
-                            Réduire
-                        </button>
-                    )}
-                </div>
-            );
+        if (!isLong) {
+            return <div>{renderMessageContent(content, true)}</div>;
         }
 
         return (
-            <div>
-                {renderMessageContent(content.slice(0, MAX_LEN) + '...', true)}
-                <button
-                    onClick={(e) => { e.stopPropagation(); setExpanded(true); }}
-                    className="text-indigo-400 text-xs font-semibold mt-1 hover:underline"
+            <details className="group">
+                <summary
+                    className="text-indigo-400 text-xs font-semibold mt-1 hover:underline cursor-pointer list-none"
+                    onClick={(e) => e.stopPropagation()}
                 >
-                    Lire la suite...
-                </button>
-            </div>
+                    <span className="group-open:hidden">
+                        {renderMessageContent(content.slice(0, MAX_LEN) + '...', true)}
+                        <span className="block text-indigo-400 text-xs font-semibold mt-1">Lire la suite...</span>
+                    </span>
+                    <span className="hidden group-open:inline">
+                        {renderMessageContent(content, true)}
+                        <span className="block text-indigo-400 text-xs font-semibold mt-1">Réduire</span>
+                    </span>
+                </summary>
+            </details>
         );
     };
 
