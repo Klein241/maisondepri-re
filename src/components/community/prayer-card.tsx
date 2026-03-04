@@ -296,6 +296,17 @@ export function PrayerCard({
         }
     };
 
+    // Parse **bold** markdown in prayer content
+    const renderContent = (text: string) => {
+        const parts = text.split(/(\*\*[^*]+\*\*)/g);
+        return parts.map((part, i) => {
+            if (part.startsWith('**') && part.endsWith('**')) {
+                return <strong key={i} className="text-white font-bold text-base block mb-1">{part.slice(2, -2)}</strong>;
+            }
+            return <span key={i}>{part}</span>;
+        });
+    };
+
     return (
         <>
             <Card className={cn(
@@ -392,7 +403,7 @@ export function PrayerCard({
                         ) : (
                             /* Logged-in view: full content with expand/collapse */
                             <>
-                                <p className="text-slate-200 leading-relaxed">{displayContent}</p>
+                                <p className="text-slate-200 leading-relaxed">{renderContent(displayContent)}</p>
                                 {isLongContent && (
                                     <button
                                         onClick={() => setIsExpanded(!isExpanded)}

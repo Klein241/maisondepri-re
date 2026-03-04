@@ -84,10 +84,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
     // Form State
     const [newContent, setNewContent] = useState('');
+    const [prayerSubject, setPrayerSubject] = useState('');
     const [newCategory, setNewCategory] = useState<PrayerCategory>('other');
     const [newPhotos, setNewPhotos] = useState<string[]>([]);
     const [isAnonymous, setIsAnonymous] = useState(false);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [pendingFriendCount, setPendingFriendCount] = useState(0);
 
     // ===== CUSTOM HOOKS =====
     const userInfo = user ? { id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar } : null;
@@ -196,6 +198,25 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         const fullScreenViews: ViewState[] = ['conversation', 'group-detail', 'group-call', 'livestream', 'global-live'];
         onHideNav?.(fullScreenViews.includes(viewState));
     }, [viewState, onHideNav]);
+
+    // Load pending friend request count
+    useEffect(() => {
+        if (!user) { setPendingFriendCount(0); return; }
+        const loadCount = async () => {
+            const { count } = await supabase
+                .from('friendships')
+                .select('*', { count: 'exact', head: true })
+                .eq('receiver_id', user.id)
+                .eq('status', 'pending');
+            setPendingFriendCount(count || 0);
+        };
+        loadCount();
+        const iv = setInterval(loadCount, 30000);
+        const chan = supabase.channel('friend-req-' + user.id)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'friendships', filter: `receiver_id=eq.${user.id}` }, loadCount)
+            .subscribe();
+        return () => { clearInterval(iv); chan.unsubscribe(); };
+    }, [user]);
 
     // Handle deep-linking from notifications
     useEffect(() => {
@@ -391,13 +412,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     }, [viewState, selectedConversation?.id]);
 
     const handlePublish = async () => {
-        if (!newContent.trim() || !user) return;
+        if ((!newContent.trim() && !prayerSubject.trim()) || !user) return;
 
         setIsSubmitting(true);
         try {
             if (dialogType === 'prayer') {
                 // addPrayerRequest now returns the new prayer ID directly
-                const newPrayerId = await addPrayerRequest(newContent, isAnonymous, newCategory, newPhotos);
+                const fullContent = prayerSubject
+                    ? `**${prayerSubject}**\n\n${newContent}`
+                    : newContent;
+                const newPrayerId = await addPrayerRequest(fullContent, isAnonymous, newCategory, newPhotos);
 
                 // If createGroupWithPrayer is toggled, also create a group
                 if (createGroupWithPrayer && newPrayerId) {
@@ -463,6 +487,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
             // Reset form
             setNewContent('');
+            setPrayerSubject('');
             setNewPhotos([]);
             setNewCategory('other');
             setIsAnonymous(false);
@@ -581,18 +606,23 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 Se connecter
                                             </Button>
                                         )}
-                                        <NotificationBell />
+                                        <NotificationBell friendRequestCount={pendingFriendCount} />
                                     </div>
                                 </div>
                                 {/* Row 1: Social actions - 2 boutons pour le mobile */}
                                 <div className="flex gap-2 pb-1.5 -mx-1 px-1">
                                     <Button
                                         size="sm"
-                                        className="flex-1 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold"
+                                        className="flex-1 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative"
                                         onClick={() => requireAuth(() => setViewState('friends'))}
                                     >
                                         <UserPlus className="h-3.5 w-3.5" />
                                         Retrouver vos amis
+                                        {pendingFriendCount > 0 && (
+                                            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold min-w-[18px] min-h-[18px] rounded-full flex items-center justify-center shadow-lg animate-pulse">
+                                                {pendingFriendCount}
+                                            </span>
+                                        )}
                                     </Button>
                                     <Button
                                         size="sm"
@@ -614,7 +644,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     <Button
                                         size="sm"
                                         className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative overflow-hidden animate-pulse shadow-lg shadow-amber-500/30"
-                                        onClick={() => { setBibleViewTarget('games'); setGlobalActiveTab('bible'); }}
+                                        onClick={() => setGlobalActiveTab('games' as any)}
                                     >
                                         <Gamepad2 className="h-3.5 w-3.5" />
                                         Jeux Bibliques
@@ -891,10 +921,26 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         </div>
                                     )}
 
+                                    {/* Subject (Prayer only) */}
+                                    {dialogType === 'prayer' && (
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                                Objet de la requête
+                                            </label>
+                                            <Input
+                                                placeholder="Ex: Guérison, Emploi, Famille..."
+                                                value={prayerSubject}
+                                                onChange={(e) => setPrayerSubject(e.target.value)}
+                                                className="bg-white/5 border-white/10 rounded-xl font-bold text-white placeholder:text-slate-500"
+                                                maxLength={100}
+                                            />
+                                        </div>
+                                    )}
+
                                     {/* Content */}
                                     <div className="space-y-3">
                                         <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                                            {dialogType === 'prayer' ? 'Votre demande' : 'Votre témoignage'}
+                                            {dialogType === 'prayer' ? 'Détails de votre demande' : 'Votre témoignage'}
                                         </label>
                                         <Textarea
                                             placeholder={dialogType === 'prayer'
