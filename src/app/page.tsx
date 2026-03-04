@@ -78,17 +78,31 @@ export default function Home() {
     setHideNav(hide);
   }, []);
 
-  // Force community view on load (Feed first) + handle ?live=1 param
+  // Force community view on load + handle URL deep-link params
   useEffect(() => {
     setActiveTab('community');
 
-    // Check for ?live=1 URL parameter for shareable live link
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      if (params.get('live') === '1') {
-        // Set pending navigation to auto-open global-live view
-        setPendingNavigation({ communityTab: 'prayers', viewState: 'global-live' });
+
+      // Deep-link from notification click (via service worker)
+      const navType = params.get('nav');
+      const navId = params.get('id');
+
+      if (navType && navId) {
+        if (navType === 'conversation') {
+          setPendingNavigation({ communityTab: 'chat', viewState: 'conversation', conversationId: navId });
+        } else if (navType === 'group') {
+          setPendingNavigation({ communityTab: 'chat', viewState: 'group-detail', groupId: navId });
+        } else if (navType === 'prayer') {
+          setPendingNavigation({ communityTab: 'prayers', prayerId: navId });
+        }
         // Clean URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+      // Legacy: ?live=1
+      else if (params.get('live') === '1') {
+        setPendingNavigation({ communityTab: 'prayers', viewState: 'global-live' });
         window.history.replaceState({}, '', window.location.pathname);
       }
     }
