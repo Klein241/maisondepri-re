@@ -386,12 +386,12 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'menu') {
         return (
-            <div className="flex flex-col h-[100dvh] bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto">
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0">
+            <div className="flex flex-col min-h-[100dvh] bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
                     {onBack && <button onClick={onBack} className="text-slate-400 hover:text-white text-xl">←</button>}
-                    <h1 className="text-lg font-black">🏰 Labyrinthes de la Foi</h1>
+                    <h1 className="text-base sm:text-lg font-black">🏰 Labyrinthes de la Foi</h1>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 pb-24">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 pb-28">
                     {GAMES.map(g => {
                         const sv = loadGame(g.id);
                         return (
@@ -421,23 +421,23 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'character' && game) {
         return (
-            <div className="flex flex-col h-[100dvh] bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto">
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0">
+            <div className="flex flex-col min-h-[100dvh] bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
+                <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
                     <button onClick={() => setPhase('menu')} className="text-slate-400 hover:text-white text-xl">←</button>
                     <h2 className="font-bold text-sm">{game.emoji} {game.name}</h2>
                 </div>
-                <div className="p-4 space-y-4 pb-24">
-                    <h3 className="text-center text-sm font-semibold text-slate-300">Choisissez votre héros</h3>
-                    <div className="grid grid-cols-3 gap-2">
+                <div className="p-3 sm:p-4 space-y-4 pb-28">
+                    <h3 className="text-center text-sm font-semibold text-slate-300">Choisissez votre personnage</h3>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 sm:gap-3">
                         {CHARS.map(c => (
                             <motion.button key={c.id} whileTap={{ scale: 0.95 }}
                                 onClick={() => setChar(c)}
                                 className={`p-3 rounded-2xl border-2 text-center transition-all ${char.id === c.id ? 'border-indigo-500 bg-indigo-500/20' : 'border-white/10 bg-white/5'
                                     }`}
                             >
-                                <span className="text-3xl block mb-1">{c.emoji}</span>
-                                <p className="font-bold text-xs">{c.name}</p>
-                                <p className="text-[9px] text-slate-400">{c.desc}</p>
+                                <span className="text-4xl sm:text-3xl block mb-1">{c.emoji}</span>
+                                <p className="font-bold text-xs truncate">{c.name}</p>
+                                <p className="text-[9px] text-slate-400 line-clamp-1">{c.desc}</p>
                             </motion.button>
                         ))}
                     </div>

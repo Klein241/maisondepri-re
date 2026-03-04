@@ -1,137 +1,154 @@
-# 🔬 ANALYSE CHIRURGICALE — Maison de Prière v1.4
-*Date: 4 mars 2026*
+# 📋 Analyse des Fonctionnalités — Maison de Prière V1.4
+
+## État réel du code (analyse chirurgicale du 4 mars 2026)
+
+### Fichier principal: `whatsapp-chat.tsx` (5138 lignes, 270 Ko)
 
 ---
 
-## 🔴 FONCTIONNALITÉS DYSFONCTIONNELLES (BUGS)
+## ✅ FONCTIONNALITÉS DÉJÀ IMPLÉMENTÉES
 
-### 1. ❌ Jeu Labyrinthe 3D/2D — NE FONCTIONNE PAS
-- **Fichier**: `src/components/games/labyrinth-game.tsx`
-- **Bug**: Le jeu utilise `h-full` mais le conteneur parent dans `games-view.tsx` n'a pas de hauteur fixe → le canvas a 0px de hauteur sur mobile
-- **Bug 2**: La boucle de rendu utilise `t` (timestamp RAF) = OK mais le D-Pad tactile perd le focus car `onTouchEnd` ne fonctionne pas correctement quand le doigt glisse hors du bouton
-- **Fix requis**: Utiliser `h-[100dvh]` + `fixed inset-0` pour le mode jeu, et gérer correctement les événements touch
+### 1. Système d'appels WebRTC
+- **Fichier**: `webrtc-call.tsx` (845 lignes) — **IMPLÉMENTÉ ✅**
+  - Appel audio P2P via WebRTC
+  - Appel vidéo P2P via WebRTC
+  - Serveurs STUN (Google) + TURN (Metered.ca) configurés
+  - Signaling via Supabase broadcast
+  - Timer de durée d'appel
+  - Mute audio / Désactiver vidéo
+  - UI complète avec avatar, statut de connexion
+  - **Intégré** dans `whatsapp-chat.tsx` (ligne 5086: `<WebRTCCall>`)
 
-### 2. ⚠️ Bouton "Jeux Bibliques" dans Communauté pointe vers Bible view
-- **Fichier**: `community-view.tsx:617`
-- **Code**: `setBibleViewTarget('games'); setGlobalActiveTab('bible');`
-- **Problème**: Redirige vers l'onglet Bible au lieu du nouvel onglet Games dédié
-- **Fix**: Changer pour `setGlobalActiveTab('games')`
+### 2. Système d'appels entrants
+- **Fichier**: `call-system.tsx` (412 lignes) — **IMPLÉMENTÉ ✅**
+  - `IncomingCallOverlay` : écran d'appel entrant avec sonnerie
+  - `useCallListener` : hook global pour détecter les appels entrants
+  - `initiateCall` : fonction pour démarrer un appel
+  - `DMCallButtons` : boutons audio/vidéo pour les conversations privées
+  - Signaling via Supabase broadcast channels
 
-### 3. ⚠️ Badge demandes d'amitié — ABSENT de la page Communauté
-- **Fichier**: `community-view.tsx:589-596`
-- **Problème**: Le bouton "Retrouver vos amis" n'a AUCUN badge indiquant les demandes en attente. L'utilisateur ne sait pas qu'il a reçu des demandes.
-- **Le composant FriendSystem** (`friend-system.tsx`) a `loadReceivedRequests()` mais aucun compteur n'est exposé à la vue parent.
+### 3. Salon vocal Discord-style
+- **Fichier**: `voice-salon.tsx` (741 lignes) — **IMPLÉMENTÉ ✅**
+  - Salon vocal de groupe avec WebRTC
+  - Voice Activity Detection (VAD) pour indicateur "parle"
+  - Push-To-Talk et mode continu
+  - STUN/TURN configurés
+  - **Intégré** dans `whatsapp-chat.tsx` (ligne 5123-5130: `<VoiceSalon>`)
 
-### 4. ⚠️ Formulaire prière — Pas de champ "Objet"
-- **Fichier**: `community-view.tsx:894-906`
-- **Problème**: Le formulaire n'a que Catégorie + Textarea. Il manque un champ "Objet de la requête" qui devrait s'afficher en gras dans le feed.
-- **Impact**: Les demandes n'ont pas de titre visible → difficile à scanner dans le feed
+### 4. Outils de groupe complets
+- **Fichier**: `group-tools.tsx` (1370 lignes) — **IMPLÉMENTÉ ✅**
+  - `GroupPollWidget` : Sondages avec votes, options multiples, anonymat
+  - `CollectivePrayerCounter` : Compteur de prière collectif temps réel
+  - `GroupEventsWidget` : Événements/calendrier de groupe
+  - `GroupToolsPanel` : Panel avec 5+ outils (sondages, annonces, versets, programmes, événements)
+  - **Intégré** dans `whatsapp-chat.tsx` (ligne 4265: `<GroupToolsPanel>`)
 
-### 5. ⚠️ Notifications Push — Système basique, pas Facebook-style
-- **Fichier**: `cloudflare-worker/src/index.js`
-- **État actuel**: Le worker envoie des notifs simples (titre + message). Il n'y a pas de:
-  - Groupement de notifications ("3 personnes ont prié pour vous")
-  - Actions interactives dans la notif
-  - Son personnalisé
-  - Badges compteurs sur l'icône app
-  - Notification en temps réel in-app (seulement via polling)
+### 5. Épinglage de sujets de prière
+- Dans `whatsapp-chat.tsx` — **IMPLÉMENTÉ ✅**
+  - `pinnedPrayer` : État pour sujet épinglé (ligne 279)
+  - `setPinnedPrayerSubject` : Fonction pour épingler (ligne 4787)
+  - **DÉ-ÉPINGLAGE IMPLÉMENTÉ** : `unpinNotificationForAll` (ligne 1866)
+  - Broadcast de dé-épinglage à tous les membres
+  - Bouton "Admin unpin-for-all" (ligne 3662)
 
----
+### 6. Réponse à un message (Reply)
+- Dans `whatsapp-chat.tsx` — **IMPLÉMENTÉ ✅**
+  - `replyTo` state (ligne 284)
+  - Citation du message original dans le nouveau message (ligne 1064-1068)
+  - UI de réponse avec aperçu et bouton ✕ (lignes 4074-4085)
+  - Bouton "Répondre" sous chaque message (ligne 3963-3977)
 
-## 🟡 COMPOSANTS DÉVELOPPÉS MAIS NON INTÉGRÉS/PARTIELS
+### 7. Partage de fichiers (📎)
+- Dans `whatsapp-chat.tsx` — **IMPLÉMENTÉ ✅**
+  - Import `Paperclip` (ligne 7)
+  - Bouton 📎 dans la barre d'envoi (ligne 4162)
+  - Champs `image_url`, `file_url` dans le type Message (lignes 85-86)
+  - Rendu des images inline (lignes 3876-3882)
+  - Rendu des fichiers avec lien téléchargement (lignes 3895-3897)
+  - Upload vers Supabase Storage + envoi URL (lignes 4029-4041)
 
-### 6. 📦 `quiz-duel-game.tsx` — Existant mais accès limité
-- Le composant existe mais n'est pas dans `games-view.tsx` comme option directe (accessible via MultiplayerManager uniquement)
+### 8. Notifications épinglées flottantes (style Messenger)
+- Dans `whatsapp-chat.tsx` — **IMPLÉMENTÉ ✅**
+  - `pinnedNotifications` state (ligne 302)
+  - `addPinnedNotification` (ligne 1811) — ajoute icône flottante avec badge
+  - `loadPinnedNotifications` (ligne 1794) — charge depuis localStorage
+  - Rendu des icônes avec compteur (ligne 3578)
+  - Broadcast temps réel des notifications (ligne 1972)
+  - Admin peut dé-épingler pour tous (ligne 1866)
 
-### 7. 📦 `multiplayer-lobby.tsx` — Existant, usage limité
-- Lobby multijoueur construit mais la connexion temps réel dépend de Supabase Realtime → non testé offline
+### 9. Historique des appels
+- **Fichier**: `call-history.tsx` — **EXISTE** (intégré ligne 27)
 
-### 8. 📦 `call-system.tsx` + `webrtc-call.tsx` — Appels WebRTC
-- Système d'appels vidéo/audio construit
-- Dépend de signaling Supabase → pas de STUN/TURN configuré → ne fonctionne pas en pratique entre réseaux différents
+### 10. Calendrier d'événements
+- **Fichier**: `event-calendar.tsx` — **EXISTE** (intégré ligne 26)
 
-### 9. 📦 `group-call-manager.tsx` — Appels de groupe
-- Construit mais non testé en conditions réelles
-- Dépend de WebRTC multi-peer → complexe sans serveur média
+### 11. Deep-link notifications → conversation
+- **IMPLÉMENTÉ ✅** (cette session)
+  - `notifyDirectMessage` avec `conversationId`
+  - `notification-bell.tsx` → `handleNotifClick` → `setPendingNavigation`
+  - `page.tsx` → `?nav=conversation&id=xxx` parsing
+  - `community-view.tsx` → `pendingNavigation` → ouvre conversation
 
-### 10. 📦 `livestream-salon.tsx` — Livestream
-- Bouton LiveStream dans le header mais dépend de `appSettings['live_stream_active']`
-- L'admin doit activer manuellement
+### 12. Messages vocaux
+- **Fichier**: `voice-message-player.tsx` + `use-voice-recording.ts` — **IMPLÉMENTÉ ✅**
 
-### 11. 📦 `voice-salon.tsx` — Salon vocal
-- Salon vocal style Clubhouse construit
-- Dépend de WebRTC → même problème que les appels
-
-### 12. 📦 `achievement-badge.tsx` — Badges de réussite
-- Système d'achievements dans le store
-- Le composant existe MAIS n'est affiché nulle part dans le profil
-
-### 13. 📦 `event-calendar.tsx` — Calendrier d'événements
-- Le bouton EventCalendarButton est dans community-view (`<EventCalendarButton />` ligne 613)
-- Le composant charge les événements depuis Supabase
-- Fonctionnel MAIS pas de page dédiée
-
-### 14. 📦 `enhanced-prayer-card.tsx` — Carte de prière enrichie
-- Existe mais `prayer-card.tsx` est utilisé à la place dans community-view
-- Fonctionnalités avancées non utilisées
-
-### 15. 📦 `game-progression.ts` — Système de progression
-- Système de niveaux et XP construit dans lib
-- NON connecté à l'interface → pas de barre de progression visible
-
-### 16. 📦 4 fichiers Bible data — Redondance
-- `local-bible-data.ts`, `local-bible-games.ts`, `local-bible-service.ts`, `french-bible-data.ts`
-- Multiples sources de données Bible → confusion possible
-
-### 17. 📦 `admin/games-manager.tsx` — Admin des jeux
-- Panel admin pour gérer les jeux construit
-- Accessible via /admin/content
-
----
-
-## 🟢 FONCTIONNALITÉS QUI MARCHENT
-
-| Feature | Fichier | Status |
-|---------|---------|--------|
-| Auth (login/signup) | auth-view.tsx + store.ts | ✅ |
-| Feed prières | community-view.tsx | ✅ |
-| Feed témoignages | community-view.tsx | ✅ |
-| Groupes de prière | prayer-group-manager.tsx | ✅ |
-| Chat WhatsApp-style | whatsapp-chat.tsx | ✅ |
-| Bible (lecture) | bible-view.tsx | ✅ |
-| Quiz biblique solo | bible-quiz.tsx | ✅ |
-| Memory biblique | bible-memory-game.tsx | ✅ |
-| Mots cachés | word-search-game.tsx | ✅ |
-| Chronologie | chrono-game.tsx | ✅ |
-| Qui suis-je | who-am-i-game.tsx | ✅ |
-| Profil | profile-view.tsx | ✅ |
-| Journal | journal-view.tsx | ✅ |
-| Programme 40 jours | program-view.tsx | ✅ |
-| Notification bell | notification-bell.tsx | ✅ |
-| PWA install | pwa-manager.tsx | ✅ |
-| Push notifications (basique) | push-notification-manager.tsx | ✅ |
-| Friend system UI | friend-system.tsx | ✅ |
-| Amis: messages privés | whatsapp-chat.tsx | ✅ |
-| Bottom nav (5 tabs) | bottom-nav.tsx | ✅ |
-| Page Games dédiée | games-view.tsx | ✅ |
-| Admin panel | /admin/* | ✅ |
+### 13. Recherche de messages
+- Dans `whatsapp-chat.tsx` — **IMPLÉMENTÉ ✅** (Search dans le header)
 
 ---
 
-## 📋 PLAN D'ACTION PRIORITAIRE
+## ⚠️ PROBLÈMES IDENTIFIÉS (Bugs, pas fonctionnalités manquantes)
 
-### Priorité 1 — Fix immédiat
-1. ✅ Corriger le labyrinthe 2D (hauteur + touch controls)
-2. ✅ Ajouter champ "Objet" aux demandes de prière
-3. ✅ Badge demandes d'amitié dans bouton Communauté
-4. ✅ Rediriger bouton "Jeux Bibliques" vers l'onglet Games
+### 1. Header de groupe — pas assez responsive
+- **Statut**: Le header existe mais peut être caché par le conteneur de chat
+- **Fix**: Rendre le header `sticky top-0` et le chat `flex-1 overflow-y-auto`
 
-### Priorité 2 — Notifications Facebook-style
-5. Configurer Cloudflare Worker pour notifications groupées
-6. Actions dans les notifications (Prier, Répondre)
-7. Badge compteur sur icône app
+### 2. Boutons trop petits (outils, audio, vidéo)
+- **Statut**: Les boutons existent mais sont `h-7 w-7` ou `h-8 w-8`
+- **Fix**: Agrandir à `h-10 w-10` avec icônes `h-5 w-5`
 
-### Priorité 3 — Build APK
-8. Configurer Gradle avec bonne version JDK
-9. Générer debug APK
-10. Signer pour Play Store
+### 3. Dé-épinglage de sujet de prière
+- **Statut**: Le dé-épinglage des **notifications** fonctionne ✅
+- **Bug possible**: Le dé-épinglage du **sujet de prière** (bandeau vert) ne fonctionne pas
+- **Fix**: Ajouter un bouton ✕ sur le bandeau de prière épinglé
+
+### 4. Bouton "Répondre à ce message" pas assez visible
+- **Statut**: Le bouton existe mais est une petite icône 💬
+- **Fix**: Remplacer par un bouton textuel "Répondre" plus visible
+
+### 5. Vitesse d'ouverture des groupes
+- **Statut**: `openGroup()` fait des requêtes séquentielles
+- **Fix**: Utiliser `Promise.all()` et pré-charger depuis le cache
+
+### 6. Google Meet au lieu de l'appel vidéo de groupe
+- **Statut**: L'appel vidéo de groupe utilise WebRTC natif
+- **Fix**: Remplacer par un lien Google Meet via l'API Calendar
+- **Prérequis**: Clé API Google du user
+
+### 7. Stockage local type WhatsApp
+- **Statut**: IndexedDB PAS implémenté, tout va dans Supabase
+- **Impact**: Futur, quand le nombre d'utilisateurs augmentera
+
+---
+
+## 📊 RÉSUMÉ
+
+| Catégorie | Implémenté | Bugs/Améliorations |
+|-----------|------------|-------------------|
+| WebRTC Audio/Vidéo P2P | ✅ | — |
+| Salon vocal Discord | ✅ | — |
+| Outils de groupe (5+) | ✅ | Boutons trop petits |
+| Sondages | ✅ | — |
+| Compteur prière collectif | ✅ | — |
+| Événements/Calendrier | ✅ | — |
+| Épinglage | ✅ | Dé-épinglage sujet à vérifier |
+| Réponse messages | ✅ | Bouton pas assez visible |
+| Partage photos/fichiers | ✅ | — |
+| Notifications flottantes | ✅ | — |
+| Deep-link notifs | ✅ | Fait cette session |
+| Messages vocaux | ✅ | — |
+| Header responsive | ⚠️ | À fixer |
+| Vitesse ouverture groupe | ⚠️ | À optimiser |
+| Google Meet API | ❌ | À implémenter |
+| Stockage IndexedDB local | ❌ | Long terme |
+| Multi-appel (4 pers.) | ❌ | Architecture complexe |
