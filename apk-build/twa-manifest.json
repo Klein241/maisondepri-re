@@ -1,0 +1,57 @@
+{
+    "packageId": "com.maisondepriere.app",
+    "host": "maisondepriere.netlify.app",
+    "name": "Maison de Prière",
+    "launcherName": "Maison Prière",
+    "display": "standalone",
+    "themeColor": "#0F172A",
+    "navigationColor": "#0B0E14",
+    "navigationColorDark": "#0B0E14",
+    "navigationDividerColor": "#0B0E14",
+    "navigationDividerColorDark": "#0B0E14",
+    "backgroundColor": "#0F172A",
+    "enableNotifications": true,
+    "startUrl": "/",
+    "iconUrl": "https://maisondepriere.netlify.app/icon-512.png",
+    "maskableIconUrl": "https://maisondepriere.netlify.app/icon-512.png",
+    "monochromeIconUrl": "https://maisondepriere.netlify.app/icon-512.png",
+    "shortcuts": [
+        {
+            "name": "Messages",
+            "shortName": "Messages",
+            "url": "/?tab=community",
+            "chosenIconUrl": "https://maisondepriere.netlify.app/icon-512.png"
+        },
+        {
+            "name": "Jeux Bibliques",
+            "shortName": "Jeux",
+            "url": "/?tab=games",
+            "chosenIconUrl": "https://maisondepriere.netlify.app/icon-512.png"
+        }
+    ],
+    "signing": {
+        "keyPath": "./maison-priere.keystore",
+        "alias": "maison-priere"
+    },
+    "appVersionName": "1.0.0",
+    "appVersionCode": 1,
+    "signingMode": "new",
+    "isChromeOSOnly": false,
+    "isMetaQuest": false,
+    "fullScopeUrl": "https://maisondepriere.netlify.app/",
+    "minSdkVersion": 19,
+    "orientation": "any",
+    "fingerprints": [],
+    "additionalTrustedOrigins": [],
+    "retainedBundles": [],
+    "playBilling": {
+        "enabled": false
+    },
+    "alphaDependencies": {
+        "enabled": false
+    },
+    "enableSiteSettingsShortcut": true,
+    "fallbackType": "customtabs",
+    "features": {},
+    "generatorApp": "bubblewrap-cli"
+}

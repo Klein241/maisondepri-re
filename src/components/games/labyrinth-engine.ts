@@ -1,13 +1,13 @@
 'use client';
 
 /**
- * LABYRINTHE DE LA FOI — Moteur 3D Raycasting
- * ═══════════════════════════════════════════════
- * Rendu pseudo-3D style Wolfenstein 3D via Canvas 2D
- * Ultra léger (~30KB), fonctionne 100% offline, 60fps
+ * LABYRINTHE DE LA FOI — Moteur 2D Top-Down
+ * ═══════════════════════════════════════════
+ * Vue du dessus, personnage visible, responsive
+ * Ultra-léger, 100% offline, Canvas 2D
  */
 
-// ── Types ────────────────────────────────────────────────────
+// ── Types ────────────────────────────────────────
 export interface GameConfig {
     id: string;
     name: string;
@@ -17,360 +17,258 @@ export interface GameConfig {
     maxLives: number;
     liveIcon: string;
     rewardName: string;
-    gadgets: { name: string; emoji: string; description: string; usesPerLevel: number }[];
-    wallColor: [number, number, number];
-    floorColor: [number, number, number];
-    skyColor: [number, number, number];
-    fogColor?: [number, number, number];
-    fogDistance?: number;
+    gadgets: { name: string; emoji: string; desc: string; uses: number }[];
+    colors: {
+        wall: string;
+        floor: string;
+        bg: string;
+        accent: string;
+        wallShadow: string;
+    };
+    unlocks: { level: number; desc: string }[];
 }
 
 export interface PlayerState {
-    x: number;
-    y: number;
-    angle: number;
-    lives: number;
-    score: number;
-    level: number;
+    x: number; y: number;
+    targetX: number; targetY: number;
+    dir: 'up' | 'down' | 'left' | 'right';
+    lives: number; score: number; level: number;
     gadgets: Record<string, number>;
-    badges: string[];
     speed: number;
-    boosted: boolean;
-    boostEnd: number;
+    shieldEnd: number;
+    isMoving: boolean;
+    animFrame: number;
 }
 
 export interface MazeCell {
     wall: boolean;
-    type?: 'start' | 'exit' | 'question' | 'gadget' | 'trap' | 'altar' | 'enemy';
+    type?: 'start' | 'exit' | 'question' | 'gadget' | 'trap' | 'altar' | 'coin';
     questionId?: number;
     collected?: boolean;
 }
 
-// ── Bible Questions for all games ────────────────────────────
-export const BIBLE_QUESTIONS = [
-    { q: "Qui a construit l'arche ?", answers: ["Noé", "Abraham", "Moïse", "David"], correct: 0 },
-    { q: "Combien de jours Dieu a-t-il créé le monde ?", answers: ["5", "6", "7", "8"], correct: 1 },
-    { q: "Qui a tué Goliath ?", answers: ["Saül", "David", "Samuel", "Jonathan"], correct: 1 },
-    { q: "Quel est le premier livre de la Bible ?", answers: ["Exode", "Lévitique", "Genèse", "Nombres"], correct: 2 },
-    { q: "Qui a été avalé par un grand poisson ?", answers: ["Jonas", "Élie", "Amos", "Osée"], correct: 0 },
-    { q: "Combien d'apôtres Jésus a-t-il choisis ?", answers: ["7", "10", "12", "14"], correct: 2 },
-    { q: "Qui a trahi Jésus ?", answers: ["Pierre", "Judas", "Thomas", "André"], correct: 1 },
-    { q: "Dans quelle ville Jésus est-il né ?", answers: ["Nazareth", "Jérusalem", "Bethléem", "Capharnaüm"], correct: 2 },
-    { q: "Qui a reçu les Dix Commandements ?", answers: ["Abraham", "Moïse", "Josué", "Aaron"], correct: 1 },
-    { q: "Quel fleuve Josué a-t-il traversé ?", answers: ["Nil", "Euphrate", "Jourdain", "Tigre"], correct: 2 },
-    { q: "Qui a été jeté dans la fosse aux lions ?", answers: ["Daniel", "Ézéchiel", "Jérémie", "Isaïe"], correct: 0 },
-    { q: "Combien de pierres David a-t-il prises ?", answers: ["3", "5", "7", "10"], correct: 1 },
-    { q: "Qui a marché sur l'eau ?", answers: ["Jean", "Pierre", "Jacques", "André"], correct: 1 },
-    { q: "Quel est le plus court verset de la Bible ?", answers: ["Jean 3:16", "Jean 11:35", "Ps 117:1", "Gn 1:1"], correct: 1 },
-    { q: "Qui a écrit la majorité des Psaumes ?", answers: ["Salomon", "David", "Moïse", "Asaph"], correct: 1 },
-    { q: "Quel fruit était interdit dans le jardin d'Éden ?", answers: ["Pomme", "Figue", "Non précisé", "Raisin"], correct: 2 },
-    { q: "Combien de livres dans la Bible ?", answers: ["55", "66", "72", "73"], correct: 1 },
-    { q: "Qui a été le premier roi d'Israël ?", answers: ["David", "Saül", "Salomon", "Samuel"], correct: 1 },
-    { q: "Quel prophète a été enlevé au ciel dans un char de feu ?", answers: ["Élie", "Élisée", "Énoch", "Moïse"], correct: 0 },
-    { q: "Quelle est la dernière parole de Jésus sur la croix ?", answers: ["Pardonne-leur", "J'ai soif", "Tout est accompli", "Père, entre tes mains"], correct: 2 },
-    { q: "Qui a nié Jésus trois fois ?", answers: ["Judas", "Thomas", "Pierre", "Jean"], correct: 2 },
-    { q: "Combien de plaies d'Égypte y a-t-il eu ?", answers: ["7", "9", "10", "12"], correct: 2 },
-    { q: "Qui est le père de la foi ?", answers: ["Noé", "Abraham", "Moïse", "Adam"], correct: 1 },
-    { q: "Quel apôtre a écrit l'Apocalypse ?", answers: ["Paul", "Pierre", "Jean", "Matthieu"], correct: 2 },
-    { q: "Qui a reconstruit les murs de Jérusalem ?", answers: ["Esdras", "Néhémie", "Zorobabel", "Aggée"], correct: 1 },
-    { q: "Quel animal a parlé dans la Bible ?", answers: ["Serpent", "Colombe", "Ânesse", "Les deux: A et C"], correct: 3 },
-    { q: "Combien de jours Jésus a-t-il jeûné ?", answers: ["7", "21", "30", "40"], correct: 3 },
-    { q: "Qui a été transformée en statue de sel ?", answers: ["Sara", "La femme de Lot", "Rachel", "Rébecca"], correct: 1 },
-    { q: "Quel est le plus long chapitre de la Bible ?", answers: ["Psaume 119", "Psaume 136", "Isaïe 53", "Genèse 1"], correct: 0 },
-    { q: "Qui a été vendu par ses frères ?", answers: ["Benjamin", "Joseph", "Ruben", "Juda"], correct: 1 },
+// ── Bible Questions (30) ─────────────────────────
+export const QUESTIONS = [
+    { q: "Qui a construit l'arche ?", a: ["Noé", "Abraham", "Moïse", "David"], c: 0 },
+    { q: "Combien de jours pour la création ?", a: ["5", "6", "7", "8"], c: 1 },
+    { q: "Qui a tué Goliath ?", a: ["Saül", "David", "Samuel", "Jonathan"], c: 1 },
+    { q: "Premier livre de la Bible ?", a: ["Exode", "Lévitique", "Genèse", "Nombres"], c: 2 },
+    { q: "Avalé par un grand poisson ?", a: ["Jonas", "Élie", "Amos", "Osée"], c: 0 },
+    { q: "Combien d'apôtres ?", a: ["7", "10", "12", "14"], c: 2 },
+    { q: "Qui a trahi Jésus ?", a: ["Pierre", "Judas", "Thomas", "André"], c: 1 },
+    { q: "Ville de naissance de Jésus ?", a: ["Nazareth", "Jérusalem", "Bethléem", "Capharnaüm"], c: 2 },
+    { q: "Qui reçut les 10 Commandements ?", a: ["Abraham", "Moïse", "Josué", "Aaron"], c: 1 },
+    { q: "Fleuve traversé par Josué ?", a: ["Nil", "Euphrate", "Jourdain", "Tigre"], c: 2 },
+    { q: "Jeté dans la fosse aux lions ?", a: ["Daniel", "Ézéchiel", "Jérémie", "Isaïe"], c: 0 },
+    { q: "Pierres prises par David ?", a: ["3", "5", "7", "10"], c: 1 },
+    { q: "Qui a marché sur l'eau ?", a: ["Jean", "Pierre", "Jacques", "André"], c: 1 },
+    { q: "Plus court verset ?", a: ["Jean 3:16", "Jean 11:35", "Ps 117:1", "Gn 1:1"], c: 1 },
+    { q: "Auteur principal des Psaumes ?", a: ["Salomon", "David", "Moïse", "Asaph"], c: 1 },
+    { q: "Livres dans la Bible ?", a: ["55", "66", "72", "73"], c: 1 },
+    { q: "Premier roi d'Israël ?", a: ["David", "Saül", "Salomon", "Samuel"], c: 1 },
+    { q: "Enlevé au ciel dans un char de feu ?", a: ["Élie", "Élisée", "Énoch", "Moïse"], c: 0 },
+    { q: "Dernière parole de Jésus ?", a: ["Pardonne-leur", "J'ai soif", "Tout est accompli", "Père..."], c: 2 },
+    { q: "Qui a nié Jésus 3 fois ?", a: ["Judas", "Thomas", "Pierre", "Jean"], c: 2 },
+    { q: "Combien de plaies d'Égypte ?", a: ["7", "9", "10", "12"], c: 2 },
+    { q: "Père de la foi ?", a: ["Noé", "Abraham", "Moïse", "Adam"], c: 1 },
+    { q: "Auteur de l'Apocalypse ?", a: ["Paul", "Pierre", "Jean", "Matthieu"], c: 2 },
+    { q: "Reconstruit les murs de Jérusalem ?", a: ["Esdras", "Néhémie", "Zorobabel", "Aggée"], c: 1 },
+    { q: "Jours de jeûne de Jésus ?", a: ["7", "21", "30", "40"], c: 3 },
+    { q: "Transformée en statue de sel ?", a: ["Sara", "Femme de Lot", "Rachel", "Rébecca"], c: 1 },
+    { q: "Plus long chapitre ?", a: ["Ps 119", "Ps 136", "Is 53", "Gn 1"], c: 0 },
+    { q: "Vendu par ses frères ?", a: ["Benjamin", "Joseph", "Ruben", "Juda"], c: 1 },
+    { q: "Fruit interdit au jardin ?", a: ["Pomme", "Figue", "Non précisé", "Raisin"], c: 2 },
+    { q: "Qui a écrit aux Romains ?", a: ["Pierre", "Paul", "Jean", "Jacques"], c: 1 },
 ];
 
-// ── 10 Game Configurations ───────────────────────────────────
-export const GAME_CONFIGS: GameConfig[] = [
+// ── 10 Game Configs ──────────────────────────────
+export const GAMES: GameConfig[] = [
     {
-        id: 'labyrinth-faith', name: 'Le Labyrinthe de la Foi', emoji: '🏜️',
-        description: 'Traversez le désert spirituel et trouvez la Porte Étroite',
+        id: 'faith', name: 'Le Labyrinthe de la Foi', emoji: '🏜️',
+        description: 'Traversez le désert et trouvez la Porte Étroite',
         levels: 10, maxLives: 3, liveIcon: '❤️', rewardName: 'Points de Foi',
         gadgets: [
-            { name: 'Boussole Spirituelle', emoji: '🧭', description: 'Indique la bonne direction', usesPerLevel: 1 },
-            { name: 'Parchemin de Révélation', emoji: '📜', description: 'Annule une mauvaise réponse', usesPerLevel: 1 },
+            { name: 'Boussole', emoji: '🧭', desc: 'Montre la sortie 3s', uses: 1 },
+            { name: 'Parchemin', emoji: '📜', desc: 'Annule 1 erreur', uses: 1 },
         ],
-        wallColor: [180, 140, 80], floorColor: [210, 180, 120], skyColor: [135, 180, 220],
+        colors: { wall: '#8B7355', floor: '#D4C5A9', bg: '#F5E6C8', accent: '#DAA520', wallShadow: '#6B5B3D' },
+        unlocks: [{ level: 5, desc: 'Vision du plan' }, { level: 10, desc: 'Porte Étroite dorée' }],
     },
     {
-        id: 'tower-vigilance', name: 'La Tour de Vigilance', emoji: '🗼',
-        description: 'Gardez vos lampes allumées et montez la tour',
+        id: 'tower', name: 'La Tour de Vigilance', emoji: '🗼',
+        description: 'Gardez vos lampes allumées',
         levels: 10, maxLives: 4, liveIcon: '🔥', rewardName: 'Huile Sacrée',
         gadgets: [
-            { name: "Réservoir d'huile", emoji: '🛢️', description: 'Ralentit la perte de lumière', usesPerLevel: 1 },
-            { name: 'Allumette céleste', emoji: '🔥', description: 'Réactive une lampe éteinte', usesPerLevel: 1 },
+            { name: 'Réservoir', emoji: '🛢️', desc: 'Ralentit la perte', uses: 1 },
+            { name: 'Allumette', emoji: '🔥', desc: 'Réactive une lampe', uses: 1 },
         ],
-        wallColor: [60, 60, 80], floorColor: [40, 40, 50], skyColor: [15, 15, 30],
-        fogColor: [20, 20, 40], fogDistance: 6,
+        colors: { wall: '#2D2B55', floor: '#1A1833', bg: '#0D0B1A', accent: '#FFD700', wallShadow: '#1A1840' },
+        unlocks: [{ level: 7, desc: 'Mode nuit totale' }, { level: 10, desc: 'Couronne des Vierges' }],
     },
     {
-        id: 'david-challenge', name: 'Le Défi de David', emoji: '⚔️',
-        description: 'Affrontez Goliath dans des arènes labyrinthiques',
+        id: 'david', name: 'Le Défi de David', emoji: '⚔️',
+        description: 'Affrontez Goliath dans des arènes',
         levels: 10, maxLives: 5, liveIcon: '💪', rewardName: 'Pierres Spirituelles',
         gadgets: [
-            { name: 'Fronde améliorée', emoji: '🪨', description: 'Stun un obstacle', usesPerLevel: 2 },
-            { name: 'Bouclier de Foi', emoji: '🛡️', description: 'Immunité 5 secondes', usesPerLevel: 1 },
+            { name: 'Fronde', emoji: '🪨', desc: 'Stun obstacle', uses: 2 },
+            { name: 'Bouclier', emoji: '🛡️', desc: 'Immunité 5s', uses: 1 },
         ],
-        wallColor: [100, 80, 60], floorColor: [140, 120, 90], skyColor: [180, 160, 130],
+        colors: { wall: '#5C4033', floor: '#C4A882', bg: '#E8D5B5', accent: '#CD853F', wallShadow: '#3E2A1F' },
+        unlocks: [{ level: 6, desc: 'Goliath mobile' }, { level: 10, desc: 'Vainqueur par la Foi' }],
     },
     {
         id: 'exodus', name: "L'Exode", emoji: '🌊',
         description: "De l'Égypte à la Terre Promise",
         levels: 10, maxLives: 3, liveIcon: '📋', rewardName: 'Manne',
         gadgets: [
-            { name: 'Bâton de Moïse', emoji: '🪄', description: 'Ouvre un passage caché', usesPerLevel: 1 },
-            { name: 'Nuée protectrice', emoji: '☁️', description: 'Ralentit les pièges', usesPerLevel: 1 },
+            { name: 'Bâton', emoji: '🪄', desc: 'Ouvre passage', uses: 1 },
+            { name: 'Nuée', emoji: '☁️', desc: 'Ralentit pièges', uses: 1 },
         ],
-        wallColor: [160, 130, 90], floorColor: [190, 170, 120], skyColor: [100, 140, 200],
+        colors: { wall: '#8B6914', floor: '#DEB887', bg: '#F5DEB3', accent: '#4169E1', wallShadow: '#6B4F10' },
+        unlocks: [{ level: 8, desc: 'Traversée Mer Rouge' }, { level: 10, desc: 'Terre Promise' }],
     },
     {
-        id: 'prayer-cave', name: 'La Caverne de la Prière', emoji: '🕯️',
-        description: 'Trouvez les autels cachés dans le silence',
-        levels: 10, maxLives: 3, liveIcon: '🤫', rewardName: "Perles d'Intercession",
+        id: 'prayer', name: 'Caverne de la Prière', emoji: '🕯️',
+        description: 'Trouvez les autels dans le silence',
+        levels: 10, maxLives: 3, liveIcon: '🤫', rewardName: 'Perles',
         gadgets: [
-            { name: "Clé d'Onction", emoji: '🔑', description: 'Ouvre une salle cachée', usesPerLevel: 1 },
-            { name: 'Echo Spirituel', emoji: '🔔', description: 'Révèle un autel proche', usesPerLevel: 2 },
+            { name: 'Clé', emoji: '🔑', desc: 'Ouvre salle cachée', uses: 1 },
+            { name: 'Echo', emoji: '🔔', desc: 'Révèle autel', uses: 2 },
         ],
-        wallColor: [50, 45, 55], floorColor: [30, 28, 35], skyColor: [10, 8, 15],
-        fogColor: [15, 12, 20], fogDistance: 5,
+        colors: { wall: '#36304A', floor: '#1E1A2E', bg: '#100E1A', accent: '#9370DB', wallShadow: '#252040' },
+        unlocks: [{ level: 9, desc: 'Chambre obscure' }, { level: 10, desc: 'Salle de Gloire' }],
     },
     {
-        id: 'invisible-battle', name: 'Le Combat Invisible', emoji: '🗡️',
-        description: "Revêtez l'armure complète de Dieu",
+        id: 'battle', name: 'Le Combat Invisible', emoji: '🗡️',
+        description: "Revêtez l'armure de Dieu",
         levels: 10, maxLives: 6, liveIcon: '🛡️', rewardName: "Pièces d'Armure",
         gadgets: [
-            { name: 'Épée améliorée', emoji: '⚔️', description: 'Repousse un obstacle', usesPerLevel: 2 },
-            { name: 'Casque lumineux', emoji: '⛑️', description: 'Vision nocturne', usesPerLevel: 1 },
+            { name: 'Épée', emoji: '⚔️', desc: 'Repousse obstacle', uses: 2 },
+            { name: 'Casque', emoji: '⛑️', desc: 'Vision nocturne', uses: 1 },
         ],
-        wallColor: [80, 20, 20], floorColor: [50, 15, 15], skyColor: [30, 10, 10],
-        fogColor: [40, 10, 10], fogDistance: 7,
+        colors: { wall: '#5C1010', floor: '#2B0A0A', bg: '#1A0505', accent: '#FF4444', wallShadow: '#3A0808' },
+        unlocks: [{ level: 10, desc: 'Armure complète = aura' }],
     },
     {
-        id: 'wisdom-quest', name: 'La Quête de la Sagesse', emoji: '📖',
-        description: 'Explorez les bibliothèques labyrinthiques',
+        id: 'wisdom', name: 'Quête de la Sagesse', emoji: '📖',
+        description: 'Explorez les bibliothèques',
         levels: 10, maxLives: 3, liveIcon: '📕', rewardName: 'Clés de Sagesse',
         gadgets: [
-            { name: "Livre d'indice", emoji: '📘', description: 'Révèle un indice', usesPerLevel: 1 },
-            { name: 'Sablier', emoji: '⏳', description: 'Ralentit le temps', usesPerLevel: 1 },
+            { name: 'Livre', emoji: '📘', desc: 'Révèle indice', uses: 1 },
+            { name: 'Sablier', emoji: '⏳', desc: 'Ralentit temps', uses: 1 },
         ],
-        wallColor: [120, 80, 40], floorColor: [80, 60, 30], skyColor: [200, 180, 140],
+        colors: { wall: '#6B4226', floor: '#9C7A52', bg: '#C4A375', accent: '#DAA520', wallShadow: '#4A2E1A' },
+        unlocks: [{ level: 10, desc: 'Salle du Trône' }],
     },
     {
-        id: 'mount-zion', name: 'La Montée vers Sion', emoji: '⛰️',
-        description: 'Escaladez les 10 étages vers le sommet',
+        id: 'zion', name: 'Montée vers Sion', emoji: '⛰️',
+        description: 'Escaladez les 10 étages',
         levels: 10, maxLives: 4, liveIcon: '💨', rewardName: "Points d'Élévation",
         gadgets: [
-            { name: 'Bottes légères', emoji: '👟', description: 'Saut amélioré', usesPerLevel: 1 },
-            { name: "Harpe d'adoration", emoji: '🎵', description: 'Boost de vitesse', usesPerLevel: 1 },
+            { name: 'Bottes', emoji: '👟', desc: 'Boost vitesse', uses: 1 },
+            { name: 'Harpe', emoji: '🎵', desc: 'Boost vitesse', uses: 1 },
         ],
-        wallColor: [150, 160, 170], floorColor: [120, 130, 140], skyColor: [180, 200, 240],
+        colors: { wall: '#708090', floor: '#A9B6C4', bg: '#C8D6E0', accent: '#4682B4', wallShadow: '#506070' },
+        unlocks: [{ level: 10, desc: 'Panorama céleste' }],
     },
     {
-        id: 'shepherd', name: 'Le Berger et la Brebis', emoji: '🐑',
-        description: 'Sauvez les brebis perdues des loups',
-        levels: 10, maxLives: 3, liveIcon: '🐺', rewardName: 'Trophée Bon Berger',
+        id: 'shepherd', name: 'Berger et la Brebis', emoji: '🐑',
+        description: 'Sauvez les brebis des loups',
+        levels: 10, maxLives: 3, liveIcon: '🐺', rewardName: 'Trophée Berger',
         gadgets: [
-            { name: 'Bâton protecteur', emoji: '🪵', description: 'Repousse un loup', usesPerLevel: 2 },
-            { name: 'Sifflet de rappel', emoji: '📯', description: 'Attire la brebis', usesPerLevel: 1 },
+            { name: 'Bâton', emoji: '🪵', desc: 'Repousse loup', uses: 2 },
+            { name: 'Sifflet', emoji: '📯', desc: 'Attire brebis', uses: 1 },
         ],
-        wallColor: [80, 120, 60], floorColor: [100, 150, 80], skyColor: [130, 190, 230],
+        colors: { wall: '#4A7B3A', floor: '#8FBC6A', bg: '#B8E08C', accent: '#2E8B57', wallShadow: '#346029' },
+        unlocks: [{ level: 8, desc: 'Loups rapides' }, { level: 10, desc: 'Fête de retrouvailles' }],
     },
     {
-        id: 'covenant-labyrinth', name: 'Le Labyrinthe des Alliances', emoji: '📜',
-        description: 'Parcourez les 10 alliances bibliques',
+        id: 'covenant', name: 'Labyrinthe des Alliances', emoji: '📜',
+        description: 'Les 10 alliances bibliques',
         levels: 10, maxLives: 3, liveIcon: '💔', rewardName: "Sceaux d'Alliance",
         gadgets: [
-            { name: 'Arche miniature', emoji: '⛵', description: "Protection contre l'eau", usesPerLevel: 1 },
-            { name: 'Tablette sacrée', emoji: '📋', description: 'Révèle la vérité', usesPerLevel: 1 },
+            { name: 'Arche', emoji: '⛵', desc: 'Protection eau', uses: 1 },
+            { name: 'Tablette', emoji: '📋', desc: 'Révèle vérité', uses: 1 },
         ],
-        wallColor: [140, 120, 160], floorColor: [100, 90, 120], skyColor: [160, 140, 200],
+        colors: { wall: '#6A5ACD', floor: '#483D8B', bg: '#2F2670', accent: '#9370DB', wallShadow: '#3C3190' },
+        unlocks: [{ level: 10, desc: 'Nouvelle Alliance' }],
     },
 ];
 
-// ── Characters ───────────────────────────────────────────────
-export const CHARACTERS = [
-    { id: 'david', name: 'David', emoji: '👦', color: '#6366f1', speed: 1.1, description: 'Rapide et agile' },
-    { id: 'moses', name: 'Moïse', emoji: '🧔', color: '#f59e0b', speed: 1.0, description: 'Sage et résistant' },
-    { id: 'esther', name: 'Esther', emoji: '👸', color: '#ec4899', speed: 1.05, description: 'Courageuse et intelligente' },
-    { id: 'joshua', name: 'Josué', emoji: '⚔️', color: '#10b981', speed: 1.15, description: 'Guerrier puissant' },
-    { id: 'ruth', name: 'Ruth', emoji: '🌾', color: '#8b5cf6', speed: 1.0, description: 'Fidèle et persévérante' },
-    { id: 'daniel', name: 'Daniel', emoji: '🦁', color: '#f97316', speed: 0.95, description: 'Vision + résistance' },
+// ── Characters ───────────────────────────────────
+export const CHARS = [
+    { id: 'david', name: 'David', emoji: '👦', color: '#6366f1', speed: 1.1, desc: 'Rapide et agile' },
+    { id: 'moses', name: 'Moïse', emoji: '🧔', color: '#f59e0b', speed: 1.0, desc: 'Sage et résistant' },
+    { id: 'esther', name: 'Esther', emoji: '👸', color: '#ec4899', speed: 1.05, desc: 'Courageuse' },
+    { id: 'joshua', name: 'Josué', emoji: '⚔️', color: '#10b981', speed: 1.15, desc: 'Guerrier puissant' },
+    { id: 'ruth', name: 'Ruth', emoji: '🌾', color: '#8b5cf6', speed: 1.0, desc: 'Fidèle' },
+    { id: 'daniel', name: 'Daniel', emoji: '🦁', color: '#f97316', speed: 0.95, desc: 'Vision + résistance' },
 ];
 
-// ── Maze Generator (Recursive Backtracker) ───────────────────
-export function generateMaze(width: number, height: number, level: number): MazeCell[][] {
-    const maze: MazeCell[][] = Array.from({ length: height }, () =>
-        Array.from({ length: width }, () => ({ wall: true }))
+// ── Maze Generator (Recursive Backtracker) ───────
+export function generateMaze(w: number, h: number, level: number): MazeCell[][] {
+    const maze: MazeCell[][] = Array.from({ length: h }, () =>
+        Array.from({ length: w }, () => ({ wall: true }))
     );
-
     const carve = (x: number, y: number) => {
         maze[y][x].wall = false;
         const dirs = [[0, -2], [0, 2], [-2, 0], [2, 0]].sort(() => Math.random() - 0.5);
         for (const [dx, dy] of dirs) {
             const nx = x + dx, ny = y + dy;
-            if (nx > 0 && nx < width - 1 && ny > 0 && ny < height - 1 && maze[ny][nx].wall) {
+            if (nx > 0 && nx < w - 1 && ny > 0 && ny < h - 1 && maze[ny][nx].wall) {
                 maze[y + dy / 2][x + dx / 2].wall = false;
                 carve(nx, ny);
             }
         }
     };
-
     carve(1, 1);
-    maze[1][1].type = 'start';
-    maze[height - 2][width - 2].type = 'exit';
-    maze[height - 2][width - 2].wall = false;
+    maze[1][1] = { wall: false, type: 'start' };
+    maze[h - 2][w - 2] = { wall: false, type: 'exit' };
 
-    // Place questions based on level
-    const qCount = Math.min(2 + level, 8);
-    const openCells: [number, number][] = [];
-    for (let y = 0; y < height; y++)
-        for (let x = 0; x < width; x++)
-            if (!maze[y][x].wall && !maze[y][x].type) openCells.push([x, y]);
+    // Collect open cells for placement
+    const open: [number, number][] = [];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++)
+        if (!maze[y][x].wall && !maze[y][x].type) open.push([x, y]);
+    open.sort(() => Math.random() - 0.5);
 
-    openCells.sort(() => Math.random() - 0.5);
-    for (let i = 0; i < Math.min(qCount, openCells.length); i++) {
-        const [x, y] = openCells[i];
-        maze[y][x].type = 'question';
-        maze[y][x].questionId = Math.floor(Math.random() * BIBLE_QUESTIONS.length);
+    let idx = 0;
+    // Questions
+    const qCount = Math.min(2 + level, 6);
+    for (let i = 0; i < Math.min(qCount, open.length); i++, idx++) {
+        const [x, y] = open[idx];
+        maze[y][x] = { wall: false, type: 'question', questionId: Math.floor(Math.random() * QUESTIONS.length) };
     }
-
-    // Place gadget pickups
-    for (let i = qCount; i < Math.min(qCount + 2, openCells.length); i++) {
-        const [x, y] = openCells[i];
-        maze[y][x].type = 'gadget';
+    // Coins
+    const coinCount = Math.min(3 + level, 10);
+    for (let i = 0; i < Math.min(coinCount, open.length - idx); i++, idx++) {
+        const [x, y] = open[idx];
+        maze[y][x] = { wall: false, type: 'coin' };
     }
-
-    // Place traps (increases with level)
-    const trapCount = Math.min(level, 5);
-    for (let i = qCount + 2; i < Math.min(qCount + 2 + trapCount, openCells.length); i++) {
-        const [x, y] = openCells[i];
-        maze[y][x].type = 'trap';
+    // Gadgets
+    for (let i = 0; i < Math.min(2, open.length - idx); i++, idx++) {
+        const [x, y] = open[idx];
+        maze[y][x] = { wall: false, type: 'gadget' };
     }
-
+    // Traps
+    const trapCount = Math.min(level, 4);
+    for (let i = 0; i < Math.min(trapCount, open.length - idx); i++, idx++) {
+        const [x, y] = open[idx];
+        maze[y][x] = { wall: false, type: 'trap' };
+    }
     return maze;
 }
 
-// ── Raycaster Engine ─────────────────────────────────────────
-export function castRays(
-    player: PlayerState,
-    maze: MazeCell[][],
-    canvasWidth: number,
-    canvasHeight: number,
-    fov: number = Math.PI / 3
-): { distance: number; wallX: number; side: number; cellType?: string }[] {
-    const rays: { distance: number; wallX: number; side: number; cellType?: string }[] = [];
-    const numRays = canvasWidth;
-
-    for (let i = 0; i < numRays; i++) {
-        const rayAngle = player.angle - fov / 2 + (i / numRays) * fov;
-        const sin = Math.sin(rayAngle);
-        const cos = Math.cos(rayAngle);
-
-        let dist = 0;
-        const step = 0.02;
-        let hitX = 0, hitY = 0;
-        let side = 0;
-        let cellType: string | undefined;
-
-        while (dist < 20) {
-            dist += step;
-            hitX = player.x + cos * dist;
-            hitY = player.y + sin * dist;
-
-            const mapX = Math.floor(hitX);
-            const mapY = Math.floor(hitY);
-
-            if (mapY >= 0 && mapY < maze.length && mapX >= 0 && mapX < maze[0].length) {
-                if (maze[mapY][mapX].wall) {
-                    // Determine side (N/S vs E/W)
-                    const prevX = player.x + cos * (dist - step);
-                    const prevY = player.y + sin * (dist - step);
-                    side = Math.floor(prevX) !== mapX ? 0 : 1;
-                    cellType = maze[mapY][mapX].type;
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-
-        // Fix fisheye
-        const corrected = dist * Math.cos(rayAngle - player.angle);
-        const wallX = side === 0 ? hitY % 1 : hitX % 1;
-
-        rays.push({ distance: corrected, wallX, side, cellType });
-    }
-
-    return rays;
-}
-
-// ── Render frame ─────────────────────────────────────────────
-export function renderFrame(
-    ctx: CanvasRenderingContext2D,
-    rays: { distance: number; wallX: number; side: number; cellType?: string }[],
-    config: GameConfig,
-    canvasWidth: number,
-    canvasHeight: number
-) {
-    const [sr, sg, sb] = config.skyColor;
-    const [fr, fg, fb] = config.floorColor;
-    const [wr, wg, wb] = config.wallColor;
-    const [fogR, fogG, fogB] = config.fogColor || config.skyColor;
-    const fogDist = config.fogDistance || 12;
-
-    // Sky
-    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvasHeight / 2);
-    skyGrad.addColorStop(0, `rgb(${Math.max(0, sr - 30)},${Math.max(0, sg - 30)},${Math.max(0, sb - 30)})`);
-    skyGrad.addColorStop(1, `rgb(${sr},${sg},${sb})`);
-    ctx.fillStyle = skyGrad;
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight / 2);
-
-    // Floor
-    const floorGrad = ctx.createLinearGradient(0, canvasHeight / 2, 0, canvasHeight);
-    floorGrad.addColorStop(0, `rgb(${fr},${fg},${fb})`);
-    floorGrad.addColorStop(1, `rgb(${Math.max(0, fr - 40)},${Math.max(0, fg - 40)},${Math.max(0, fb - 40)})`);
-    ctx.fillStyle = floorGrad;
-    ctx.fillRect(0, canvasHeight / 2, canvasWidth, canvasHeight / 2);
-
-    // Walls
-    for (let i = 0; i < rays.length; i++) {
-        const ray = rays[i];
-        const lineHeight = Math.min(canvasHeight * 2, canvasHeight / ray.distance);
-        const drawStart = (canvasHeight - lineHeight) / 2;
-
-        // Fog factor
-        const fogFactor = Math.min(1, ray.distance / fogDist);
-
-        // Wall shade based on distance and side
-        const shade = Math.max(0.15, 1 - ray.distance / fogDist);
-        const sideShade = ray.side === 0 ? 1 : 0.75;
-        const r = Math.round(wr * shade * sideShade + fogR * fogFactor);
-        const g = Math.round(wg * shade * sideShade + fogG * fogFactor);
-        const b = Math.round(wb * shade * sideShade + fogB * fogFactor);
-
-        // Special colors for exit
-        if (ray.cellType === 'exit') {
-            ctx.fillStyle = `rgb(${Math.min(255, r + 80)},${Math.min(255, g + 120)},${Math.min(255, b)})`;
-        } else {
-            ctx.fillStyle = `rgb(${Math.min(255, r)},${Math.min(255, g)},${Math.min(255, b)})`;
-        }
-
-        ctx.fillRect(i, drawStart, 1, lineHeight);
-    }
-}
-
-// ── Save/Load from localStorage ──────────────────────────────
-export function saveProgress(gameId: string, data: any) {
+// ── Save/Load ────────────────────────────────────
+const SAVE_KEY = 'labyrinth_saves';
+export function saveGame(gameId: string, data: any) {
     try {
-        const all = JSON.parse(localStorage.getItem('labyrinth_progress') || '{}');
-        all[gameId] = { ...data, savedAt: Date.now() };
-        localStorage.setItem('labyrinth_progress', JSON.stringify(all));
+        const all = JSON.parse(localStorage.getItem(SAVE_KEY) || '{}');
+        all[gameId] = { ...data, ts: Date.now() };
+        localStorage.setItem(SAVE_KEY, JSON.stringify(all));
     } catch { }
 }
-
-export function loadProgress(gameId: string): any {
+export function loadGame(gameId: string): any {
     try {
-        const all = JSON.parse(localStorage.getItem('labyrinth_progress') || '{}');
-        return all[gameId] || null;
+        return JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')[gameId] || null;
     } catch { return null; }
 }
