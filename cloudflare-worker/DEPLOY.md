@@ -98,11 +98,10 @@ Pour envoyer automatiquement une notification push quand une notification est cr
 | `/api/link-preview` | POST | Aperçu d'un lien (OG tags) |
 | `/api/analytics` | GET | Statistiques |
 
-## Supprimer Fly.io
 
-1. Allez sur https://fly.io/dashboard
-2. Sélectionnez votre app `maisondepriere-live`
-3. **Settings** → **Delete App**
-4. Confirmez la suppression
+## Configuration `.env.local`
 
-Le dossier `live-proxy-server/` a déjà été supprimé du code.
+Ajoutez dans votre `.env.local` :
+```
+NEXT_PUBLIC_WORKER_URL=https://maisondepriere-api.VOTRE-COMPTE.workers.dev
+```

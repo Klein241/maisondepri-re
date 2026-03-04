@@ -178,17 +178,18 @@ export function NotificationBell() {
                     setUnreadMessages(prev => prev + 1);
                 }
 
+                // Parse action data for deep-link
+                let parsedAction: any = {};
+                try {
+                    parsedAction = typeof n.action_data === 'string' ? JSON.parse(n.action_data) : (n.action_data || {});
+                } catch (e) { }
+
                 // If it's a DM, trigger chat refresh
-                if (n.type === 'message') {
-                    try {
-                        const data = typeof n.action_data === 'string' ? JSON.parse(n.action_data) : n.action_data;
-                        if (data && data.conversationId) {
-                            triggerDMRefresh(data.conversationId);
-                        }
-                    } catch (e) { }
+                if (n.type === 'message' && parsedAction.conversationId) {
+                    triggerDMRefresh(parsedAction.conversationId);
                 }
 
-                triggerPushNotification(n.title, n.message);
+                triggerPushNotification(n.title, n.message, parsedAction);
             })
             .subscribe();
 
@@ -221,36 +222,43 @@ export function NotificationBell() {
         };
     }, [user]);
 
-    // Trigger Service Worker push notification (Pinterest-style, works when minimized)
-    const triggerPushNotification = useCallback((title: string, body: string) => {
-        // Method 1: Service Worker showNotification (works when tab is in background)
-        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-                type: 'SHOW_NOTIFICATION',
-                title,
-                body,
-                tag: `notif_${Date.now()}`,
-                url: '/',
-            });
-        }
-        // Method 2: Fallback to Notification API directly
-        else if ('Notification' in window && Notification.permission === 'granted') {
-            try {
-                new Notification(title, {
+    // Trigger Service Worker push notification with deep-link data
+    const triggerPushNotification = useCallback((title: string, body: string, actionData?: any) => {
+        // Only show system notification if app is NOT focused
+        if (document.hasFocus()) {
+            // App is visible — just play sound, don't show system notification
+        } else {
+            // Method 1: Service Worker (works in background)
+            if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+                navigator.serviceWorker.controller.postMessage({
+                    type: 'SHOW_NOTIFICATION',
+                    title,
                     body,
-                    icon: '/icon-192.png',
-                    badge: '/icon-192.png',
                     tag: `notif_${Date.now()}`,
+                    url: actionData?.conversationId
+                        ? `/?nav=conversation&id=${actionData.conversationId}`
+                        : actionData?.groupId
+                            ? `/?nav=group&id=${actionData.groupId}`
+                            : '/',
                 });
-            } catch (e) {
-                // Some browsers don't support new Notification() in SW context
+            }
+            // Method 2: Fallback Notification API
+            else if ('Notification' in window && Notification.permission === 'granted') {
+                try {
+                    new Notification(title, {
+                        body,
+                        icon: '/icons/icon-192x192.png',
+                        badge: '/icons/icon-72x72.png',
+                        tag: `notif_${Date.now()}`,
+                    });
+                } catch (e) { }
             }
         }
 
-        // Play notification sound
+        // Always play notification sound (Facebook-style double-tone)
         try {
             const audio = new Audio('/notification.mp3');
-            audio.volume = 0.3;
+            audio.volume = 0.4;
             audio.play().catch(() => { });
         } catch (e) { }
     }, []);
@@ -335,13 +343,11 @@ export function NotificationBell() {
             if (notif.type === 'message') {
                 actionData.tab = 'community';
                 actionData.communityTab = 'chat';
-                // Try to infer conversationId from dm_{msg_id} notifications
-                if (notif.id.startsWith('dm_') && !actionData.conversationId) {
+                // Deep-link to exact conversation if we have conversationId
+                if (actionData.conversationId) {
                     actionData.viewState = 'conversation';
-                    // Attempt to find conversation by sender
-                    if (notif.sender_name) {
-                        actionData.viewState = 'messages';
-                    }
+                } else {
+                    actionData.viewState = 'messages';
                 }
             } else if (notif.type === 'group') {
                 actionData.tab = 'community';

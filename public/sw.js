@@ -1,7 +1,8 @@
 // Service Worker — Maison de Prière
 // Handles: Push Notifications, Offline caching
+// Backend: Cloudflare Worker (maisondepriere-api)
 
-const CACHE_NAME = 'mdp-cache-v1';
+const CACHE_NAME = 'mdp-cache-v2';
 
 // Push notification received
 self.addEventListener('push', (event) => {
@@ -9,18 +10,26 @@ self.addEventListener('push', (event) => {
 
     try {
         const data = event.data.json();
+
+        // Build actions based on notification type
+        const actions = [];
+        if (data.data?.conversationId) {
+            actions.push({ action: 'reply', title: '💬 Répondre' });
+        } else if (data.data?.prayerId) {
+            actions.push({ action: 'pray', title: '🙏 Prier' });
+        }
+        actions.push({ action: 'open', title: 'Ouvrir' });
+
         const options = {
             body: data.body || data.message || '',
             icon: data.icon || '/icons/icon-192x192.png',
             badge: data.badge || '/icons/icon-72x72.png',
             vibrate: [100, 50, 100],
             data: data.data || { url: '/' },
-            actions: [
-                { action: 'open', title: 'Ouvrir' },
-                { action: 'dismiss', title: 'Fermer' },
-            ],
-            tag: data.tag || 'mdp-notification',
+            actions,
+            tag: data.tag || `mdp-${Date.now()}`,
             renotify: true,
+            requireInteraction: !!data.data?.conversationId, // Keep DM notifs visible
         };
 
         event.waitUntil(
@@ -31,13 +40,25 @@ self.addEventListener('push', (event) => {
     }
 });
 
-// Notification clicked
+// Notification clicked — deep-link to exact conversation/view
 self.addEventListener('notificationclick', (event) => {
     event.notification.close();
 
     if (event.action === 'dismiss') return;
 
-    const url = event.notification.data?.url || '/';
+    // Build target URL from notification data
+    const data = event.notification.data || {};
+    let url = data.url || '/';
+
+    // Deep-link: if we have conversationId, go to chat
+    if (data.conversationId) {
+        url = `/?nav=conversation&id=${data.conversationId}`;
+    } else if (data.groupId) {
+        url = `/?nav=group&id=${data.groupId}`;
+    } else if (data.prayerId) {
+        url = `/?nav=prayer&id=${data.prayerId}`;
+    }
+
     event.waitUntil(
         clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
             // Focus existing window if open
@@ -53,7 +74,21 @@ self.addEventListener('notificationclick', (event) => {
     );
 });
 
-// Install — cache essential assets
+// Listen for SHOW_NOTIFICATION messages from the app
+self.addEventListener('message', (event) => {
+    if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+        self.registration.showNotification(event.data.title || 'Maison de Prière', {
+            body: event.data.body || '',
+            icon: '/icons/icon-192x192.png',
+            badge: '/icons/icon-72x72.png',
+            tag: event.data.tag || `msg_${Date.now()}`,
+            data: { url: event.data.url || '/' },
+            vibrate: [100, 50, 100],
+        });
+    }
+});
+
+// Install
 self.addEventListener('install', (event) => {
     self.skipWaiting();
 });

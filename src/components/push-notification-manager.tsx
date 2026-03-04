@@ -7,52 +7,32 @@ import { useAppStore } from '@/lib/store';
  * PushNotificationManager
  * 
  * Registers the Service Worker and subscribes to Web Push notifications.
- * Should be mounted once in the root layout.
- * 
- * Flow:
- * 1. Register /sw.js
- * 2. Get VAPID public key from the Cloudflare Worker API
- * 3. Subscribe to push via the browser
- * 4. Send subscription to the Cloudflare Worker (stored in KV)
- * 5. Worker sends push via Supabase webhook or admin broadcast
+ * Uses NEXT_PUBLIC_WORKER_URL (Cloudflare Worker) — Fly.io fully removed.
  */
 export function PushNotificationManager() {
     const user = useAppStore(s => s.user);
-    const appSettings = useAppStore(s => s.appSettings);
     const initialized = useRef(false);
 
-    useEffect(() => {
-        if (!user?.id || initialized.current) return;
-        const workerUrl = appSettings?.['live_proxy_url']; // Now points to Cloudflare Worker
-        if (!workerUrl) return;
+    const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || '';
 
+    useEffect(() => {
+        if (!user?.id || initialized.current || !WORKER_URL) return;
         initialized.current = true;
 
         async function registerPush() {
             try {
-                // 1. Check browser support
-                if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-                    console.log('Push not supported');
-                    return;
-                }
+                if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
 
-                // 2. Register service worker
                 const registration = await navigator.serviceWorker.register('/sw.js');
-                console.log('✅ SW registered');
 
-                // 3. Get VAPID key from Cloudflare Worker
-                const vapidRes = await fetch(`${workerUrl}/api/push/vapid-key`);
+                const vapidRes = await fetch(`${WORKER_URL}/api/push/vapid-key`);
+                if (!vapidRes.ok) return;
                 const { publicKey } = await vapidRes.json();
-                if (!publicKey) {
-                    console.log('No VAPID key configured on Worker');
-                    return;
-                }
+                if (!publicKey) return;
 
-                // 4. Check existing subscription
                 let subscription = await registration.pushManager.getSubscription();
 
                 if (!subscription) {
-                    // 5. Subscribe
                     const urlBase64ToUint8Array = (base64String: string) => {
                         const padding = '='.repeat((4 - base64String.length % 4) % 4);
                         const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
@@ -64,11 +44,9 @@ export function PushNotificationManager() {
                         userVisibleOnly: true,
                         applicationServerKey: urlBase64ToUint8Array(publicKey),
                     });
-                    console.log('✅ Push subscribed');
                 }
 
-                // 6. Send subscription to Cloudflare Worker (persisted in KV)
-                await fetch(`${workerUrl}/api/push/register`, {
+                await fetch(`${WORKER_URL}/api/push/register`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -76,17 +54,16 @@ export function PushNotificationManager() {
                         subscription: subscription.toJSON(),
                     }),
                 });
-                console.log('✅ Push registered with Cloudflare Worker');
             } catch (e) {
-                console.warn('Push registration failed:', e);
+                console.warn('Push registration skipped:', e);
             }
         }
 
-        // Delay to not block initial render
-        setTimeout(registerPush, 5000);
-    }, [user?.id, appSettings]);
+        const timer = setTimeout(registerPush, 5000);
+        return () => clearTimeout(timer);
+    }, [user?.id, WORKER_URL]);
 
-    return null; // This component renders nothing
+    return null;
 }
 
 export default PushNotificationManager;
