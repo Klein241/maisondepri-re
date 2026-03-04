@@ -7,17 +7,13 @@ import { useAppStore } from '@/lib/store';
  * PushNotificationManager
  * 
  * Registers the Service Worker and subscribes to Web Push notifications.
- * Priority: NEXT_PUBLIC_WORKER_URL env var > app_settings.cloudflare_worker_url
+ * Uses NEXT_PUBLIC_WORKER_URL env var only (no Supabase dependency).
  */
 export function PushNotificationManager() {
     const user = useAppStore(s => s.user);
-    const appSettings = useAppStore(s => s.appSettings);
     const initialized = useRef(false);
 
-    // Priority: env var > app_settings
-    const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL
-        || appSettings?.['cloudflare_worker_url']
-        || '';
+    const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || '';
 
     useEffect(() => {
         if (!user?.id || initialized.current || !WORKER_URL) return;
