@@ -55,20 +55,39 @@ export default function LabyrinthGame({ onBack }: Props) {
         setPhase('playing');
     }, [char]);
 
-    // ── Canvas Resize ──
+    // ── Canvas Resize — uses window dimensions directly for mobile reliability ──
     useEffect(() => {
         const resize = () => {
-            if (!canvasRef.current || !containerRef.current) return;
-            const c = containerRef.current;
+            if (!canvasRef.current) return;
+            const container = containerRef.current;
+            // Use container if available, else fallback to window
+            const w = container ? container.clientWidth : window.innerWidth;
+            const h = container ? container.clientHeight : window.innerHeight - 40; // 40px for top bar
+            // Guard against 0 dimensions (happens on some mobile browsers)
+            if (w <= 0 || h <= 0) return;
             const dpr = window.devicePixelRatio || 1;
-            canvasRef.current.width = c.clientWidth * dpr;
-            canvasRef.current.height = c.clientHeight * dpr;
-            canvasRef.current.style.width = c.clientWidth + 'px';
-            canvasRef.current.style.height = c.clientHeight + 'px';
+            canvasRef.current.width = w * dpr;
+            canvasRef.current.height = h * dpr;
+            canvasRef.current.style.width = w + 'px';
+            canvasRef.current.style.height = h + 'px';
         };
+        // Initial resize with slight delay for layout to settle
+        const timer = setTimeout(resize, 50);
         resize();
         window.addEventListener('resize', resize);
-        return () => window.removeEventListener('resize', resize);
+        // Handle orientation change on mobile
+        window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+        // ResizeObserver as backup
+        let ro: ResizeObserver | null = null;
+        if (containerRef.current && typeof ResizeObserver !== 'undefined') {
+            ro = new ResizeObserver(resize);
+            ro.observe(containerRef.current);
+        }
+        return () => {
+            clearTimeout(timer);
+            window.removeEventListener('resize', resize);
+            ro?.disconnect();
+        };
     }, [phase]);
 
     // ── Game Loop ──
@@ -386,7 +405,7 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'menu') {
         return (
-            <div className="flex flex-col min-h-[100dvh] bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
+            <div className="flex flex-col min-h-dvh bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
                     {onBack && <button onClick={onBack} className="text-slate-400 hover:text-white text-xl">←</button>}
                     <h1 className="text-base sm:text-lg font-black">🏰 Labyrinthes de la Foi</h1>
@@ -421,7 +440,7 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'character' && game) {
         return (
-            <div className="flex flex-col min-h-[100dvh] bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
+            <div className="flex flex-col min-h-dvh bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
                 <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
                     <button onClick={() => setPhase('menu')} className="text-slate-400 hover:text-white text-xl">←</button>
                     <h2 className="font-bold text-sm">{game.emoji} {game.name}</h2>
@@ -462,18 +481,18 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'playing') {
         return (
-            <div className="fixed inset-0 flex flex-col bg-black text-white z-50">
+            <div className="fixed inset-0 flex flex-col bg-black text-white z-50" style={{ height: '100dvh' }}>
                 {/* Top bar */}
-                <div className="flex items-center justify-between px-3 py-1.5 bg-black/80 shrink-0 text-xs z-10">
-                    <button onClick={() => setPhase('menu')} className="text-slate-400 text-xs">✕</button>
+                <div className="flex items-center justify-between px-3 py-2 bg-black/90 shrink-0 text-sm z-10">
+                    <button onClick={() => setPhase('menu')} className="text-slate-400 hover:text-white p-1 text-base">✕</button>
                     <span className={timeLeft < 15 ? 'text-red-400 animate-pulse font-bold' : 'text-slate-300'}>
                         ⏱{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                     </span>
-                    <button onClick={() => setShowMap(v => !v)} className="text-slate-400 text-xs">🗺️</button>
+                    <button onClick={() => setShowMap(v => !v)} className="text-slate-400 hover:text-white p-1 text-base">🗺️</button>
                 </div>
-                {/* Canvas */}
-                <div ref={containerRef} className="flex-1 relative overflow-hidden touch-none">
-                    <canvas ref={canvasRef} className="absolute inset-0" />
+                {/* Canvas — takes ALL remaining space */}
+                <div ref={containerRef} className="flex-1 relative overflow-hidden touch-none" style={{ minHeight: 0 }}>
+                    <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
                     {/* Mini-map overlay */}
                     {showMap && maze && player && (
                         <div className="absolute top-2 right-2 bg-black/80 rounded-lg p-1 border border-white/20 z-20">
@@ -523,10 +542,10 @@ export default function LabyrinthGame({ onBack }: Props) {
     if (phase === 'question' && question) {
         return (
             <div
-                className="fixed inset-0 flex flex-col items-center justify-center p-6 text-white z-50"
-                style={{ background: `linear-gradient(to bottom, ${game?.colors.bg || '#1a1a2e'}, #0a0a15)` }}>
+                className="fixed inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-white z-50"
+                style={{ background: `linear-gradient(to bottom, ${game?.colors.bg || '#1a1a2e'}, #0a0a15)`, height: '100dvh' }}>
                 <motion.div initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
-                    className="max-w-sm w-full bg-white/10 backdrop-blur-xl rounded-3xl border border-white/15 p-5 space-y-5">
+                    className="max-w-sm w-full bg-white/10 backdrop-blur-xl rounded-3xl border border-white/15 p-4 sm:p-5 space-y-4 sm:space-y-5">
                     <div className="text-center">
                         <span className="text-3xl">❓</span>
                         <h3 className="font-bold text-base mt-2 leading-tight">{question.q}</h3>
@@ -547,7 +566,7 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'levelUp' && player && game) {
         return (
-            <div className="fixed inset-0 flex flex-col items-center justify-center p-6 text-white bg-linear-to-b from-slate-900 to-slate-950 z-50">
+            <div className="fixed inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-white bg-linear-to-b from-slate-900 to-slate-950 z-50" style={{ height: '100dvh' }}>
                 <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center space-y-5 max-w-sm">
                     <span className="text-5xl block">🎉</span>
                     <h2 className="text-xl font-black">Niveau {player.level} terminé !</h2>
@@ -569,7 +588,7 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'gameOver') {
         return (
-            <div className="fixed inset-0 flex flex-col items-center justify-center p-6 text-white bg-linear-to-b from-red-950 to-slate-950 z-50">
+            <div className="fixed inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-white bg-linear-to-b from-red-950 to-slate-950 z-50" style={{ height: '100dvh' }}>
                 <motion.div initial={{ scale: 0.8 }} animate={{ scale: 1 }} className="text-center space-y-5 max-w-sm">
                     <span className="text-5xl block">💀</span>
                     <h2 className="text-xl font-black">Fin de partie</h2>
@@ -587,7 +606,7 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'victory' && game) {
         return (
-            <div className="fixed inset-0 flex flex-col items-center justify-center p-6 text-white bg-linear-to-b from-yellow-900/30 to-slate-950 z-50">
+            <div className="fixed inset-0 flex flex-col items-center justify-center p-4 sm:p-6 text-white bg-linear-to-b from-yellow-900/30 to-slate-950 z-50" style={{ height: '100dvh' }}>
                 <motion.div initial={{ scale: 0.5, opacity: 0 }} animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: 'spring', bounce: 0.5 }} className="text-center space-y-5 max-w-sm">
                     <motion.span animate={{ rotate: [0, 10, -10, 0], scale: [1, 1.2, 1] }}
