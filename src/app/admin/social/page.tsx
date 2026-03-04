@@ -143,7 +143,7 @@ export default function SocialPage() {
             const { data: settings } = await supabase
                 .from('app_settings')
                 .select('key, value')
-                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_original_url', 'live_stream_url_backup', 'live_stream_url_backup_original', 'live_platform', 'live_proxy_url']);
+                .in('key', ['live_stream_active', 'live_stream_url', 'live_stream_original_url', 'live_stream_url_backup', 'live_stream_url_backup_original', 'live_platform', 'cloudflare_worker_url']);
 
             if (settings) {
                 settings.forEach(s => {
@@ -156,7 +156,7 @@ export default function SocialPage() {
                         setLiveStreamUrl(cleanEmbedUrl(s.value || ''));
                     }
                     if (s.key === 'live_platform') setLivePlatform(s.value || 'youtube');
-                    if (s.key === 'live_proxy_url') setLiveProxyUrl(s.value || '');
+                    if (s.key === 'cloudflare_worker_url') setLiveProxyUrl(s.value || '');
                 });
             }
 
@@ -324,7 +324,7 @@ export default function SocialPage() {
                 { key: 'live_stream_url_backup', value: embedUrlBackup },
                 { key: 'live_stream_url_backup_original', value: liveStreamUrlBackup.trim() },
                 { key: 'live_platform', value: livePlatform },
-                { key: 'live_proxy_url', value: liveProxyUrl.trim() },
+                { key: 'cloudflare_worker_url', value: liveProxyUrl.trim() },
             ], { onConflict: 'key' });
 
             setLiveStreamUrl(embedUrl);

@@ -7,13 +7,17 @@ import { useAppStore } from '@/lib/store';
  * PushNotificationManager
  * 
  * Registers the Service Worker and subscribes to Web Push notifications.
- * Uses NEXT_PUBLIC_WORKER_URL (Cloudflare Worker) — Fly.io fully removed.
+ * Priority: NEXT_PUBLIC_WORKER_URL env var > app_settings.cloudflare_worker_url
  */
 export function PushNotificationManager() {
     const user = useAppStore(s => s.user);
+    const appSettings = useAppStore(s => s.appSettings);
     const initialized = useRef(false);
 
-    const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || '';
+    // Priority: env var > app_settings
+    const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL
+        || appSettings?.['cloudflare_worker_url']
+        || '';
 
     useEffect(() => {
         if (!user?.id || initialized.current || !WORKER_URL) return;

@@ -375,7 +375,7 @@ export default function LabyrinthGame({ onBack }: Props) {
             onMouseUp={() => keysRef.current.delete(dir)}
             onMouseLeave={() => keysRef.current.delete(dir)}
             onContextMenu={(e) => e.preventDefault()}
-            className={`w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center text-2xl font-bold text-white active:bg-white/40 active:scale-90 transition-all select-none touch-none ${cls}`}
+            className={`w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/25 backdrop-blur-sm flex items-center justify-center text-xl sm:text-2xl font-bold text-white active:bg-white/50 active:scale-90 transition-all select-none touch-none ${cls}`}
             style={{ WebkitTouchCallout: 'none', WebkitUserSelect: 'none' }}
         >{label}</button>
     );
@@ -488,9 +488,9 @@ export default function LabyrinthGame({ onBack }: Props) {
                             </div>
                         </div>
                     )}
-                    {/* D-Pad */}
-                    <div className="absolute bottom-4 left-4 z-20">
-                        <div className="grid grid-cols-3 gap-1">
+                    {/* D-Pad — responsive position */}
+                    <div className="absolute bottom-6 left-4 sm:bottom-8 sm:left-6 z-20">
+                        <div className="grid grid-cols-3 gap-0.5 sm:gap-1">
                             <div />
                             {dpadBtn('ArrowUp', '↑', '')}
                             <div />

@@ -195,14 +195,14 @@ export const GAMES: GameConfig[] = [
     },
 ];
 
-// ── Characters ───────────────────────────────────
+// ── Characters (Biblical symbols) ────────────────
 export const CHARS = [
-    { id: 'david', name: 'David', emoji: '👦', color: '#6366f1', speed: 1.1, desc: 'Rapide et agile' },
-    { id: 'moses', name: 'Moïse', emoji: '🧔', color: '#f59e0b', speed: 1.0, desc: 'Sage et résistant' },
-    { id: 'esther', name: 'Esther', emoji: '👸', color: '#ec4899', speed: 1.05, desc: 'Courageuse' },
-    { id: 'joshua', name: 'Josué', emoji: '⚔️', color: '#10b981', speed: 1.15, desc: 'Guerrier puissant' },
-    { id: 'ruth', name: 'Ruth', emoji: '🌾', color: '#8b5cf6', speed: 1.0, desc: 'Fidèle' },
-    { id: 'daniel', name: 'Daniel', emoji: '🦁', color: '#f97316', speed: 0.95, desc: 'Vision + résistance' },
+    { id: 'lion', name: 'Lion de Juda', emoji: '🦁', color: '#f59e0b', speed: 1.15, desc: 'Puissant et rapide' },
+    { id: 'wheat', name: 'Blé de Ruth', emoji: '🌾', color: '#84cc16', speed: 1.0, desc: 'Fidèle et résistant' },
+    { id: 'dove', name: 'Colombe', emoji: '🕊️', color: '#38bdf8', speed: 1.2, desc: 'Agile et léger' },
+    { id: 'lamb', name: 'Agneau de Dieu', emoji: '🐑', color: '#f1f5f9', speed: 0.95, desc: 'Protection divine' },
+    { id: 'star', name: 'Étoile de Bethléem', emoji: '⭐', color: '#fbbf24', speed: 1.1, desc: 'Guide lumineux' },
+    { id: 'fish', name: 'Poisson (Ichthus)', emoji: '🐟', color: '#6366f1', speed: 1.05, desc: 'Discret et sage' },
 ];
 
 // ── Maze Generator (Recursive Backtracker) ───────
