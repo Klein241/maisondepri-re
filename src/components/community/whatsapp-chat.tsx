@@ -282,6 +282,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     // Feature 4: Reply state
     const [replyingTo, setReplyingTo] = useState<Message | null>(null);
 
+    // Thread/comment state - private comments on a message
+    const [threadMessage, setThreadMessage] = useState<Message | null>(null);
+    const [threadComments, setThreadComments] = useState<any[]>([]);
+    const [threadInput, setThreadInput] = useState('');
+
     // Feature 5: Group tool unread badge
     const [groupToolUnread, setGroupToolUnread] = useState(0);
 
@@ -2581,9 +2586,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
-            {/* Chat Header */}
-            {/* Feature 1: Sticky header */}
-            <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-20 shrink-0">
+            {/* Chat Header — fixed, never scrolls */}
+            <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0 z-20">
                 <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
                     <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
@@ -2803,126 +2807,162 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 </div>
             )}
 
-            {/* Messages */}
-            <ScrollArea className="flex-1 p-2 sm:p-4">
-                {isLoading ? (
-                    <div className="flex items-center justify-center h-full">
-                        <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
-                    </div>
-                ) : messages.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-                        <MessageSquare className="h-12 w-12 mb-3 opacity-50" />
-                        <p>Aucun message</p>
-                        <p className="text-sm">Envoyez le premier message!</p>
-                    </div>
-                ) : (
-                    <div className="space-y-3">
-                        {messages.map((msg, idx) => {
-                            const isOwn = msg.sender_id === user.id;
-                            const showAvatar = !isOwn && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
+            {/* Messages — only this area scrolls */}
+            <ScrollArea className="flex-1 min-h-0 overflow-y-auto">
+                <div className="p-2 sm:p-4">
+                    {isLoading ? (
+                        <div className="flex items-center justify-center h-full">
+                            <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
+                        </div>
+                    ) : messages.length === 0 ? (
+                        <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                            <MessageSquare className="h-12 w-12 mb-3 opacity-50" />
+                            <p>Aucun message</p>
+                            <p className="text-sm">Envoyez le premier message!</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {messages.map((msg, idx) => {
+                                const isOwn = msg.sender_id === user.id;
+                                const showAvatar = !isOwn && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
 
-                            return (
-                                <motion.div
-                                    key={msg.id}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className={cn("flex", isOwn ? "justify-end" : "justify-start")}
-                                >
-                                    {!isOwn && showAvatar && view === 'group' && (
-                                        <Avatar className="h-8 w-8 mr-2 mt-auto">
-                                            <AvatarImage src={msg.sender?.avatar_url || undefined} />
-                                            <AvatarFallback className="text-xs bg-slate-600">
-                                                {getInitials(msg.sender?.full_name ?? null)}
-                                            </AvatarFallback>
-                                        </Avatar>
-                                    )}
-                                    <div className="group/msg relative">
-                                        <div
-                                            className={cn(
-                                                "max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2",
-                                                isOwn
-                                                    ? "bg-indigo-600 text-white rounded-br-sm"
-                                                    : "bg-white/10 text-white rounded-bl-sm"
-                                            )}
-                                        >
-                                            {!isOwn && view === 'group' && showAvatar && (
-                                                <p className="text-xs text-indigo-400 font-medium mb-1">
-                                                    {msg.sender?.full_name}
-                                                </p>
-                                            )}
+                                return (
+                                    <motion.div
+                                        key={msg.id}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        className={cn("flex", isOwn ? "justify-end" : "justify-start")}
+                                    >
+                                        {!isOwn && showAvatar && view === 'group' && (
+                                            <Avatar className="h-8 w-8 mr-2 mt-auto">
+                                                <AvatarImage src={msg.sender?.avatar_url || undefined} />
+                                                <AvatarFallback className="text-xs bg-slate-600">
+                                                    {getInitials(msg.sender?.full_name ?? null)}
+                                                </AvatarFallback>
+                                            </Avatar>
+                                        )}
+                                        <div className="group/msg relative">
+                                            <div
+                                                className={cn(
+                                                    "max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2",
+                                                    isOwn
+                                                        ? "bg-indigo-600 text-white rounded-br-sm"
+                                                        : "bg-white/10 text-white rounded-bl-sm"
+                                                )}
+                                            >
+                                                {!isOwn && view === 'group' && showAvatar && (
+                                                    <p className="text-xs text-indigo-400 font-medium mb-1">
+                                                        {msg.sender?.full_name}
+                                                    </p>
+                                                )}
 
-                                            {/* Reply reference */}
-                                            {msg.reply_to_content && (
-                                                <div className="mb-1 px-2 py-1 rounded-lg bg-white/5 border-l-2 border-indigo-400 text-[10px] text-slate-400">
-                                                    <span className="font-semibold text-indigo-400">{msg.reply_to_sender || 'Message'}</span>
-                                                    <p className="truncate">{msg.reply_to_content}</p>
+                                                {/* Reply reference */}
+                                                {msg.reply_to_content && (
+                                                    <div className="mb-1 px-2 py-1 rounded-lg bg-white/5 border-l-2 border-indigo-400 text-[10px] text-slate-400">
+                                                        <span className="font-semibold text-indigo-400">{msg.reply_to_sender || 'Message'}</span>
+                                                        <p className="truncate">{msg.reply_to_content}</p>
+                                                    </div>
+                                                )}
+
+                                                {/* Voice Message */}
+                                                {msg.type === 'voice' && msg.voice_url ? (
+                                                    <VoiceMessagePlayer
+                                                        voiceUrl={msg.voice_url}
+                                                        duration={msg.voice_duration}
+                                                    />
+                                                ) : msg.type === 'file' && msg.file_url ? (
+                                                    /* Feature 7: File message display */
+                                                    <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                                                        <Paperclip className="h-4 w-4 text-indigo-400 shrink-0" />
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-medium truncate">{msg.file_name || 'Fichier'}</p>
+                                                            <p className="text-[10px] text-slate-400">{msg.file_type || 'Document'}</p>
+                                                        </div>
+                                                    </a>
+                                                ) : msg.type === 'image' && msg.image_url ? (
+                                                    <img src={msg.image_url} alt="" className="max-w-full rounded-lg max-h-60 object-cover" />
+                                                ) : (
+                                                    renderMessageContent(msg.content)
+                                                )}
+
+                                                <div className="flex items-center justify-end gap-1 mt-1">
+                                                    <span className="text-[10px] opacity-70">
+                                                        {formatTime(msg.created_at)}
+                                                    </span>
+                                                    {isOwn && (
+                                                        msg.is_read ? (
+                                                            <CheckCheck className="h-3 w-3 text-blue-400" />
+                                                        ) : (
+                                                            <Check className="h-3 w-3 opacity-70" />
+                                                        )
+                                                    )}
+                                                </div>
+                                            </div>
+                                            {/* Emoji reactions bar + Reply + Comment */}
+                                            <div className="absolute -bottom-3 right-1 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 bg-slate-800/95 border border-white/10 rounded-full px-1 py-0.5 shadow-lg z-10 transition-all">
+                                                {['👍', '❤️', '😂', '🙏', '🔥'].map(emoji => (
+                                                    <button
+                                                        key={emoji}
+                                                        onClick={() => {
+                                                            // Add emoji reaction to the message
+                                                            const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
+                                                            const currentReactions = (msg as any).reactions || '';
+                                                            const newReactions = currentReactions.includes(emoji) ? currentReactions : currentReactions + emoji;
+                                                            supabase.from(table).update({ content: msg.content }).eq('id', msg.id).then(() => {
+                                                                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: newReactions } : m));
+                                                            });
+                                                            toast.success(`${emoji} réaction ajoutée`);
+                                                        }}
+                                                        className="text-sm hover:scale-125 transition-transform px-0.5"
+                                                    >{emoji}</button>
+                                                ))}
+                                                <span className="w-px h-4 bg-white/10 mx-0.5" />
+                                                <button
+                                                    onClick={() => setReplyingTo(msg)}
+                                                    className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5"
+                                                >
+                                                    ↩
+                                                </button>
+                                                <button
+                                                    onClick={() => setThreadMessage(msg)}
+                                                    className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5"
+                                                    title="Commenter (fil privé)"
+                                                >
+                                                    💬
+                                                </button>
+                                            </div>
+                                            {/* Show reactions below message */}
+                                            {(msg as any).reactions && (
+                                                <div className="flex gap-0.5 mt-0.5">
+                                                    {[...(msg as any).reactions].map((r: string, i: number) => (
+                                                        <span key={i} className="text-xs bg-white/5 rounded-full px-1">{r}</span>
+                                                    ))}
                                                 </div>
                                             )}
-
-                                            {/* Voice Message */}
-                                            {msg.type === 'voice' && msg.voice_url ? (
-                                                <VoiceMessagePlayer
-                                                    voiceUrl={msg.voice_url}
-                                                    duration={msg.voice_duration}
-                                                />
-                                            ) : msg.type === 'file' && msg.file_url ? (
-                                                /* Feature 7: File message display */
-                                                <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                                                    <Paperclip className="h-4 w-4 text-indigo-400 shrink-0" />
-                                                    <div className="min-w-0">
-                                                        <p className="text-xs font-medium truncate">{msg.file_name || 'Fichier'}</p>
-                                                        <p className="text-[10px] text-slate-400">{msg.file_type || 'Document'}</p>
-                                                    </div>
-                                                </a>
-                                            ) : msg.type === 'image' && msg.image_url ? (
-                                                <img src={msg.image_url} alt="" className="max-w-full rounded-lg max-h-60 object-cover" />
-                                            ) : (
-                                                renderMessageContent(msg.content)
-                                            )}
-
-                                            <div className="flex items-center justify-end gap-1 mt-1">
-                                                <span className="text-[10px] opacity-70">
-                                                    {formatTime(msg.created_at)}
-                                                </span>
-                                                {isOwn && (
-                                                    msg.is_read ? (
-                                                        <CheckCheck className="h-3 w-3 text-blue-400" />
-                                                    ) : (
-                                                        <Check className="h-3 w-3 opacity-70" />
-                                                    )
-                                                )}
-                                            </div>
                                         </div>
-                                        {/* Feature 4: Reply button */}
-                                        <button
-                                            onClick={() => setReplyingTo(msg)}
-                                            className="absolute -bottom-2 right-1 opacity-0 group-hover/msg:opacity-100 focus:opacity-100 bg-slate-800 border border-white/10 rounded-full px-2 py-0.5 text-[10px] text-slate-400 hover:text-white hover:bg-slate-700 transition-all shadow-lg z-10"
-                                        >
-                                            ↩ Répondre
-                                        </button>
-                                    </div>
-                                </motion.div>
-                            );
-                        })}
-                        <div ref={messagesEndRef} />
-                    </div>
-                )}
-
-                {/* Typing indicator */}
-                {typingUsers.length > 0 && (
-                    <div className="flex items-center gap-2 text-sm text-slate-400 mt-2">
-                        <div className="flex gap-1">
-                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                                    </motion.div>
+                                );
+                            })}
+                            <div ref={messagesEndRef} />
                         </div>
-                        <span>{typingUsers.map(u => u.userName).join(', ')} écrit...</span>
-                    </div>
-                )}
+                    )}
+
+                    {/* Typing indicator */}
+                    {typingUsers.length > 0 && (
+                        <div className="flex items-center gap-2 text-sm text-slate-400 mt-2">
+                            <div className="flex gap-1">
+                                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                                <span className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                            <span>{typingUsers.map(u => u.userName).join(', ')} écrit...</span>
+                        </div>
+                    )}
+                </div>
             </ScrollArea>
 
-            {/* Input Area */}
-            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80">
+            {/* Input Area — fixed at bottom, never scrolls */}
+            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/95 backdrop-blur-md shrink-0 z-20">
                 {/* @Mention suggestions */}
                 <AnimatePresence>
                     {showMentions && view === 'group' && (
@@ -3763,6 +3803,86 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     onReject={() => setIncomingCall(null)}
                 />
             )}
+
+            {/* Thread/Comment Dialog — private comments on a message */}
+            <Dialog open={!!threadMessage} onOpenChange={(open) => { if (!open) { setThreadMessage(null); setThreadComments([]); setThreadInput(''); } }}>
+                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
+                    <DialogHeader className="p-4 pb-2">
+                        <DialogTitle className="flex items-center gap-2 text-white text-sm">
+                            💬 Fil de commentaire privé
+                        </DialogTitle>
+                    </DialogHeader>
+                    {threadMessage && (
+                        <div className="space-y-3 p-4 pt-0">
+                            {/* Original message */}
+                            <div className="p-3 rounded-xl bg-white/5 border border-white/10">
+                                <p className="text-[10px] text-indigo-400 font-semibold mb-1">{threadMessage.sender?.full_name || 'Message'}</p>
+                                <p className="text-sm text-white whitespace-pre-wrap">{threadMessage.content}</p>
+                                <p className="text-[10px] text-slate-500 mt-1">{formatTime(threadMessage.created_at)}</p>
+                            </div>
+
+                            {/* Info banner */}
+                            <div className="text-[10px] text-slate-500 bg-slate-800/50 rounded-lg px-3 py-2 text-center">
+                                🔒 Ces commentaires sont <strong className="text-slate-400">privés</strong> — ils n'apparaissent pas dans le groupe
+                            </div>
+
+                            {/* Thread comments */}
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                                {threadComments.map((c, i) => (
+                                    <div key={i} className="flex gap-2 items-start">
+                                        <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                                            {user.name?.charAt(0) || '?'}
+                                        </div>
+                                        <div className="bg-white/5 rounded-xl px-3 py-1.5 flex-1">
+                                            <p className="text-xs text-white">{c.text}</p>
+                                            <p className="text-[9px] text-slate-500 mt-0.5">{c.time}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                                {threadComments.length === 0 && (
+                                    <p className="text-xs text-slate-500 text-center py-4">Aucun commentaire. Ajoutez une note privée sur ce message.</p>
+                                )}
+                            </div>
+
+                            {/* Input */}
+                            <div className="flex items-center gap-2">
+                                <Input
+                                    placeholder="Votre commentaire privé..."
+                                    value={threadInput}
+                                    onChange={(e) => setThreadInput(e.target.value)}
+                                    onKeyPress={(e) => {
+                                        if (e.key === 'Enter' && threadInput.trim()) {
+                                            setThreadComments(prev => [...prev, {
+                                                text: threadInput.trim(),
+                                                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+                                                userId: user.id,
+                                            }]);
+                                            setThreadInput('');
+                                        }
+                                    }}
+                                    className="flex-1 bg-white/5 border-white/10 rounded-full text-sm"
+                                />
+                                <Button
+                                    size="icon"
+                                    onClick={() => {
+                                        if (threadInput.trim()) {
+                                            setThreadComments(prev => [...prev, {
+                                                text: threadInput.trim(),
+                                                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+                                                userId: user.id,
+                                            }]);
+                                            setThreadInput('');
+                                        }
+                                    }}
+                                    className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0"
+                                >
+                                    <Send className="h-4 w-4" />
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
