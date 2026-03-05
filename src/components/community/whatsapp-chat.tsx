@@ -214,6 +214,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Voice Recording State
     const [isRecording, setIsRecording] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
     const [recordingTime, setRecordingTime] = useState(0);
     const [isUploadingVoice, setIsUploadingVoice] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -305,6 +306,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const [showMigrateTool, setShowMigrateTool] = useState(false);
     const [migrateTargetName, setMigrateTargetName] = useState('');
     const [isMigratingMembers, setIsMigratingMembers] = useState(false);
+
+    // Voice Salon state (Discord-style group audio)
+    const [showVoiceSalon, setShowVoiceSalon] = useState(false);
+
+    // Group Game state
+    const [showGroupGame, setShowGroupGame] = useState(false);
+    const [activeGameSession, setActiveGameSession] = useState<{
+        startedBy: string;
+        startedByName: string;
+        groupId: string;
+        players: string[];
+    } | null>(null);
+    const [hasQuitGame, setHasQuitGame] = useState(false);
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
@@ -1312,6 +1326,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         if (mediaRecorderRef.current && isRecording) {
             mediaRecorderRef.current.stop();
             setIsRecording(false);
+            setIsPaused(false);
 
             if (recordingIntervalRef.current) {
                 clearInterval(recordingIntervalRef.current);
@@ -1325,6 +1340,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             mediaRecorderRef.current.stop();
             audioChunksRef.current = []; // Clear chunks to not send
             setIsRecording(false);
+            setIsPaused(false);
             setRecordingTime(0);
 
             if (recordingIntervalRef.current) {
@@ -1333,6 +1349,53 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             }
 
             toast.info('Enregistrement annulé');
+        }
+    };
+
+    // Pause / Resume recording
+    const pauseRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+            mediaRecorderRef.current.pause();
+            setIsPaused(true);
+            if (recordingIntervalRef.current) {
+                clearInterval(recordingIntervalRef.current);
+                recordingIntervalRef.current = null;
+            }
+        }
+    };
+
+    const resumeRecording = () => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'paused') {
+            mediaRecorderRef.current.resume();
+            setIsPaused(false);
+            recordingIntervalRef.current = setInterval(() => {
+                recordingTimeRef.current += 1;
+                setRecordingTime(prev => prev + 1);
+            }, 1000);
+        }
+    };
+
+    // Delete message (WhatsApp style)
+    const deleteMessage = async (msg: Message, forEveryone: boolean) => {
+        if (!user) return;
+        try {
+            if (forEveryone) {
+                // Delete for everyone — only sender can do this
+                if (msg.sender_id !== user.id) {
+                    toast.error('Vous ne pouvez supprimer que vos propres messages pour tout le monde');
+                    return;
+                }
+                const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
+                await supabase.from(table).delete().eq('id', msg.id);
+                setMessages(prev => prev.filter(m => m.id !== msg.id));
+                toast.success('Message supprimé pour tout le monde');
+            } else {
+                // Delete for me — just remove from local view
+                setMessages(prev => prev.filter(m => m.id !== msg.id));
+                toast.success('Message supprimé chez vous');
+            }
+        } catch (e: any) {
+            toast.error('Erreur : ' + (e.message || 'Impossible de supprimer'));
         }
     };
 
@@ -2702,8 +2765,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-9 w-9 sm:h-11 sm:w-11"
-                                onClick={() => setActiveCall({ type: 'audio', mode: 'group' })}
-                                title="Appel vocal de groupe"
+                                onClick={() => setShowVoiceSalon(true)}
+                                title="Salon vocal (Discord)"
                             >
                                 <Phone className="h-4 w-4 sm:h-5 sm:w-5" />
                             </Button>
@@ -2715,7 +2778,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 onClick={() => {
                                     const meetUrl = `https://meet.google.com/new`;
                                     window.open(meetUrl, '_blank', 'noopener,noreferrer');
-                                    // Notify group about the meeting
                                     if (currentGroup && user) {
                                         supabase.from('prayer_group_messages').insert({
                                             group_id: currentGroup.id,
@@ -2739,6 +2801,41 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             >
                                 <Video className="h-4 w-4 sm:h-5 sm:w-5" />
                             </Button>
+                            {/* Group Game button — blinks when a session is active */}
+                            {!hasQuitGame && (
+                                <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className={cn(
+                                        "rounded-full h-9 w-9 sm:h-11 sm:w-11",
+                                        activeGameSession
+                                            ? "text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 animate-pulse"
+                                            : "text-slate-400 hover:text-yellow-400 hover:bg-yellow-500/10"
+                                    )}
+                                    onClick={() => {
+                                        if (!activeGameSession && currentGroup && user) {
+                                            // Start new session
+                                            setActiveGameSession({
+                                                startedBy: user.id,
+                                                startedByName: user.name || 'Quelqu\'un',
+                                                groupId: currentGroup.id,
+                                                players: [user.id],
+                                            });
+                                            supabase.from('prayer_group_messages').insert({
+                                                group_id: currentGroup.id,
+                                                user_id: user.id,
+                                                content: `🎮 **JEU DE GROUPE LANCÉ !** 🎮\n\n${user.name || 'Un membre'} a lancé un jeu biblique !\n\nCliquez sur le bouton 🎮 clignotant pour rejoindre !`,
+                                                type: 'text'
+                                            });
+                                            toast.success('Jeu de groupe lancé !');
+                                        }
+                                        setShowGroupGame(true);
+                                    }}
+                                    title={activeGameSession ? "Rejoindre le jeu en cours" : "Lancer un jeu de groupe"}
+                                >
+                                    <span className="text-base">🎮</span>
+                                </Button>
+                            )}
                         </div>
                     </>
                 )}
@@ -2930,6 +3027,24 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 >
                                                     💬
                                                 </button>
+                                                <span className="w-px h-4 bg-white/10 mx-0.5" />
+                                                {/* Delete button */}
+                                                <button
+                                                    onClick={() => {
+                                                        const choice = isOwn
+                                                            ? window.confirm('Supprimer pour tout le monde ?\n\nOK = Pour tout le monde\nAnnuler = Seulement chez moi')
+                                                            : false;
+                                                        if (isOwn && choice) {
+                                                            deleteMessage(msg, true);
+                                                        } else {
+                                                            deleteMessage(msg, false);
+                                                        }
+                                                    }}
+                                                    className="text-[10px] text-slate-400 hover:text-red-400 px-1.5 py-0.5"
+                                                    title="Supprimer"
+                                                >
+                                                    🗑️
+                                                </button>
                                             </div>
                                             {/* Show reactions below message */}
                                             {(msg as any).reactions && (
@@ -3057,23 +3172,35 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
                     {isRecording ? (
                         <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-red-500/20 rounded-full px-3 sm:px-4 py-2">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse" />
+                            <div className={cn("w-3 h-3 bg-red-500 rounded-full", !isPaused && "animate-pulse")} />
                             <span className="text-red-400 font-mono flex-1 text-sm">
                                 {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
+                                {isPaused && <span className="text-yellow-400 ml-2 text-xs">⏸️ Pause</span>}
                             </span>
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 onClick={cancelRecording}
-                                className="text-slate-400 hover:text-white h-8 w-8"
+                                className="text-red-400 hover:text-red-300 h-8 w-8"
+                                title="Supprimer"
                             >
                                 <Trash2 className="h-4 w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
+                                onClick={isPaused ? resumeRecording : pauseRecording}
+                                className={cn("h-8 w-8", isPaused ? "text-green-400 hover:text-green-300" : "text-yellow-400 hover:text-yellow-300")}
+                                title={isPaused ? 'Reprendre' : 'Pause'}
+                            >
+                                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
+                            </Button>
+                            <Button
+                                variant="ghost"
+                                size="icon"
                                 onClick={stopRecording}
                                 className="text-green-400 hover:text-green-300 h-8 w-8"
+                                title="Envoyer"
                             >
                                 <Send className="h-4 w-4" />
                             </Button>
@@ -3881,6 +4008,127 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             </div>
                         </div>
                     )}
+                </DialogContent>
+            </Dialog>
+
+            {/* VoiceSalon — Discord-style group audio room */}
+            {showVoiceSalon && currentGroup && (
+                <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-md">
+                    <VoiceSalon
+                        groupId={currentGroup.id}
+                        groupName={currentGroup.name}
+                        user={{ id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar || undefined }}
+                        onClose={() => setShowVoiceSalon(false)}
+                    />
+                </div>
+            )}
+
+            {/* Group Game Dialog — with Sortir / Quitter */}
+            <Dialog open={showGroupGame} onOpenChange={(open) => { if (!open) setShowGroupGame(false); }}>
+                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
+                    <DialogHeader className="p-4 pb-2">
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            🎮 Jeu de Groupe Biblique
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="p-4 pt-0 space-y-4">
+                        {activeGameSession ? (
+                            <>
+                                {/* Game info */}
+                                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
+                                    <p className="text-xs text-yellow-400 font-semibold">🎮 Session en cours</p>
+                                    <p className="text-sm text-white mt-1">Lancé par <strong>{activeGameSession.startedByName}</strong></p>
+                                    <p className="text-[10px] text-slate-400 mt-1">{activeGameSession.players.length} joueur(s) actif(s)</p>
+                                </div>
+
+                                {/* Game area placeholder — quiz questions */}
+                                <div className="bg-white/5 rounded-xl p-6 text-center">
+                                    <p className="text-4xl mb-4">📖</p>
+                                    <p className="text-lg font-bold text-white mb-2">Quiz Biblique</p>
+                                    <p className="text-sm text-slate-400 mb-4">Qui a construit l'arche ?</p>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {['Noé', 'Abraham', 'Moïse', 'David'].map((answer, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => {
+                                                    if (answer === 'Noé') {
+                                                        toast.success('✅ Bonne réponse !');
+                                                    } else {
+                                                        toast.error('❌ Mauvaise réponse. C\'était Noé !');
+                                                    }
+                                                }}
+                                                className="p-3 rounded-xl bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/40 text-sm text-white transition-all"
+                                            >
+                                                {answer}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Action buttons: Sortir & Quitter */}
+                                <div className="flex gap-3">
+                                    <Button
+                                        variant="outline"
+                                        className="flex-1 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                                        onClick={() => {
+                                            // Sortir = return to group, can rejoin
+                                            setShowGroupGame(false);
+                                            toast.info('Vous êtes sorti du jeu. Vous pouvez y retourner via le bouton 🎮');
+                                        }}
+                                    >
+                                        ← Sortir (retour au groupe)
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
+                                        onClick={() => {
+                                            // Quitter = permanently leave, button disappears
+                                            setShowGroupGame(false);
+                                            setHasQuitGame(true);
+                                            setActiveGameSession(prev => {
+                                                if (!prev) return null;
+                                                const remaining = prev.players.filter(p => p !== user.id);
+                                                if (remaining.length === 0) return null; // Session ends
+                                                return { ...prev, players: remaining };
+                                            });
+                                            toast.info('Vous avez quitté définitivement le jeu.');
+                                        }}
+                                    >
+                                        ✕ Quitter définitivement
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            /* No active session */
+                            <div className="text-center py-8">
+                                <p className="text-5xl mb-4">🎮</p>
+                                <p className="text-lg font-bold text-white mb-2">Aucun jeu en cours</p>
+                                <p className="text-sm text-slate-400 mb-6">Lancez un jeu biblique pour tous les membres du groupe !</p>
+                                <Button
+                                    className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white"
+                                    onClick={() => {
+                                        if (currentGroup && user) {
+                                            setActiveGameSession({
+                                                startedBy: user.id,
+                                                startedByName: user.name || 'Vous',
+                                                groupId: currentGroup.id,
+                                                players: [user.id],
+                                            });
+                                            supabase.from('prayer_group_messages').insert({
+                                                group_id: currentGroup.id,
+                                                user_id: user.id,
+                                                content: `🎮 **JEU DE GROUPE LANCÉ !** 🎮\n\n${user.name || 'Un membre'} a lancé un jeu biblique !\n\nCliquez sur le bouton 🎮 clignotant pour rejoindre !`,
+                                                type: 'text'
+                                            });
+                                            toast.success('Jeu lancé !');
+                                        }
+                                    }}
+                                >
+                                    🎮 Lancer un jeu
+                                </Button>
+                            </div>
+                        )}
+                    </div>
                 </DialogContent>
             </Dialog>
         </div>
