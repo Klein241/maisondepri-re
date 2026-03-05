@@ -1,14 +1,13 @@
 'use client';
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Send, ArrowLeft, Users, Search, MoreVertical, Phone, Video,
     Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
-    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar,
-    MessageCircle, Gamepad2, BarChart3, FileText, Heart, Bell, Radio, ExternalLink
+    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,9 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { WebRTCCall } from './webrtc-call';
-import { initiateCall } from './call-system';
-import { loadGroupMessages as loadGroupMessagesClient, sendGroupMessage as sendGroupMessageClient, fetchBiblePassage, invalidateGroupMsgCache } from '@/lib/api-client';
-import { getCachedGroupMessages, cacheMessages, appendCachedMessage, getCachedConversationMessages } from '@/lib/local-storage-service';
+import { IncomingCallOverlay, initiateCall } from './call-system';
 import { GroupToolsPanel } from './group-tools';
 import { EventCalendarButton } from './event-calendar';
 import { CallHistory } from './call-history';
@@ -79,12 +76,10 @@ interface GroupMember {
 interface Message {
     id: string;
     content: string;
-    type: 'text' | 'voice' | 'image' | 'file';
+    type: 'text' | 'voice' | 'image';
     voice_url?: string;
     voice_duration?: number;
     image_url?: string;
-    file_url?: string;
-    file_name?: string;
     sender_id: string;
     sender?: ChatUser;
     created_at: string;
@@ -239,9 +234,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const [showMentions, setShowMentions] = useState(false);
     const [mentionFilter, setMentionFilter] = useState('');
 
-    // Message interaction state (click to show actions)
-    const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-
     // Bible sharing tool state
     const [showBibleTool, setShowBibleTool] = useState(false);
     const [bibleReference, setBibleReference] = useState('');
@@ -280,9 +272,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const [showPinTool, setShowPinTool] = useState(false);
     const [pinText, setPinText] = useState('');
 
-    // Reply-to state
-    const [replyTo, setReplyTo] = useState<{ id: string; content: string; senderName: string } | null>(null);
-
     // Event planning state
     const [showEventTool, setShowEventTool] = useState(false);
     const [eventTitle, setEventTitle] = useState('');
@@ -297,38 +286,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
-
-    // Point 4: Pinned notification icons in group
-    const [pinnedNotifications, setPinnedNotifications] = useState<Array<{
-        id: string; type: 'poll' | 'announcement' | 'verse' | 'program' | 'event';
-        count: number; label: string; groupId: string;
-    }>>([]);
-    // Which section of GroupToolsPanel to open when clicking a pinned notif
-    const [groupToolsSection, setGroupToolsSection] = useState<'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | 'program' | null>(null);
-
-    // Point 9: Emoji reactions + threaded comments
-    const [messageReactions, setMessageReactions] = useState<Record<string, Record<string, string[]>>>({});
-    const [threadMessages, setThreadMessages] = useState<Message[]>([]);
-    const [activeThread, setActiveThread] = useState<{ messageId: string; content: string; senderName: string } | null>(null);
-    const [threadInput, setThreadInput] = useState('');
-    const [messageCommentCounts, setMessageCommentCounts] = useState<Record<string, number>>({});
-
-    // Point 11: Live group Bible games
-    const [activeGameSession, setActiveGameSession] = useState<{
-        id: string; creatorId: string; creatorName: string;
-        gameType: string; players: Array<{ id: string; name: string; score: number }>;
-        status: 'waiting' | 'playing' | 'finished';
-    } | null>(null);
-    const [showGameLobby, setShowGameLobby] = useState(false);
-
-    // Active group meeting state (WhatsApp-like group calls)
-    const [activeMeeting, setActiveMeeting] = useState<{
-        id: string; creatorId: string; creatorName: string;
-        type: 'audio' | 'video'; startTime: string;
-        participants: string[]; groupId: string;
-    } | null>(null);
-    const [showNotificationPanel, setShowNotificationPanel] = useState(false);
-    const [showVoiceSalon, setShowVoiceSalon] = useState(false);
 
     // Refs to hold current values without causing re-subscriptions
     const selectedConversationRef = useRef(selectedConversation);
@@ -414,10 +371,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         })();
     }, [activeConversationId, user]);
 
-    // Derived state for current view and call handling
-    const currentRecipient = selectedConversation?.participant;
-    const currentGroup = selectedGroup;
-
     // Manual refresh function
     const handleManualRefresh = useCallback(async () => {
         if (!user) return;
@@ -435,49 +388,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         const initData = async () => {
             setIsLoading(true);
             await Promise.all([loadConversations(), loadGroups(), loadAllUsers()]);
-
-            // Restore previous group/view from sessionStorage (Point 2: persist on refresh)
-            const savedGroupId = sessionStorage.getItem('chat_selectedGroupId');
-            const savedView = sessionStorage.getItem('chat_view') as typeof view;
-            if (savedGroupId && (!activeGroupId)) {
-                try {
-                    const { data } = await supabase
-                        .from('prayer_groups')
-                        .select('*')
-                        .eq('id', savedGroupId)
-                        .single();
-                    if (data) {
-                        const { count } = await supabase
-                            .from('prayer_group_members')
-                            .select('*', { count: 'exact', head: true })
-                            .eq('group_id', data.id);
-                        setSelectedGroup({
-                            id: data.id,
-                            name: data.name,
-                            description: data.description,
-                            is_urgent: data.is_urgent || false,
-                            member_count: count || 0,
-                            unreadCount: 0,
-                            is_admin_created: !data.prayer_request_id,
-                            prayer_request_id: data.prayer_request_id,
-                            avatar_url: data.avatar_url || null,
-                            created_by: data.created_by,
-                            created_at: data.created_at,
-                        });
-                        setView('group');
-                    }
-                } catch (e) {
-                    console.log('Could not restore group from session');
-                }
-            } else if (savedView && savedView === 'list') {
-                setView('list');
-            }
-
             setIsLoading(false);
         };
         initData();
 
         const cleanup = setupPresenceChannel();
+
+        // Disable polling - rely on realtime subscriptions only
+        // This was causing the continuous refresh issue
+        // const pollInterval = setInterval(...)
 
         return () => {
             cleanup?.();
@@ -490,19 +409,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only re-run if user ID changes, not user object
-
-    // Persist view + selectedGroup to sessionStorage (Point 2)
-    useEffect(() => {
-        sessionStorage.setItem('chat_view', view);
-    }, [view]);
-    useEffect(() => {
-        if (selectedGroup) {
-            sessionStorage.setItem('chat_selectedGroupId', selectedGroup.id);
-        } else {
-            sessionStorage.removeItem('chat_selectedGroupId');
-        }
-    }, [selectedGroup]);
-
 
     // RLS workaround: listen for DM refresh signals from the notification system
     const dmRefreshSignal = useAppStore(s => s.dmRefreshSignal);
@@ -609,23 +515,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         .eq('id', msg.user_id)
                         .single();
 
-                    const newMsg = {
-                        ...msg,
-                        sender_id: msg.user_id,
-                        sender,
-                        is_read: true
-                    };
                     setMessages(prev => {
                         if (prev.find(m => m.id === msg.id)) return prev;
-                        return [...prev, newMsg];
-                    });
-                    // Invalidate memory cache + append to IndexedDB
-                    invalidateGroupMsgCache(msg.group_id);
-                    appendCachedMessage({
-                        id: msg.id, group_id: msg.group_id, user_id: msg.user_id,
-                        content: msg.content, type: msg.type || 'text',
-                        created_at: msg.created_at, sender_name: sender?.full_name,
-                        sender_avatar: sender?.avatar_url,
+                        return [...prev, {
+                            ...msg,
+                            sender_id: msg.user_id,
+                            sender,
+                            is_read: true
+                        }];
                     });
                 } else if (!currentGroup) {
                     // User is on the list view — reload groups to update last message
@@ -677,37 +574,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             })
             .subscribe();
 
-        // Listen for incoming call signals via broadcast
-        const callSignalChannel = supabase
-            .channel(`call_signal_${user.id}`)
-            .on('broadcast', { event: 'incoming-call' }, (payload) => {
-                const data = payload.payload as any;
-                if (data && data.callerId && data.callerId !== user.id) {
-                    setIncomingCall({
-                        callerName: data.callerName || 'Utilisateur',
-                        callerAvatar: data.callerAvatar || null,
-                        callType: data.callType || 'audio',
-                        callerId: data.callerId,
-                    });
-                }
-            })
-            .on('broadcast', { event: 'call-cancelled' }, (payload) => {
-                const data = payload.payload as any;
-                if (data?.callerId) {
-                    setIncomingCall(prev => {
-                        if (prev && prev.callerId === data.callerId) return null;
-                        return prev;
-                    });
-                }
-            })
-            .subscribe();
-
         return () => {
             dmChannel.unsubscribe();
             groupChannel.unsubscribe();
             typingChannel.unsubscribe();
             groupDeleteChannel.unsubscribe();
-            callSignalChannel.unsubscribe();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only user.id - refs are used for conversation/group
@@ -825,29 +696,23 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
                 if (groupError) throw groupError;
 
-                // Batch-fetch all member counts in ONE query using group_by trick
-                const { data: memberCounts } = await supabase
-                    .from('prayer_group_members')
-                    .select('group_id')
-                    .in('group_id', groupIds);
-
-                const countMap: Record<string, number> = {};
-                (memberCounts || []).forEach(m => {
-                    countMap[m.group_id] = (countMap[m.group_id] || 0) + 1;
-                });
-
                 // Separate admin-created from prayer-request groups
                 const userGroups: ChatGroup[] = [];
                 const adminGroupsList: ChatGroup[] = [];
 
                 for (const g of (groupData || [])) {
+                    // Get member count
+                    const { count } = await supabase
+                        .from('prayer_group_members')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('group_id', g.id);
 
                     const group: ChatGroup = {
                         id: g.id,
                         name: g.name,
                         description: g.description,
                         is_urgent: g.is_urgent || false,
-                        member_count: countMap[g.id] || 0,
+                        member_count: count || 0,
                         unreadCount: 0,
                         is_admin_created: !g.prayer_request_id,
                         prayer_request_id: g.prayer_request_id,
@@ -947,107 +812,58 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     };
 
     const loadMessages = async (type: 'conversation' | 'group', id: string) => {
-        setIsLoading(true);
+        setMessages([]); // Clear previous messages immediately
         try {
             if (type === 'conversation') {
-                // Show cached messages instantly
-                const cached = await getCachedConversationMessages(id);
-                if (cached.length > 0) {
-                    setMessages(cached.map((m: any) => ({
-                        ...m,
-                        sender: { id: m.user_id, full_name: m.sender_name || 'Utilisateur', avatar_url: m.sender_avatar || null },
-                    })));
-                    setIsLoading(false);
-                }
                 // id here is the conversation_id (from conversations table)
                 const { data, error } = await supabase
                     .from('direct_messages')
                     .select('*')
                     .eq('conversation_id', id)
-                    .order('created_at', { ascending: true })
-                    .limit(100);
+                    .order('created_at', { ascending: true });
 
                 if (error) throw error;
 
-                // Batch fetch sender profiles (instead of one-by-one)
-                const msgs = data || [];
-                const uniqueSenderIds = [...new Set(msgs.map((m: any) => m.sender_id))];
-                const profileMap = new Map<string, any>();
-
-                if (uniqueSenderIds.length > 0) {
-                    const { data: profiles } = await supabase
-                        .from('profiles')
-                        .select('id, full_name, avatar_url')
-                        .in('id', uniqueSenderIds);
-                    (profiles || []).forEach(p => profileMap.set(p.id, p));
-                }
-
-                const messagesWithSenders = msgs.map((msg: any) => ({
-                    ...msg,
-                    sender: profileMap.get(msg.sender_id) || { id: msg.sender_id, full_name: 'Utilisateur', avatar_url: null },
-                    is_read: msg.is_read || msg.sender_id === user?.id
-                }));
+                // Fetch sender profiles
+                const messagesWithSenders = await Promise.all(
+                    (data || []).map(async (msg: any) => {
+                        const { data: profile } = await supabase
+                            .from('profiles')
+                            .select('id, full_name, avatar_url')
+                            .eq('id', msg.sender_id)
+                            .single();
+                        return {
+                            ...msg,
+                            sender: profile,
+                            is_read: msg.is_read || msg.sender_id === user?.id
+                        };
+                    })
+                );
                 setMessages(messagesWithSenders);
 
-                // Cache to IndexedDB for next time
-                cacheMessages(messagesWithSenders.map((m: any) => ({
-                    id: m.id, conversation_id: id, user_id: m.sender_id,
-                    content: m.content, type: m.type || 'text',
-                    created_at: m.created_at, sender_name: m.sender?.full_name,
-                    sender_avatar: m.sender?.avatar_url,
-                })));
-
                 // Mark messages from others as read
-                supabase
+                await supabase
                     .from('direct_messages')
                     .update({ is_read: true })
                     .eq('conversation_id', id)
                     .neq('sender_id', user?.id)
-                    .eq('is_read', false)
-                    .then(() => { });
+                    .eq('is_read', false);
             } else {
-                // ── GROUPS: Show IndexedDB cache INSTANTLY ──────────────
-                const cached = await getCachedGroupMessages(id);
-                if (cached.length > 0) {
-                    setMessages(cached.map((m: any) => ({
-                        ...m,
-                        sender: { id: m.user_id, full_name: m.sender_name || 'Membre', avatar_url: m.sender_avatar || null },
-                        sender_id: m.user_id, is_read: true,
-                    })));
-                    setIsLoading(false); // Instantly visible!
-                }
+                const { data, error } = await supabase
+                    .from('prayer_group_messages')
+                    .select(`
+                        *,
+                        sender:user_id (id, full_name, avatar_url)
+                    `)
+                    .eq('group_id', id)
+                    .order('created_at', { ascending: true });
 
-                // Load fresh from Supabase
-                let groupMsgs: any[] = [];
-                try {
-                    const rawMessages = await loadGroupMessagesClient(id);
-                    groupMsgs = rawMessages.map((m: any) => ({
-                        ...m,
-                        sender: m.profiles
-                            ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url }
-                            : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
-                        sender_id: m.user_id,
-                        is_read: true
-                    }));
-                } catch (apiErr) {
-                    console.warn('[loadMessages] Error loading group messages:', apiErr);
-                }
-                setMessages(groupMsgs);
-
-                // Persist to IndexedDB
-                cacheMessages(groupMsgs.map((m: any) => ({
-                    id: m.id, group_id: id, user_id: m.user_id,
-                    content: m.content, type: m.type || 'text',
-                    voice_url: m.voice_url, voice_duration: m.voice_duration,
-                    created_at: m.created_at, sender_name: m.sender?.full_name,
-                    sender_avatar: m.sender?.avatar_url,
+                if (error) throw error;
+                setMessages((data || []).map((m: any) => ({
+                    ...m,
+                    sender_id: m.user_id,
+                    is_read: true
                 })));
-                // Load reactions, comments, notifications, game session, and active meeting for this group
-                loadReactions(id);
-                loadCommentCounts(id, groupMsgs.map((m: any) => m.id));
-                loadPinnedNotifications(id);
-                loadGameSession(id);
-                loadActiveMeeting(id);
             }
         } catch (e) {
             console.error('Error loading messages:', e);
@@ -1059,13 +875,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const sendMessage = async () => {
         if (!newMessage.trim() || !user) return;
 
-        // Prepend reply context if replying
-        let msgContent = newMessage.trim();
-        if (replyTo) {
-            msgContent = `↩ **${replyTo.senderName}**: "${replyTo.content.slice(0, 60)}${replyTo.content.length > 60 ? '…' : ''}"\n${msgContent}`;
-        }
+        const msgContent = newMessage.trim();
         setNewMessage('');
-        setReplyTo(null);
         setIsSending(true);
         try {
             if (view === 'conversation' && selectedConversation) {
@@ -1109,20 +920,26 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     conversationId: selectedConversation.id,
                 });
             } else if (view === 'group' && selectedGroup) {
-                // Send group message (direct Supabase call)
-                const savedMsg = await sendGroupMessageClient({
-                    groupId: selectedGroup.id,
-                    userId: user.id,
-                    content: msgContent,
-                    type: 'text',
-                });
+                const { data, error } = await supabase
+                    .from('prayer_group_messages')
+                    .insert({
+                        group_id: selectedGroup.id,
+                        user_id: user.id,
+                        content: msgContent,
+                        type: 'text'
+                    })
+                    .select('*')
+                    .single();
 
-                if (savedMsg) {
+                if (error) throw error;
+
+                // Optimistic local add
+                if (data) {
                     setMessages(prev => {
-                        if (prev.find(m => m.id === savedMsg.id)) return prev;
+                        if (prev.find(m => m.id === data.id)) return prev;
                         return [...prev, {
-                            ...savedMsg,
-                            sender_id: savedMsg.user_id,
+                            ...data,
+                            sender_id: data.user_id,
                             sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
                             is_read: true
                         }];
@@ -1204,15 +1021,18 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     conversationId: selectedConversation.id,
                 });
             } else if (view === 'group' && selectedGroup) {
-                // Send group voice message (direct Supabase call)
-                await sendGroupMessageClient({
-                    groupId: selectedGroup.id,
-                    userId: user.id,
-                    content: '🎤 Message vocal',
-                    type: 'voice',
-                    voiceUrl: publicUrl,
-                    voiceDuration: duration,
-                });
+                const { error } = await supabase
+                    .from('prayer_group_messages')
+                    .insert({
+                        group_id: selectedGroup.id,
+                        user_id: user.id,
+                        content: '🎤 Message vocal',
+                        type: 'voice',
+                        voice_url: publicUrl,
+                        voice_duration: duration
+                    });
+
+                if (error) throw error;
             }
 
             toast.success('Message vocal envoyé!');
@@ -1333,62 +1153,46 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         loadMessages('conversation', conv.id);
     };
 
-    // Open group — OPTIMIZED: cache-first + parallel loading
-    const openGroup = async (group: ChatGroup) => {
+    // Open group
+    const openGroup = (group: ChatGroup) => {
         setSelectedGroup(group);
         setSelectedConversation(null);
         setView('group');
         setShowGroupTools(false);
+        loadMessages('group', group.id);
+        loadGroupMembers(group.id);
 
-        // Load pinned prayer subject immediately (sync, no API)
+        // Load pinned prayer from group description
         if (group.description?.startsWith('📌')) {
             setPinnedPrayer(group.description.replace('📌 ', ''));
         } else {
             setPinnedPrayer(null);
         }
 
-        // Load cached messages from IndexedDB FIRST (instant display)
-        try {
-            const cached = await getCachedGroupMessages(group.id);
-            if (cached && cached.length > 0) {
-                setMessages(cached.map(m => ({
-                    id: m.id,
-                    content: m.content,
-                    type: (m.type || 'text') as any,
-                    sender_id: m.user_id,
-                    sender: { id: m.user_id, full_name: m.sender_name || null, avatar_url: m.sender_avatar || null },
-                    created_at: m.created_at,
-                    is_read: true,
-                })));
-            }
-        } catch (e) {
-            // IndexedDB not available
-        }
-
-        // Load fresh data in PARALLEL (much faster than sequential)
-        Promise.all([
-            loadMessages('group', group.id),
-            loadGroupMembers(group.id),
-        ]);
-
-        // Start polling fallback for group messages
+        // Start polling fallback for group messages (every 3s for reliability)
         if (groupPollRef.current) clearInterval(groupPollRef.current);
         groupPollRef.current = setInterval(async () => {
             try {
-                const data = await loadGroupMessagesClient(group.id);
-                setMessages(prev => {
-                    const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
-                    const newLastId = data.length > 0 ? data[data.length - 1].id : null;
-                    if (prevLastId === newLastId && data.length === prev.length) return prev;
-                    return data.map((m: any) => ({
-                        ...m,
-                        sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
-                        sender_id: m.user_id,
-                        is_read: true
-                    }));
-                });
+                const { data, error } = await supabase
+                    .from('prayer_group_messages')
+                    .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                    .eq('group_id', group.id)
+                    .order('created_at', { ascending: true });
+                if (!error && data) {
+                    setMessages(prev => {
+                        // Compare by last message ID to detect new messages reliably
+                        const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
+                        const newLastId = data.length > 0 ? data[data.length - 1].id : null;
+                        if (prevLastId === newLastId && data.length === prev.length) return prev;
+                        return data.map((m: any) => ({
+                            ...m,
+                            sender_id: m.user_id,
+                            is_read: true
+                        }));
+                    });
+                }
             } catch { }
-        }, 8000);
+        }, 3000);
     };
 
     // Effect to handle deferred group opening (runs after loadMessages/loadGroupMembers are defined)
@@ -1408,24 +1212,29 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 setPinnedPrayer(null);
             }
 
-            // Start polling fallback for group messages (direct Supabase, no serverless)
+            // Start polling fallback for group messages
             if (groupPollRef.current) clearInterval(groupPollRef.current);
             groupPollRef.current = setInterval(async () => {
                 try {
-                    const data = await loadGroupMessagesClient(gId);
-                    setMessages(prev => {
-                        const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
-                        const newLastId = data.length > 0 ? data[data.length - 1].id : null;
-                        if (prevLastId === newLastId && data.length === prev.length) return prev;
-                        return data.map((m: any) => ({
-                            ...m,
-                            sender: m.profiles ? { id: m.user_id, full_name: m.profiles.full_name, avatar_url: m.profiles.avatar_url } : { id: m.user_id, full_name: 'Utilisateur', avatar_url: null },
-                            sender_id: m.user_id,
-                            is_read: true
-                        }));
-                    });
+                    const { data, error } = await supabase
+                        .from('prayer_group_messages')
+                        .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                        .eq('group_id', gId)
+                        .order('created_at', { ascending: true });
+                    if (!error && data) {
+                        setMessages(prev => {
+                            const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
+                            const newLastId = data.length > 0 ? data[data.length - 1].id : null;
+                            if (prevLastId === newLastId && data.length === prev.length) return prev;
+                            return data.map((m: any) => ({
+                                ...m,
+                                sender_id: m.user_id,
+                                is_read: true
+                            }));
+                        });
+                    }
                 } catch { }
-            }, 8000);
+            }, 3000);
         }
     }, [selectedGroup, view]);
 
@@ -1558,7 +1367,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const urlRegex = /(https?:\/\/[^\s]+)/gi;
 
     // Render message content with clickable links and @mentions
-    const renderMessageContent = (content: string, forceExpand = false) => {
+    const renderMessageContent = (content: string) => {
         // First handle URLs
         const parts = content.split(urlRegex);
         const hasUrl = parts.length > 1;
@@ -1612,35 +1421,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     return <span key={i}>{renderWithFormatting(part)}</span>;
                 })}
             </div>
-        );
-    };
-
-    // "Lire la suite" — uses <details> to avoid useState inside parent component
-    // (inline components with hooks cause React error #310)
-    const ExpandableMessage = ({ content }: { content: string }) => {
-        const MAX_LEN = 300;
-        const isLong = content.length > MAX_LEN;
-
-        if (!isLong) {
-            return <div>{renderMessageContent(content, true)}</div>;
-        }
-
-        return (
-            <details className="group">
-                <summary
-                    className="text-indigo-400 text-xs font-semibold mt-1 hover:underline cursor-pointer list-none"
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    <span className="group-open:hidden">
-                        {renderMessageContent(content.slice(0, MAX_LEN) + '...', true)}
-                        <span className="block text-indigo-400 text-xs font-semibold mt-1">Lire la suite...</span>
-                    </span>
-                    <span className="hidden group-open:inline">
-                        {renderMessageContent(content, true)}
-                        <span className="block text-indigo-400 text-xs font-semibold mt-1">Réduire</span>
-                    </span>
-                </summary>
-            </details>
         );
     };
 
@@ -1721,745 +1501,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         }
     };
 
-    // Check if current user is creator or admin of the selected group
-    const isCreatorOrAdmin = selectedGroup && user ? (
-        selectedGroup.created_by === user.id ||
-        groupMembers.some(m => m.id === user.id && m.role === 'admin')
-    ) : false;
-
-    // Delete entire group (creator only)
-    const handleDeleteGroup = async () => {
-        if (!selectedGroup || !user) return;
-        if (selectedGroup.created_by !== user.id) {
-            toast.error('Seul le créateur peut supprimer le groupe');
-            return;
-        }
-        if (!confirm(`Supprimer le groupe "${selectedGroup.name}" définitivement ? Tous les messages et membres seront supprimés.`)) return;
-        try {
-            // Delete all group messages
-            await supabase.from('group_messages').delete().eq('group_id', selectedGroup.id);
-            // Delete all members
-            await supabase.from('prayer_group_members').delete().eq('group_id', selectedGroup.id);
-            // Delete polls
-            await supabase.from('group_polls').delete().eq('group_id', selectedGroup.id);
-            // Delete events
-            await supabase.from('group_events').delete().eq('group_id', selectedGroup.id);
-            // Delete the group itself
-            const { error } = await supabase.from('prayer_groups').delete().eq('id', selectedGroup.id);
-            if (error) throw error;
-            // Update local state
-            setGroups(prev => prev.filter(g => g.id !== selectedGroup.id));
-            setAdminGroups(prev => prev.filter(g => g.id !== selectedGroup.id));
-            setSelectedGroup(null);
-            setView('list');
-            toast.success('Groupe supprimé définitivement');
-        } catch (err) {
-            console.error('Error deleting group:', err);
-            toast.error('Erreur lors de la suppression du groupe');
-        }
-    };
-
-    // Delete own message (any member can delete their own messages)
-    const handleDeleteMessage = async (messageId: string, senderId: string) => {
-        if (!user || senderId !== user.id) {
-            toast.error('Vous ne pouvez supprimer que vos propres messages');
-            return;
-        }
-        try {
-            if (view === 'group' && selectedGroup) {
-                const { error } = await supabase.from('group_messages').delete().eq('id', messageId);
-                if (error) throw error;
-                setMessages(prev => prev.filter(m => m.id !== messageId));
-            } else if (view === 'conversation' && selectedConversation) {
-                const { error } = await supabase.from('direct_messages').delete().eq('id', messageId);
-                if (error) throw error;
-                setMessages(prev => prev.filter(m => m.id !== messageId));
-            }
-            toast.success('Message supprimé');
-        } catch (err) {
-            console.error('Error deleting message:', err);
-            toast.error('Erreur lors de la suppression');
-        }
-    };
-
-    // =====================================================
-    // POINT 4: Pinned Notification Icons in Group
-    // =====================================================
-    const loadPinnedNotifications = useCallback((groupId: string) => {
-        try {
-            const stored = localStorage.getItem(`group_notifs_${groupId}_${user?.id}`);
-            if (stored) {
-                setPinnedNotifications(JSON.parse(stored));
-            } else {
-                setPinnedNotifications([]);
-            }
-        } catch { setPinnedNotifications([]); }
-    }, [user?.id]);
-
-
-    // =====================================================
-    // POINT 4: Group Notification System (Pinned Icons)
-    // =====================================================
-
-    // Add a notification to this user's local state + localStorage
-    const addPinnedNotification = useCallback((
-        groupId: string,
-        type: 'poll' | 'announcement' | 'verse' | 'program' | 'event',
-        label: string,
-        notifId: string
-    ) => {
-        setPinnedNotifications(prev => {
-            // Check if we already have this exact notification ID (avoid duplicates)
-            if (prev.some(n => n.id === notifId)) return prev;
-            const existing = prev.find(n => n.type === type && n.groupId === groupId);
-            let updated: typeof prev;
-            if (existing) {
-                // Accumulate count for same type
-                updated = prev.map(n =>
-                    n.type === type && n.groupId === groupId
-                        ? { ...n, count: n.count + 1, label, id: notifId }
-                        : n
-                );
-            } else {
-                updated = [...prev, { id: notifId, type, label, count: 1, groupId }];
-            }
-            localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
-            return updated;
-        });
-    }, [user?.id]);
-
-    // Admin broadcasts a notification to all group members via Supabase realtime
-    const broadcastGroupNotification = useCallback(async (
-        groupId: string,
-        type: 'poll' | 'announcement' | 'verse' | 'program' | 'event',
-        label: string
-    ) => {
-        if (!user || !selectedGroup) return;
-        const notifId = `${type}_${Date.now()}`;
-        const payload = { id: notifId, type, label, groupId, publisherId: user.id };
-
-        // Broadcast to all members via Supabase channel
-        const ch = supabase.channel(`group_notifs_${groupId}`, {
-            config: { broadcast: { self: true } }
-        });
-        await ch.subscribe();
-        ch.send({ type: 'broadcast', event: 'new-notification', payload });
-        setTimeout(() => supabase.removeChannel(ch), 2000);
-
-        // Also persist to localStorage for members who are offline
-        // We store the "global" notification list (for offline members to pick up on next load)
-        try {
-            const stored = localStorage.getItem(`group_notifs_global_${groupId}`);
-            const globalList = stored ? JSON.parse(stored) : [];
-            globalList.push(payload);
-            localStorage.setItem(`group_notifs_global_${groupId}`, JSON.stringify(globalList));
-        } catch { /* ignore */ }
-    }, [user, selectedGroup]);
-
-    // Admin unpins a notification for ALL members
-    const unpinNotificationForAll = useCallback(async (
-        type: 'poll' | 'announcement' | 'verse' | 'program' | 'event',
-        groupId: string
-    ) => {
-        if (!selectedGroup) return;
-        // Remove from global list
-        try {
-            const stored = localStorage.getItem(`group_notifs_global_${groupId}`);
-            if (stored) {
-                const globalList = JSON.parse(stored).filter((n: any) => n.type !== type);
-                localStorage.setItem(`group_notifs_global_${groupId}`, JSON.stringify(globalList));
-            }
-        } catch { /* ignore */ }
-
-        // Broadcast unpin to all members
-        const ch = supabase.channel(`group_notifs_${groupId}`, {
-            config: { broadcast: { self: true } }
-        });
-        await ch.subscribe();
-        ch.send({ type: 'broadcast', event: 'unpin-notification', payload: { type, groupId } });
-        setTimeout(() => supabase.removeChannel(ch), 2000);
-    }, [selectedGroup]);
-
-    // Member dismisses a notification for themselves only
-    const dismissNotification = useCallback((notifId: string, groupId: string) => {
-        setPinnedNotifications(prev => {
-            const updated = prev.filter(n => n.id !== notifId);
-            localStorage.setItem(`group_notifs_${groupId}_${user?.id}`, JSON.stringify(updated));
-            return updated;
-        });
-    }, [user?.id]);
-
-    // Listen for realtime notification broadcasts when in a group
-    useEffect(() => {
-        if (view !== 'group' || !selectedGroup) return;
-        const gId = selectedGroup.id;
-
-        // Load offline notifications (published while user was away)
-        const loadOfflineNotifs = () => {
-            try {
-                const dismissed = localStorage.getItem(`group_notifs_${gId}_${user?.id}`);
-                const dismissedList: any[] = dismissed ? JSON.parse(dismissed) : [];
-                const dismissedIds = new Set(dismissedList.map((n: any) => n.id));
-
-                const stored = localStorage.getItem(`group_notifs_global_${gId}`);
-                if (stored) {
-                    const globalList: any[] = JSON.parse(stored);
-                    // Only show notifications not yet dismissed by this user
-                    const toShow = globalList.filter((n: any) => !dismissedIds.has(n.id));
-                    if (toShow.length > 0) {
-                        setPinnedNotifications(prev => {
-                            let updated = [...prev];
-                            for (const n of toShow) {
-                                if (updated.some(p => p.id === n.id)) continue;
-                                const existing = updated.find(p => p.type === n.type && p.groupId === gId);
-                                if (existing) {
-                                    updated = updated.map(p =>
-                                        p.type === n.type && p.groupId === gId
-                                            ? { ...p, count: p.count + 1, label: n.label, id: n.id }
-                                            : p
-                                    );
-                                } else {
-                                    updated.push({ id: n.id, type: n.type, label: n.label, count: 1, groupId: gId });
-                                }
-                            }
-                            return updated;
-                        });
-                    }
-                }
-            } catch { /* ignore */ }
-        };
-
-        loadOfflineNotifs();
-
-        // Subscribe to realtime notifications
-        const ch = supabase.channel(`group_notifs_${gId}`, {
-            config: { broadcast: { self: false } }
-        });
-
-        ch.on('broadcast', { event: 'new-notification' }, ({ payload }) => {
-            if (payload.publisherId === user?.id) return; // Admin already sees it locally
-            addPinnedNotification(gId, payload.type, payload.label, payload.id);
-            // Show toast with action to open the tool
-            const typeLabels: Record<string, string> = {
-                poll: '📊 Nouveau sondage',
-                announcement: '📢 Nouvelle annonce',
-                verse: '📖 Verset du jour',
-                program: '📋 Programme publié',
-                event: '📅 Nouvel événement',
-            };
-            toast.info(typeLabels[payload.type] || '🔔 Nouvelle notification', {
-                description: payload.label,
-                action: {
-                    label: 'Voir',
-                    onClick: () => {
-                        const sectionMap: Record<string, any> = {
-                            poll: 'polls', announcement: 'announcement',
-                            verse: 'verse', program: 'program', event: 'events'
-                        };
-                        setGroupToolsSection(sectionMap[payload.type] || null);
-                        setShowGroupTools(true);
-                    }
-                }
-            });
-        });
-
-        ch.on('broadcast', { event: 'unpin-notification' }, ({ payload }) => {
-            // Admin unpinned — remove from everyone's view
-            setPinnedNotifications(prev => {
-                const updated = prev.filter(n => !(n.type === payload.type && n.groupId === payload.groupId));
-                localStorage.setItem(`group_notifs_${gId}_${user?.id}`, JSON.stringify(updated));
-                return updated;
-            });
-        });
-
-        ch.subscribe();
-        return () => { supabase.removeChannel(ch); };
-    }, [view, selectedGroup?.id, user?.id, addPinnedNotification]);
-
-    // Process incoming notifications from group messages (legacy support)
-    const processNotificationMessage = useCallback((content: string, groupId: string) => {
-        if (!content.startsWith('__NOTIF__')) return false;
-        try {
-            const data = JSON.parse(content.replace('__NOTIF__', ''));
-            addPinnedNotification(groupId, data.type, data.label, data.id);
-            return true;
-        } catch { return false; }
-    }, [addPinnedNotification]);
-
-    // =====================================================
-    // POINT 9: Persistent Emoji Reactions + Threaded Comments
-    // =====================================================
-    const addReaction = useCallback(async (messageId: string, emoji: string) => {
-        if (!user || !selectedGroup) return;
-        // Optimistic update
-        setMessageReactions(prev => {
-            const msgReactions = { ...(prev[messageId] || {}) };
-            const emojiList = [...(msgReactions[emoji] || [])];
-            const userIdx = emojiList.indexOf(user.id);
-            if (userIdx >= 0) {
-                emojiList.splice(userIdx, 1);
-            } else {
-                emojiList.push(user.id);
-            }
-            if (emojiList.length === 0) {
-                delete msgReactions[emoji];
-            } else {
-                msgReactions[emoji] = emojiList;
-            }
-            return { ...prev, [messageId]: msgReactions };
-        });
-        setSelectedMessageId(null);
-
-        // Persist to Supabase
-        try {
-            const { data: existing } = await supabase
-                .from('group_message_reactions')
-                .select('id')
-                .eq('message_id', messageId)
-                .eq('user_id', user.id)
-                .eq('emoji', emoji)
-                .maybeSingle();
-
-            if (existing) {
-                await supabase.from('group_message_reactions').delete().eq('id', existing.id);
-            } else {
-                await supabase.from('group_message_reactions').insert({
-                    message_id: messageId,
-                    group_id: selectedGroup.id,
-                    user_id: user.id,
-                    emoji
-                });
-            }
-        } catch (e) {
-            console.error('Error persisting reaction:', e);
-        }
-    }, [user, selectedGroup]);
-
-    const loadReactions = useCallback(async (groupId: string) => {
-        try {
-            const { data, error } = await supabase
-                .from('group_message_reactions')
-                .select('message_id, emoji, user_id')
-                .eq('group_id', groupId);
-
-            if (error) {
-                // Table might not exist yet - fallback to localStorage
-                const stored = localStorage.getItem(`group_reactions_${groupId}`);
-                if (stored) setMessageReactions(JSON.parse(stored));
-                else setMessageReactions({});
-                return;
-            }
-
-            const reactions: Record<string, Record<string, string[]>> = {};
-            for (const row of (data || [])) {
-                if (!reactions[row.message_id]) reactions[row.message_id] = {};
-                if (!reactions[row.message_id][row.emoji]) reactions[row.message_id][row.emoji] = [];
-                reactions[row.message_id][row.emoji].push(row.user_id);
-            }
-            setMessageReactions(reactions);
-        } catch {
-            setMessageReactions({});
-        }
-    }, []);
-
-    // Threaded comments - now persisted in Supabase
-    const openThread = useCallback(async (messageId: string, content: string, senderName: string) => {
-        setActiveThread({ messageId, content, senderName });
-        setSelectedMessageId(null);
-        setThreadMessages([]);
-
-        try {
-            const { data, error } = await supabase
-                .from('group_message_comments')
-                .select('id, message_id, user_id, content, created_at')
-                .eq('message_id', messageId)
-                .order('created_at', { ascending: true });
-
-            if (error) {
-                // Fallback to localStorage if table doesn't exist
-                const stored = localStorage.getItem(`thread_${messageId}`);
-                if (stored) setThreadMessages(JSON.parse(stored));
-                return;
-            }
-
-            // Fetch profiles for commenters
-            const userIds = [...new Set((data || []).map(c => c.user_id))];
-            const profileMap = new Map<string, any>();
-            if (userIds.length > 0) {
-                const { data: profiles } = await supabase
-                    .from('profiles')
-                    .select('id, full_name, avatar_url')
-                    .in('id', userIds);
-                (profiles || []).forEach(p => profileMap.set(p.id, p));
-            }
-
-            const comments = (data || []).map(c => ({
-                id: c.id,
-                content: c.content,
-                type: 'text' as const,
-                sender_id: c.user_id,
-                sender: profileMap.get(c.user_id) || { id: c.user_id, full_name: 'Utilisateur', avatar_url: null },
-                created_at: c.created_at,
-                is_read: true
-            }));
-            setThreadMessages(comments);
-        } catch {
-            setThreadMessages([]);
-        }
-    }, []);
-
-    const sendThreadReply = useCallback(async () => {
-        if (!threadInput.trim() || !activeThread || !user || !selectedGroup) return;
-        const replyContent = threadInput.trim();
-        setThreadInput('');
-
-        // Optimistic update
-        const optimisticReply: Message = {
-            id: `thread_${Date.now()}`,
-            content: replyContent,
-            type: 'text',
-            sender_id: user.id,
-            sender: { id: user.id, full_name: user.name || 'Utilisateur', avatar_url: user.avatar || null },
-            created_at: new Date().toISOString(),
-            is_read: true
-        };
-        setThreadMessages(prev => [...prev, optimisticReply]);
-        setMessageCommentCounts(prev => ({
-            ...prev,
-            [activeThread.messageId]: (prev[activeThread.messageId] || 0) + 1
-        }));
-
-        try {
-            const { data, error } = await supabase
-                .from('group_message_comments')
-                .insert({
-                    message_id: activeThread.messageId,
-                    group_id: selectedGroup.id,
-                    user_id: user.id,
-                    content: replyContent
-                })
-                .select('id, created_at')
-                .single();
-
-            if (error) {
-                // Fallback to localStorage
-                const stored = localStorage.getItem(`thread_${activeThread.messageId}`);
-                const existing = stored ? JSON.parse(stored) : [];
-                existing.push(optimisticReply);
-                localStorage.setItem(`thread_${activeThread.messageId}`, JSON.stringify(existing));
-                localStorage.setItem(`thread_count_${activeThread.messageId}`, String(existing.length));
-                return;
-            }
-
-            // Update the optimistic reply with the real ID
-            if (data) {
-                setThreadMessages(prev => prev.map(m =>
-                    m.id === optimisticReply.id ? { ...m, id: data.id, created_at: data.created_at } : m
-                ));
-            }
-        } catch (e) {
-            console.error('Error sending thread reply:', e);
-        }
-    }, [threadInput, activeThread, user, selectedGroup]);
-
-    const loadCommentCounts = useCallback(async (groupId: string, messageIds: string[]) => {
-        if (messageIds.length === 0) {
-            setMessageCommentCounts({});
-            return;
-        }
-        try {
-            const { data, error } = await supabase
-                .from('group_message_comments')
-                .select('message_id')
-                .eq('group_id', groupId)
-                .in('message_id', messageIds);
-
-            if (error) {
-                // Fallback to localStorage
-                const counts: Record<string, number> = {};
-                for (const id of messageIds) {
-                    const count = localStorage.getItem(`thread_count_${id}`);
-                    if (count) counts[id] = parseInt(count);
-                }
-                setMessageCommentCounts(counts);
-                return;
-            }
-
-            const counts: Record<string, number> = {};
-            for (const row of (data || [])) {
-                counts[row.message_id] = (counts[row.message_id] || 0) + 1;
-            }
-            setMessageCommentCounts(counts);
-        } catch {
-            setMessageCommentCounts({});
-        }
-    }, []);
-
-    // =====================================================
-    // POINT 11: Live Group Bible Games
-    // =====================================================
-    const startGroupGame = useCallback(async (gameType: string) => {
-        if (!user || !selectedGroup) return;
-        const sessionId = `game_${selectedGroup.id}_${Date.now()}`;
-        const session = {
-            id: sessionId,
-            creatorId: user.id,
-            creatorName: user.name || 'Joueur',
-            gameType,
-            players: [{ id: user.id, name: user.name || 'Joueur', score: 0 }],
-            status: 'waiting' as const
-        };
-        setActiveGameSession(session);
-        // Broadcast game session to group via Supabase channel
-        const channel = supabase.channel(`game_${selectedGroup.id}`);
-        channel.send({
-            type: 'broadcast',
-            event: 'game-session',
-            payload: session
-        });
-        // Also persist to localStorage for resilience
-        localStorage.setItem(`active_game_${selectedGroup.id}`, JSON.stringify(session));
-        // Send a system message about the game
-        await supabase.from('prayer_group_messages').insert({
-            group_id: selectedGroup.id,
-            user_id: user.id,
-            content: `🎮 **${user.name}** a lancé un **${gameType === 'quiz' ? 'Duel Biblique' : 'Jeu Biblique'}** ! Cliquez sur le bouton clignotant pour rejoindre la partie ! 🏆`,
-            type: 'text'
-        });
-        setShowGameLobby(true);
-        toast.success('Partie créée ! Les membres peuvent rejoindre 🎮');
-    }, [user, selectedGroup]);
-
-    const joinGroupGame = useCallback(async () => {
-        if (!user || !selectedGroup) return;
-        const stored = localStorage.getItem(`active_game_${selectedGroup.id}`);
-        if (!stored) { toast.error('Aucune partie active'); return; }
-        try {
-            const session = JSON.parse(stored);
-            if (session.players.find((p: any) => p.id === user.id)) {
-                // Already in the game
-                setActiveGameSession(session);
-                setShowGameLobby(true);
-                return;
-            }
-            session.players.push({ id: user.id, name: user.name || 'Joueur', score: 0 });
-            localStorage.setItem(`active_game_${selectedGroup.id}`, JSON.stringify(session));
-            setActiveGameSession(session);
-            setShowGameLobby(true);
-            // Broadcast update
-            const channel = supabase.channel(`game_${selectedGroup.id}`);
-            channel.send({
-                type: 'broadcast',
-                event: 'game-session',
-                payload: session
-            });
-            toast.success('Vous avez rejoint la partie ! 🎮');
-        } catch { toast.error('Erreur'); }
-    }, [user, selectedGroup]);
-
-    const endGroupGame = useCallback(() => {
-        if (!selectedGroup) return;
-        localStorage.removeItem(`active_game_${selectedGroup.id}`);
-        setActiveGameSession(null);
-        setShowGameLobby(false);
-        toast.success('Partie terminée ! 🏆');
-    }, [selectedGroup]);
-
-    // Load game session when opening a group
-    const loadGameSession = useCallback((groupId: string) => {
-        try {
-            const stored = localStorage.getItem(`active_game_${groupId}`);
-            if (stored) {
-                const session = JSON.parse(stored);
-                if (session.status !== 'finished') {
-                    setActiveGameSession(session);
-                }
-            } else {
-                setActiveGameSession(null);
-            }
-        } catch { setActiveGameSession(null); }
-    }, []);
-
-    // ===== WhatsApp-style Group Meeting Functions =====
-
-    // Start a group meeting (audio or video)
-    const startGroupMeeting = useCallback(async (type: 'audio' | 'video') => {
-        if (!user || !selectedGroup) return;
-        const meetingId = `meeting_${selectedGroup.id}_${Date.now()}`;
-        const meeting = {
-            id: meetingId,
-            creatorId: user.id,
-            creatorName: user.name || 'Utilisateur',
-            type,
-            startTime: new Date().toISOString(),
-            participants: [user.id],
-            groupId: selectedGroup.id,
-        };
-        setActiveMeeting(meeting);
-        localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(meeting));
-
-        // Broadcast meeting to all group members via Supabase channel
-        const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
-            config: { broadcast: { self: false } }
-        });
-        await channel.subscribe();
-        channel.send({
-            type: 'broadcast',
-            event: 'meeting-started',
-            payload: meeting
-        });
-        setTimeout(() => supabase.removeChannel(channel), 2000);
-
-        // Ring each group member individually via their signal channel
-        if (groupMembers && groupMembers.length > 0) {
-            for (const member of groupMembers) {
-                if (member.id === user.id) continue;
-                const memberSignalChannel = supabase.channel(`call_signal_${member.id}`, {
-                    config: { broadcast: { self: false } }
-                });
-                await memberSignalChannel.subscribe();
-                memberSignalChannel.send({
-                    type: 'broadcast',
-                    event: 'incoming-call',
-                    payload: {
-                        callerId: user.id,
-                        callerName: user.name,
-                        callerAvatar: user.avatar,
-                        callType: type,
-                        groupId: selectedGroup.id,
-                        groupName: selectedGroup.name,
-                        mode: 'group',
-                    }
-                });
-                setTimeout(() => supabase.removeChannel(memberSignalChannel), 2000);
-            }
-        }
-
-        // Send a system message about the meeting
-        await supabase.from('prayer_group_messages').insert({
-            group_id: selectedGroup.id,
-            user_id: user.id,
-            content: `${type === 'video' ? '📹' : '📞'} **${user.name}** a démarré une réunion ${type === 'video' ? 'vidéo' : 'vocale'} de groupe ! Cliquez sur le bouton clignotant pour rejoindre.`,
-            type: 'text'
-        });
-
-        // Start the actual WebRTC call
-        setActiveCall({ type, mode: 'group' });
-        toast.success(`${type === 'video' ? '📹' : '📞'} Réunion de groupe démarrée !`);
-    }, [user, selectedGroup, groupMembers]);
-
-    // Join an active group meeting
-    const joinGroupMeeting = useCallback(() => {
-        if (!user || !selectedGroup) return;
-        const stored = localStorage.getItem(`active_meeting_${selectedGroup.id}`);
-        if (!stored) { toast.error('Aucune réunion active'); return; }
-        try {
-            const meeting = JSON.parse(stored);
-            if (!meeting.participants.includes(user.id)) {
-                meeting.participants.push(user.id);
-                localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(meeting));
-            }
-            setActiveMeeting(meeting);
-
-            // Broadcast join
-            const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
-                config: { broadcast: { self: false } }
-            });
-
-            channel.subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await channel.send({
-                        type: 'broadcast',
-                        event: 'meeting-join',
-                        payload: { meetingId: meeting.id, userId: user.id, userName: user.name }
-                    });
-                    setTimeout(() => supabase.removeChannel(channel), 2000);
-                }
-            });
-
-            // Start the WebRTC call to connect
-            setActiveCall({ type: meeting.type, mode: 'group' });
-            toast.success('Vous avez rejoint la réunion ! 📞');
-        } catch { toast.error('Erreur de connexion'); }
-    }, [user, selectedGroup]);
-
-    // End a group meeting
-    const endGroupMeeting = useCallback(async () => {
-        if (!selectedGroup) return;
-        localStorage.removeItem(`active_meeting_${selectedGroup.id}`);
-
-        // Broadcast end
-        const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
-            config: { broadcast: { self: false } }
-        });
-        await channel.subscribe();
-        channel.send({
-            type: 'broadcast',
-            event: 'meeting-ended',
-            payload: { groupId: selectedGroup.id }
-        });
-        setTimeout(() => supabase.removeChannel(channel), 2000);
-
-        setActiveMeeting(null);
-        toast.success('Réunion terminée');
-    }, [selectedGroup]);
-
-    // Load active meeting for a group
-    const loadActiveMeeting = useCallback((groupId: string) => {
-        try {
-            const stored = localStorage.getItem(`active_meeting_${groupId}`);
-            if (stored) {
-                const meeting = JSON.parse(stored);
-                // Check if meeting is not too old (max 3 hours)
-                const startTime = new Date(meeting.startTime).getTime();
-                const elapsed = Date.now() - startTime;
-                if (elapsed < 3 * 60 * 60 * 1000) {
-                    setActiveMeeting(meeting);
-                } else {
-                    localStorage.removeItem(`active_meeting_${groupId}`);
-                    setActiveMeeting(null);
-                }
-            } else {
-                setActiveMeeting(null);
-            }
-        } catch { setActiveMeeting(null); }
-    }, []);
-
-    // Listen for real-time meeting broadcasts when in a group
-    useEffect(() => {
-        if (view !== 'group' || !selectedGroup) return;
-        const channel = supabase.channel(`meeting_${selectedGroup.id}`, {
-            config: { broadcast: { self: false } }
-        });
-
-        channel.on('broadcast', { event: 'meeting-started' }, ({ payload }) => {
-            setActiveMeeting(payload);
-            localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(payload));
-            toast.info(`${payload.type === 'video' ? '📹' : '📞'} ${payload.creatorName} a démarré une réunion !`, {
-                action: { label: 'Rejoindre', onClick: () => joinGroupMeeting() }
-            });
-        });
-
-        channel.on('broadcast', { event: 'meeting-join' }, ({ payload }) => {
-            setActiveMeeting(prev => {
-                if (!prev) return prev;
-                const updated = { ...prev, participants: [...new Set([...prev.participants, payload.userId])] };
-                localStorage.setItem(`active_meeting_${selectedGroup.id}`, JSON.stringify(updated));
-                return updated;
-            });
-        });
-
-        channel.on('broadcast', { event: 'meeting-ended' }, () => {
-            setActiveMeeting(null);
-            localStorage.removeItem(`active_meeting_${selectedGroup.id}`);
-            toast.info('La réunion est terminée');
-        });
-
-        channel.subscribe();
-
-        return () => { supabase.removeChannel(channel); };
-    }, [view, selectedGroup?.id, joinGroupMeeting]);
-
+    // Insert @mention into message
     const insertMention = (memberName: string) => {
         const mentionText = `@${memberName} `;
         const curVal = newMessage;
@@ -2588,9 +1630,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
             const res = await fetch(`/bible/${fileName}`);
             if (!res.ok) {
-                // Try direct Bible API fallback (no serverless)
-                const apiData = await fetchBiblePassage(bibleReference, bibleVersion.toLowerCase());
-                if (apiData && (apiData.text || apiData.content)) {
+                // Try API fallback
+                const apiRes = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&translation=${bibleVersion.toLowerCase()}`);
+                if (apiRes.ok) {
+                    const apiData = await apiRes.json();
                     setBibleContent(apiData.text || apiData.content || 'Passage non trouvé');
                 } else {
                     setBibleContent(`[Passage non trouvé. Vérifiez le livre "${bookRaw}" et le chapitre ${chapter}.]`);
@@ -2713,7 +1756,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             setFastingTheme('');
             setFastingDays([]);
             toast.success('Programme de jeûne partagé !');
-            broadcastGroupNotification(selectedGroup.id, 'program', `Programme: ${fastingTheme.slice(0, 40)}`);
         } catch { toast.error('Erreur lors du partage'); }
     };
 
@@ -2744,7 +1786,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             setShowAnnouncementTool(false);
             setAnnouncementText('');
             toast.success('Annonce envoyée !');
-            broadcastGroupNotification(selectedGroup.id, 'announcement', `Annonce: ${announcementText.trim().slice(0, 40)}`);
         } catch { toast.error("Erreur lors de l'envoi"); }
     };
 
@@ -2816,7 +1857,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             }
             setShowEventTool(false);
             toast.success('Événement planifié et partagé !');
-            broadcastGroupNotification(selectedGroup.id, 'event', `Événement: ${eventTitle.trim().slice(0, 40)}`);
         } catch { toast.error("Erreur lors du partage"); }
     };
 
@@ -2909,9 +1949,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     onBack={() => setView('list')}
                     onCall={(type, contactId, contactName, contactAvatar) => {
                         // Find or create a conversation with this user, then start the call
-                        const conv = conversations.find(c => c.participantId === contactId);
+                        const conv = conversations.find(c => c.recipientId === contactId);
                         if (conv) {
                             setSelectedConversation(conv);
+                            const recipient = allUsers.find(u => u.id === contactId);
+                            if (recipient) setCurrentRecipient(recipient);
                         }
                         setActiveCall({ type, mode: 'private' });
                         setView('conversation');
@@ -2926,15 +1968,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         mode={activeCall.mode}
                         remoteUser={activeCall.mode === 'private' && currentRecipient ? {
                             id: currentRecipient.id,
-                            name: currentRecipient.full_name || 'Utilisateur',
+                            name: currentRecipient.full_name,
                             avatar: currentRecipient.avatar_url
                         } : undefined}
                         conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
                         groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
                         groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
-                        groupMembers={activeCall.mode === 'group' ? groupMembers.map(m => ({ ...m, full_name: m.full_name || 'Membre' })) : undefined}
+                        groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
                         isIncoming={activeCall.isIncoming}
-                        onEnd={() => { setActiveCall(null); if (activeCall?.mode === 'group') endGroupMeeting(); }}
+                        onEnd={() => setActiveCall(null)}
                     />
                 )}
 
@@ -3343,23 +2385,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     }
 
     // Conversation/Group View
-
-    // ── Generate unique color per user (HSL from user ID hash) ──
-    const getUserColor = useCallback((userId: string): string => {
-        let hash = 0;
-        for (let i = 0; i < userId.length; i++) {
-            hash = userId.charCodeAt(i) + ((hash << 5) - hash);
-        }
-        const hue = Math.abs(hash) % 360;
-        return `hsla(${hue}, 55%, 35%, 0.6)`;
-    }, []);
+    const currentRecipient = view === 'conversation' ? selectedConversation?.participant : null;
+    const currentGroup = view === 'group' ? selectedGroup : null;
 
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
-            {/* Chat Header — FIXED at top, never scrolls */}
-            <div className="z-20 px-2 py-1.5 sm:px-3 sm:py-2 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0">
-                <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-9 w-9">
-                    <ArrowLeft className="h-5 w-5" />
+            {/* Chat Header */}
+            <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/80 backdrop-blur-sm">
+                <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
+                    <ArrowLeft className="h-4 w-4 sm:h-5 sm:w-5" />
                 </Button>
 
                 {currentRecipient && (
@@ -3385,21 +2419,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-green-400 hover:text-green-300 hover:bg-green-500/15 h-10 w-10"
-                                onClick={async () => {
-                                    setActiveCall({ type: 'audio', mode: 'private' });
-                                    await initiateCall({
-                                        callerId: user.id,
-                                        callerName: user.name || 'Utilisateur',
-                                        callerAvatar: user.avatar,
-                                        receiverId: currentRecipient.id,
-                                        callType: 'audio',
-                                    });
-                                }}
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
+                                onClick={() => setActiveCall({ type: 'audio', mode: 'private' })}
                                 title="Appel vocal"
                             >
                                 <Phone className="h-5 w-5" />
@@ -3407,17 +2432,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-blue-400 hover:text-blue-300 hover:bg-blue-500/15 h-10 w-10"
-                                onClick={async () => {
-                                    setActiveCall({ type: 'video', mode: 'private' });
-                                    await initiateCall({
-                                        callerId: user.id,
-                                        callerName: user.name || 'Utilisateur',
-                                        callerAvatar: user.avatar,
-                                        receiverId: currentRecipient.id,
-                                        callType: 'video',
-                                    });
-                                }}
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
+                                onClick={() => setActiveCall({ type: 'video', mode: 'private' })}
                                 title="Appel vidéo"
                             >
                                 <Video className="h-5 w-5" />
@@ -3458,33 +2474,33 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 )}
                             </p>
                         </div>
-                        <div className="flex items-center gap-0.5 shrink-0">
+                        <div className="flex items-center gap-0 sm:gap-1 shrink-0">
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/15 h-10 w-10"
+                                className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-7 w-7 sm:h-9 sm:w-9"
                                 onClick={() => { setShowGroupTools(true); loadAllUsers(); loadGroupMembers(currentGroup!.id); }}
                                 title="Outils de groupe"
                             >
-                                <Settings className="h-5 w-5" />
+                                <Settings className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-blue-400 hover:text-blue-300 hover:bg-blue-500/15 h-10 w-10"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-7 w-7 sm:h-9 sm:w-9"
                                 onClick={() => setShowGroupMembers(!showGroupMembers)}
                                 title="Voir les membres"
                             >
-                                <Users className="h-5 w-5" />
+                                <Users className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-green-400 hover:text-green-300 hover:bg-green-500/15 h-10 w-10"
-                                onClick={() => setShowVoiceSalon(true)}
-                                title="Salon vocal (Push-to-Talk)"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-7 w-7 sm:h-9 sm:w-9"
+                                onClick={() => setActiveCall({ type: 'audio', mode: 'group' })}
+                                title="Appel vocal de groupe"
                             >
-                                <Phone className="h-5 w-5" />
+                                <Phone className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                             </Button>
                         </div>
                     </>
@@ -3527,225 +2543,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 )}
             </AnimatePresence>
 
-            {/* Pinned Prayer Subject Banner — compact, dismissable, with admin unpin */}
+            {/* Pinned Prayer Subject Banner */}
             {currentGroup && (pinnedPrayer || currentGroup.description?.startsWith('📌')) && (
-                <div className="mx-2 sm:mx-4 mt-1.5 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 shrink-0">
-                    <div className="flex items-center gap-2">
-                        <Pin className="h-4 w-4 text-amber-400 shrink-0" />
-                        <p className="text-xs text-amber-200 flex-1 line-clamp-2">
-                            <span className="font-semibold">📌 Sujet épinglé :</span>{' '}
-                            {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
-                        </p>
-                    </div>
-                    <div className="flex items-center gap-2 mt-1.5 justify-end">
-                        {/* User self-dismiss */}
-                        <button
-                            onClick={() => setPinnedPrayer(null)}
-                            className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-white/5 text-slate-400 hover:bg-white/10 hover:text-white transition-all"
-                            title="Masquer pour moi"
-                        >
-                            <X className="h-3 w-3" />
-                            Masquer
-                        </button>
-                        {/* Admin unpin for all */}
-                        {isCreatorOrAdmin && (
-                            <button
-                                onClick={async () => {
-                                    await supabase.from('prayer_groups').update({ description: null }).eq('id', currentGroup.id);
-                                    setPinnedPrayer(null);
-                                    toast.success('Sujet dépinglé pour tous');
-                                }}
-                                className="flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold bg-red-500/10 text-red-400 hover:bg-red-500/20 hover:text-red-300 border border-red-500/20 transition-all"
-                                title="Dépingler pour tous"
-                            >
-                                <Pin className="h-3 w-3" />
-                                Dépingler
-                            </button>
-                        )}
-                    </div>
+                <div className="mx-2 sm:mx-4 mt-2 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/20 flex items-center gap-2">
+                    <Pin className="h-4 w-4 text-amber-400 shrink-0" />
+                    <p className="text-xs text-amber-200 flex-1 truncate">
+                        <span className="font-semibold">Sujet de prière :</span>{' '}
+                        {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
+                    </p>
                 </div>
             )}
 
-            {/* Point 4: Pinned Notification Icons Bar — horizontal scroll, single row */}
-            {view === 'group' && selectedGroup && pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).length > 0 && (
-                <div className="mx-2 sm:mx-4 mt-1 flex gap-2 overflow-x-auto scrollbar-none pb-0.5 shrink-0">
-                    {pinnedNotifications.filter(n => n.groupId === selectedGroup?.id).map(notif => {
-                        const typeConfig: Record<string, {
-                            icon: React.ReactNode; color: string; bg: string; border: string;
-                            label: string; section: 'polls' | 'prayer' | 'events' | 'verse' | 'announcement' | 'program';
-                        }> = {
-                            poll: {
-                                icon: <BarChart3 className="h-4 w-4" />,
-                                color: 'text-purple-300', bg: 'bg-purple-600/20', border: 'border-purple-500/40',
-                                label: 'Sondage', section: 'polls'
-                            },
-                            announcement: {
-                                icon: <Megaphone className="h-4 w-4" />,
-                                color: 'text-rose-300', bg: 'bg-rose-600/20', border: 'border-rose-500/40',
-                                label: 'Annonce', section: 'announcement'
-                            },
-                            verse: {
-                                icon: <BookOpen className="h-4 w-4" />,
-                                color: 'text-emerald-300', bg: 'bg-emerald-600/20', border: 'border-emerald-500/40',
-                                label: 'Verset', section: 'verse'
-                            },
-                            program: {
-                                icon: <CalendarDays className="h-4 w-4" />,
-                                color: 'text-orange-300', bg: 'bg-orange-600/20', border: 'border-orange-500/40',
-                                label: 'Programme', section: 'program'
-                            },
-                            event: {
-                                icon: <Calendar className="h-4 w-4" />,
-                                color: 'text-sky-300', bg: 'bg-sky-600/20', border: 'border-sky-500/40',
-                                label: 'Événement', section: 'events'
-                            },
-                        };
-                        const cfg = typeConfig[notif.type] || typeConfig.announcement;
-                        return (
-                            <motion.div
-                                key={notif.id}
-                                initial={{ scale: 0, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0, opacity: 0 }}
-                                className={cn(
-                                    "flex items-center gap-1.5 pl-2 pr-1 py-1.5 rounded-xl border text-xs font-semibold relative group",
-                                    cfg.bg, cfg.border, cfg.color
-                                )}
-                            >
-                                {/* Pulsing dot */}
-                                <motion.div
-                                    animate={{ scale: [1, 1.4, 1], opacity: [1, 0.5, 1] }}
-                                    transition={{ repeat: Infinity, duration: 1.5 }}
-                                    className="w-1.5 h-1.5 rounded-full bg-current shrink-0"
-                                />
-
-                                {/* Clickable area → opens the tool section */}
-                                <button
-                                    onClick={() => {
-                                        // Dismiss for this user
-                                        dismissNotification(notif.id, selectedGroup!.id);
-                                        // Open the group settings panel at the right section
-                                        setGroupToolsSection(cfg.section);
-                                        setShowGroupTools(true);
-                                    }}
-                                    className="flex items-center gap-1.5 hover:opacity-80 transition-opacity"
-                                    title={`Ouvrir ${cfg.label}`}
-                                >
-                                    {cfg.icon}
-                                    <span>{cfg.label}</span>
-                                    {/* Count badge */}
-                                    <span className={cn(
-                                        "inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-bold bg-current/20 border border-current/30"
-                                    )}>
-                                        {notif.count}
-                                    </span>
-                                </button>
-
-                                {/* Member self-dismiss (X) */}
-                                <button
-                                    onClick={(e) => {
-                                        e.stopPropagation();
-                                        dismissNotification(notif.id, selectedGroup!.id);
-                                    }}
-                                    className="ml-0.5 p-0.5 rounded-full hover:bg-white/10 opacity-50 hover:opacity-100 transition-all"
-                                    title="Masquer pour moi"
-                                >
-                                    <X className="h-3 w-3" />
-                                </button>
-
-                                {/* Admin unpin-for-all button */}
-                                {isCreatorOrAdmin && (
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            unpinNotificationForAll(notif.type, selectedGroup!.id);
-                                        }}
-                                        className="p-0.5 rounded-full hover:bg-red-500/20 opacity-0 group-hover:opacity-100 transition-all text-red-400"
-                                        title="Détacher pour tous"
-                                    >
-                                        <Pin className="h-3 w-3" />
-                                    </button>
-                                )}
-                            </motion.div>
-                        );
-                    })}
-                </div>
-            )}
-
-            {/* Point 11: Active Game Join Button */}
-            {view === 'group' && selectedGroup && activeGameSession && activeGameSession.status === 'waiting' && (
-                <div className="mx-2 sm:mx-4 mt-2">
-                    <motion.button
-                        animate={{ scale: [1, 1.05, 1], boxShadow: ['0 0 0 rgba(99,102,241,0)', '0 0 20px rgba(99,102,241,0.5)', '0 0 0 rgba(99,102,241,0)'] }}
-                        transition={{ repeat: Infinity, duration: 1.5 }}
-                        onClick={joinGroupGame}
-                        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold text-sm shadow-lg"
-                    >
-                        <Gamepad2 className="h-5 w-5" />
-                        🎮 Rejoindre le {activeGameSession.gameType === 'quiz' ? 'Duel Biblique' : 'Jeu'} !
-                        <Badge className="bg-white/20 text-white text-[10px]">{activeGameSession.players.length} joueur{activeGameSession.players.length > 1 ? 's' : ''}</Badge>
-                    </motion.button>
-                </div>
-            )}
-
-            {/* Active Meeting Pinned Button (WhatsApp-style) */}
-            {view === 'group' && selectedGroup && activeMeeting && activeMeeting.groupId === selectedGroup.id && !activeCall && (
-                <div className="mx-2 sm:mx-4 mt-2">
-                    <motion.button
-                        animate={{
-                            scale: [1, 1.03, 1],
-                            boxShadow: activeMeeting.type === 'video'
-                                ? ['0 0 0 rgba(59,130,246,0)', '0 0 24px rgba(59,130,246,0.6)', '0 0 0 rgba(59,130,246,0)']
-                                : ['0 0 0 rgba(34,197,94,0)', '0 0 24px rgba(34,197,94,0.6)', '0 0 0 rgba(34,197,94,0)']
-                        }}
-                        transition={{ repeat: Infinity, duration: 1.5 }}
-                        onClick={joinGroupMeeting}
-                        className={cn(
-                            "w-full flex items-center justify-center gap-2 py-3 rounded-xl text-white font-bold text-sm shadow-lg relative overflow-hidden",
-                            activeMeeting.type === 'video'
-                                ? "bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500"
-                                : "bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500"
-                        )}
-                    >
-                        {/* Pulsing ring animation */}
-                        <motion.div
-                            animate={{ scale: [1, 2.5], opacity: [0.3, 0] }}
-                            transition={{ repeat: Infinity, duration: 1.5 }}
-                            className={cn(
-                                "absolute w-4 h-4 rounded-full",
-                                activeMeeting.type === 'video' ? "bg-blue-400" : "bg-green-400"
-                            )}
-                        />
-                        {activeMeeting.type === 'video' ? (
-                            <Video className="h-5 w-5 relative z-10" />
-                        ) : (
-                            <Phone className="h-5 w-5 relative z-10" />
-                        )}
-                        <span className="relative z-10">
-                            {activeMeeting.participants.includes(user.id)
-                                ? `${activeMeeting.type === 'video' ? '📹' : '📞'} Réunion en cours`
-                                : `Cliquer pour rejoindre la réunion`
-                            }
-                        </span>
-                        <Badge className="bg-white/20 text-white text-[10px] relative z-10">
-                            {activeMeeting.participants.length} participant{activeMeeting.participants.length > 1 ? 's' : ''}
-                        </Badge>
-                        {/* End meeting button (for creator only) */}
-                        {activeMeeting.creatorId === user.id && (
-                            <button
-                                onClick={(e) => { e.stopPropagation(); endGroupMeeting(); }}
-                                className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-red-600/80 hover:bg-red-600 text-white z-20"
-                                title="Terminer la réunion"
-                            >
-                                <X className="h-3.5 w-3.5" />
-                            </button>
-                        )}
-                    </motion.button>
-                </div>
-            )}
-
-            {/* Messages — fills all remaining space */}
-            <ScrollArea className="flex-1 p-2 sm:p-4 min-h-0 overflow-y-auto">
+            {/* Messages */}
+            <ScrollArea className="flex-1 p-2 sm:p-4">
                 {isLoading ? (
                     <div className="flex items-center justify-center h-full">
                         <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
@@ -3757,24 +2567,17 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         <p className="text-sm">Envoyez le premier message!</p>
                     </div>
                 ) : (
-                    <div className="space-y-3" onClick={() => setSelectedMessageId(null)}>
+                    <div className="space-y-3">
                         {messages.map((msg, idx) => {
                             const isOwn = msg.sender_id === user.id;
                             const showAvatar = !isOwn && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
-                            const isSelected = selectedMessageId === msg.id;
-                            const msgReactions = messageReactions[msg.id] || {};
-                            const hasReactions = Object.keys(msgReactions).length > 0;
-                            const commentCount = messageCommentCounts[msg.id] || 0;
-
-                            // Skip notification system messages from display
-                            if (msg.content?.startsWith('__NOTIF__')) return null;
 
                             return (
                                 <motion.div
                                     key={msg.id}
                                     initial={{ opacity: 0, y: 10 }}
                                     animate={{ opacity: 1, y: 0 }}
-                                    className={cn("flex relative", isOwn ? "justify-end" : "justify-start")}
+                                    className={cn("flex", isOwn ? "justify-end" : "justify-start")}
                                 >
                                     {!isOwn && showAvatar && view === 'group' && (
                                         <Avatar className="h-8 w-8 mr-2 mt-auto">
@@ -3784,192 +2587,42 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                             </AvatarFallback>
                                         </Avatar>
                                     )}
-                                    <div className="relative group/msg max-w-[85%] sm:max-w-[75%]">
-                                        {/* Emoji reactions bar + Comment button - appears on click */}
-                                        <AnimatePresence>
-                                            {isSelected && (
-                                                <motion.div
-                                                    initial={{ opacity: 0, y: 5, scale: 0.9 }}
-                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                                                    exit={{ opacity: 0, y: 5, scale: 0.9 }}
-                                                    className={cn(
-                                                        "absolute -top-10 z-50 flex items-center gap-1 bg-slate-800 border border-white/10 rounded-full px-2 py-1 shadow-xl",
-                                                        isOwn ? "right-0" : "left-0"
-                                                    )}
-                                                    onClick={(e) => e.stopPropagation()}
-                                                >
-                                                    {['🙏', '❤️', '👍', '😂', '😮'].map(emoji => (
-                                                        <button
-                                                            key={emoji}
-                                                            className={cn(
-                                                                "text-lg hover:scale-125 transition-transform px-0.5",
-                                                                msgReactions[emoji]?.includes(user.id) && "bg-white/10 rounded-full"
-                                                            )}
-                                                            onClick={() => addReaction(msg.id, emoji)}
-                                                        >
-                                                            {emoji}
-                                                        </button>
-                                                    ))}
-                                                    {/* Comment (thread) button */}
-                                                    {view === 'group' && (
-                                                        <button
-                                                            className="ml-1 p-1.5 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-full transition-colors"
-                                                            onClick={() => openThread(msg.id, msg.content, msg.sender?.full_name || 'Utilisateur')}
-                                                            title="Commenter ce message"
-                                                        >
-                                                            <MessageCircle className="h-5 w-5" />
-                                                        </button>
-                                                    )}
-                                                    {/* Delete own message */}
-                                                    {isOwn && (
-                                                        <button
-                                                            className="ml-0.5 p-1 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-full transition-colors"
-                                                            onClick={() => {
-                                                                handleDeleteMessage(msg.id, msg.sender_id);
-                                                                setSelectedMessageId(null);
-                                                            }}
-                                                            title="Supprimer"
-                                                        >
-                                                            <Trash2 className="h-3.5 w-3.5" />
-                                                        </button>
-                                                    )}
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
+                                    <div
+                                        className={cn(
+                                            "max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2",
+                                            isOwn
+                                                ? "bg-indigo-600 text-white rounded-br-sm"
+                                                : "bg-white/10 text-white rounded-bl-sm"
+                                        )}
+                                    >
+                                        {!isOwn && view === 'group' && showAvatar && (
+                                            <p className="text-xs text-indigo-400 font-medium mb-1">
+                                                {msg.sender?.full_name}
+                                            </p>
+                                        )}
 
-                                        <div
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setSelectedMessageId(isSelected ? null : msg.id);
-                                            }}
-                                            className={cn(
-                                                "rounded-2xl px-3 sm:px-4 py-2 cursor-pointer transition-all text-white",
-                                                isOwn
-                                                    ? "rounded-br-sm"
-                                                    : "rounded-bl-sm",
-                                                isSelected && "ring-1 ring-white/30"
-                                            )}
-                                            style={{
-                                                backgroundColor: isOwn
-                                                    ? 'rgba(79, 70, 229, 0.7)' // indigo for own messages
-                                                    : getUserColor(msg.sender_id) // unique color per sender
-                                            }}
-                                        >
-                                            {!isOwn && view === 'group' && showAvatar && (
-                                                <p className="text-xs text-indigo-400 font-medium mb-1">
-                                                    {msg.sender?.full_name}
-                                                </p>
-                                            )}
+                                        {/* Voice Message */}
+                                        {msg.type === 'voice' && msg.voice_url ? (
+                                            <VoiceMessagePlayer
+                                                voiceUrl={msg.voice_url}
+                                                duration={msg.voice_duration}
+                                            />
+                                        ) : (
+                                            renderMessageContent(msg.content)
+                                        )}
 
-                                            {/* Voice Message */}
-                                            {msg.type === 'voice' && msg.voice_url ? (
-                                                <VoiceMessagePlayer
-                                                    voiceUrl={msg.voice_url}
-                                                    duration={msg.voice_duration}
-                                                />
-                                            ) : msg.type === 'image' && msg.image_url ? (
-                                                <div className="space-y-1">
-                                                    <img
-                                                        src={msg.image_url}
-                                                        alt="Photo"
-                                                        className="max-w-[240px] rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
-                                                        onClick={(e) => { e.stopPropagation(); window.open(msg.image_url, '_blank'); }}
-                                                    />
-                                                    {msg.content && msg.content !== '📷 [Photo]' && (
-                                                        <ExpandableMessage content={msg.content} />
-                                                    )}
-                                                </div>
-                                            ) : msg.content?.startsWith('📎 ') ? (
-                                                <div className="flex items-center gap-2 p-2 rounded-lg bg-white/5 border border-white/10">
-                                                    <FileText className="h-5 w-5 text-amber-400 shrink-0" />
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-sm font-medium truncate">{msg.content.replace('📎 ', '')}</p>
-                                                        <p className="text-[10px] text-slate-400">Fichier partagé</p>
-                                                    </div>
-                                                    {msg.file_url && (
-                                                        <a
-                                                            href={msg.file_url}
-                                                            target="_blank"
-                                                            rel="noopener noreferrer"
-                                                            className="text-indigo-400 hover:text-indigo-300 p-1.5 rounded-full hover:bg-white/10 transition-colors"
-                                                            onClick={(e) => e.stopPropagation()}
-                                                        >
-                                                            <ExternalLink className="h-4 w-4" />
-                                                        </a>
-                                                    )}
-                                                </div>
-                                            ) : (
-                                                <ExpandableMessage content={msg.content} />
+                                        <div className="flex items-center justify-end gap-1 mt-1">
+                                            <span className="text-[10px] opacity-70">
+                                                {formatTime(msg.created_at)}
+                                            </span>
+                                            {isOwn && (
+                                                msg.is_read ? (
+                                                    <CheckCheck className="h-3 w-3 text-blue-400" />
+                                                ) : (
+                                                    <Check className="h-3 w-3 opacity-70" />
+                                                )
                                             )}
-
-                                            <div className="flex items-center justify-end gap-1 mt-1">
-                                                <span className="text-[10px] opacity-70">
-                                                    {formatTime(msg.created_at)}
-                                                </span>
-                                                {isOwn && (
-                                                    msg.is_read ? (
-                                                        <CheckCheck className="h-3 w-3 text-blue-400" />
-                                                    ) : (
-                                                        <Check className="h-3 w-3 opacity-70" />
-                                                    )
-                                                )}
-                                            </div>
                                         </div>
-
-                                        {/* Persistent Emoji Reactions Display */}
-                                        {hasReactions && (
-                                            <div className={cn("flex flex-wrap gap-0.5 mt-0.5", isOwn ? "justify-end" : "justify-start")}>
-                                                {Object.entries(msgReactions).map(([emoji, users]) => (
-                                                    <button
-                                                        key={emoji}
-                                                        onClick={(e) => { e.stopPropagation(); addReaction(msg.id, emoji); }}
-                                                        className={cn(
-                                                            "flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-xs border transition-all",
-                                                            (users as string[]).includes(user.id)
-                                                                ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-300"
-                                                                : "bg-white/5 border-white/10 text-slate-400 hover:bg-white/10"
-                                                        )}
-                                                    >
-                                                        <span>{emoji}</span>
-                                                        <span className="text-[10px] font-medium">{(users as string[]).length}</span>
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        )}
-
-                                        {commentCount > 0 && (
-                                            <button
-                                                onClick={(e) => { e.stopPropagation(); openThread(msg.id, msg.content, msg.sender?.full_name || 'Utilisateur'); }}
-                                                className={cn(
-                                                    "flex items-center gap-1.5 mt-1 px-3 py-1.5 rounded-full text-xs font-medium transition-all hover:bg-blue-500/15 border border-blue-500/20",
-                                                    isOwn ? "ml-auto text-blue-300 bg-blue-500/10" : "text-blue-400 bg-blue-500/5"
-                                                )}
-                                            >
-                                                <MessageCircle className="h-4 w-4" />
-                                                {commentCount} commentaire{commentCount > 1 ? 's' : ''}
-                                            </button>
-                                        )}
-
-                                        {/* Visible Reply button below each message — WhatsApp style */}
-                                        <button
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                setReplyTo({
-                                                    id: msg.id,
-                                                    content: msg.content,
-                                                    senderName: msg.sender?.full_name || 'Utilisateur'
-                                                });
-                                                inputRef.current?.focus();
-                                            }}
-                                            className={cn(
-                                                "flex items-center gap-1.5 mt-2 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all active:scale-95",
-                                                "bg-indigo-500/10 border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/20 hover:text-indigo-300 hover:border-indigo-500/40",
-                                                isOwn ? "ml-auto" : ""
-                                            )}
-                                        >
-                                            <ArrowRightLeft className="h-3.5 w-3.5" />
-                                            Répondre
-                                        </button>
                                     </div>
                                 </motion.div>
                             );
@@ -3991,98 +2644,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 )}
             </ScrollArea>
 
-            {/* Hidden file input for 📎 attachments */}
-            <input
-                id="chat-file-input"
-                type="file"
-                accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.epub,.ppt,.pptx"
-                className="hidden"
-                onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file || !user) return;
-                    if (file.size > 25 * 1024 * 1024) { toast.error('Fichier trop grand (max 25MB)'); return; }
-                    const ext = file.name.split('.').pop() || 'bin';
-                    const path = `${user.id}/${Date.now()}.${ext}`;
-                    setIsSending(true);
-                    toast.info(`📤 Envoi de ${file.name}...`);
-                    try {
-                        const { error: upErr } = await supabase.storage.from('chat-files').upload(path, file, { upsert: true });
-                        if (upErr) throw upErr;
-                        const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(path);
-                        const fileUrl = urlData.publicUrl;
-                        const isImage = file.type.startsWith('image/');
-                        const isVideo = file.type.startsWith('video/');
-                        const msgContent = isImage ? `📷 [Photo]` : isVideo ? `🎬 ${file.name}` : `📎 ${file.name}`;
-                        const msgType = isImage ? 'image' : 'file';
-                        if (view === 'group' && selectedGroup) {
-                            await supabase.from('prayer_group_messages').insert({
-                                group_id: selectedGroup.id,
-                                user_id: user.id,
-                                content: msgContent,
-                                type: msgType,
-                                image_url: isImage ? fileUrl : undefined,
-                            });
-                            // Optimistic add for file messages
-                            setMessages(prev => [...prev, {
-                                id: `temp_file_${Date.now()}`,
-                                content: `${msgContent}\n🔗 ${fileUrl}`,
-                                type: msgType as any,
-                                sender_id: user.id,
-                                sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
-                                created_at: new Date().toISOString(),
-                                is_read: true,
-                                image_url: isImage ? fileUrl : undefined,
-                                file_url: fileUrl,
-                                file_name: file.name,
-                            }]);
-                        } else if (view === 'conversation' && selectedConversation) {
-                            const linkMsg = `${msgContent}\n🔗 ${fileUrl}`;
-                            await supabase.from('direct_messages').insert({
-                                conversation_id: selectedConversation.id,
-                                sender_id: user.id,
-                                content: linkMsg,
-                                type: 'text',
-                                is_read: false,
-                            });
-                            setMessages(prev => [...prev, {
-                                id: `temp_file_${Date.now()}`,
-                                content: linkMsg,
-                                type: 'text',
-                                sender_id: user.id,
-                                sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
-                                created_at: new Date().toISOString(),
-                                is_read: false,
-                            }]);
-                        }
-                        toast.success(`✅ ${file.name} envoyé !`);
-                    } catch (err: any) { toast.error('Erreur upload: ' + err.message); }
-                    setIsSending(false);
-                    e.target.value = '';
-                }}
-            />
-
-            {/* Input Area — FIXED at bottom, never scrolls */}
-            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80 shrink-0">
-                {/* Reply-to Preview Bar */}
-                <AnimatePresence>
-                    {replyTo && (
-                        <motion.div
-                            initial={{ opacity: 0, y: 8 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 8 }}
-                            className="mb-2 flex items-center gap-2 bg-indigo-500/10 border-l-2 border-indigo-500 rounded-r-lg px-3 py-1.5"
-                        >
-                            <div className="flex-1 min-w-0">
-                                <p className="text-[10px] text-indigo-400 font-semibold">↩ {replyTo.senderName}</p>
-                                <p className="text-[11px] text-slate-400 truncate">{replyTo.content.slice(0, 80)}</p>
-                            </div>
-                            <button onClick={() => setReplyTo(null)} className="p-0.5 text-slate-500 hover:text-white">
-                                <X className="h-3.5 w-3.5" />
-                            </button>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
+            {/* Input Area */}
+            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/80">
                 {/* @Mention suggestions */}
                 <AnimatePresence>
                     {showMentions && view === 'group' && (
@@ -4144,17 +2707,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <AtSign className="h-4 w-4" />
                         </Button>
                     )}
-
-                    {/* 📎 File attachment button */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        className="text-slate-400 hover:text-amber-400 h-8 w-8 shrink-0"
-                        title="Joindre un fichier"
-                        onClick={() => document.getElementById('chat-file-input')?.click()}
-                    >
-                        <Paperclip className="h-4 w-4" />
-                    </Button>
 
                     {isRecording ? (
                         <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-red-500/20 rounded-full px-3 sm:px-4 py-2">
@@ -4222,7 +2774,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             </div>
 
             {/* Group Tools Dialog - Full Integration */}
-            <Dialog open={showGroupTools} onOpenChange={(open) => { setShowGroupTools(open); if (!open) setGroupToolsSection(null); }}>
+            <Dialog open={showGroupTools} onOpenChange={setShowGroupTools}>
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
                     <DialogHeader className="p-4 pb-0">
                         <DialogTitle className="flex items-center gap-2 text-white">
@@ -4260,11 +2812,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 groupId={currentGroup.id}
                                 userId={user.id}
                                 userName={user.name || 'Utilisateur'}
-                                isCreator={!!isCreatorOrAdmin}
+                                isCreator={!!isGroupAdmin}
                                 isOpen={true}
                                 onClose={() => { }}
-                                onNotify={(type, label) => broadcastGroupNotification(currentGroup.id, type, label)}
-                                initialSection={groupToolsSection}
                             />
 
                             {/* Google Calendar Integration */}
@@ -4327,7 +2877,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             </div>
 
                             {/* Admin-only actions */}
-                            {isCreatorOrAdmin && (
+                            {isGroupAdmin && (
                                 <div className="space-y-2">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Admin</p>
                                     <div className="grid grid-cols-2 gap-2">
@@ -4352,20 +2902,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                         <Button
                                             variant="outline"
                                             size="sm"
-                                            className="border-indigo-500/20 text-indigo-400 hover:bg-indigo-500/10 h-9 text-xs"
-                                            onClick={() => { startGroupGame('quiz'); setShowGroupTools(false); }}
-                                        >
-                                            <Gamepad2 className="h-3.5 w-3.5 mr-1.5" />
-                                            Jeux Bibliques
-                                        </Button>
-                                        <Button
-                                            variant="outline"
-                                            size="sm"
-                                            className="border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 h-9 text-xs"
+                                            className="border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10 h-9 text-xs col-span-2"
                                             onClick={() => { setShowMigrateTool(true); setShowGroupTools(false); }}
                                         >
                                             <ArrowRightLeft className="h-3.5 w-3.5 mr-1.5" />
-                                            Migrer membres
+                                            Migrer les membres
                                         </Button>
                                     </div>
 
@@ -4474,21 +3015,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                     ))}
                                 </div>
                             </div>
-
-                            {/* Delete Group - creator only */}
-                            {selectedGroup && user && selectedGroup.created_by === user.id && (
-                                <div className="border-t border-red-500/20 pt-3 mt-3">
-                                    <Button
-                                        variant="outline"
-                                        size="sm"
-                                        className="w-full border-red-500/30 text-red-400 hover:bg-red-500/10 h-10 text-xs font-bold"
-                                        onClick={handleDeleteGroup}
-                                    >
-                                        <Trash2 className="h-4 w-4 mr-2" />
-                                        Supprimer ce groupe définitivement
-                                    </Button>
-                                </div>
-                            )}
                         </div>
                     )}
                 </DialogContent>
@@ -4549,7 +3075,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         <div>
                             <label className="text-xs text-slate-400 mb-1 block">Version</label>
                             <div className="flex gap-2">
-                                {['LSG', 'KJV'].map(v => (
+                                {['LSG', 'NIV', 'KJV', 'ESV'].map(v => (
                                     <Button
                                         key={v}
                                         size="sm"
@@ -4893,188 +3419,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 </DialogContent>
             </Dialog>
 
-            {/* Point 9: Thread Comment Dialog (Telegram-style) */}
-            <AnimatePresence>
-                {activeThread && (
-                    <motion.div
-                        initial={{ opacity: 0, x: '100%' }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: '100%' }}
-                        transition={{ type: 'spring', damping: 25 }}
-                        className="absolute inset-0 z-50 bg-slate-900 flex flex-col"
-                    >
-                        {/* Thread Header */}
-                        <div className="px-3 sm:px-4 py-3 border-b border-white/10 bg-slate-800/80 flex items-center gap-3">
-                            <Button variant="ghost" size="icon" onClick={() => setActiveThread(null)} className="text-slate-400 hover:text-white h-8 w-8">
-                                <ArrowLeft className="h-4 w-4" />
-                            </Button>
-                            <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium text-white flex items-center gap-1">
-                                    <MessageCircle className="h-4 w-4 text-blue-400" />
-                                    Fil de discussion
-                                </p>
-                                <p className="text-[10px] text-slate-400 truncate">
-                                    {threadMessages.length} réponse{threadMessages.length > 1 ? 's' : ''}
-                                </p>
-                            </div>
-                        </div>
-
-                        {/* Original message */}
-                        <div className="p-3 sm:p-4 border-b border-white/5">
-                            <div className="bg-white/5 rounded-xl p-3 border-l-2 border-indigo-500">
-                                <p className="text-[10px] text-indigo-400 font-medium mb-1">{activeThread.senderName}</p>
-                                <p className="text-sm text-slate-300 whitespace-pre-wrap">{activeThread.content}</p>
-                            </div>
-                        </div>
-
-                        {/* Thread messages */}
-                        <ScrollArea className="flex-1 p-3 sm:p-4">
-                            {threadMessages.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-32 text-muted-foreground">
-                                    <MessageCircle className="h-8 w-8 mb-2 opacity-50" />
-                                    <p className="text-sm">Aucun commentaire encore</p>
-                                    <p className="text-xs text-slate-500">Soyez le premier à commenter !</p>
-                                </div>
-                            ) : (
-                                <div className="space-y-2">
-                                    {threadMessages.map((reply) => {
-                                        const isOwnReply = reply.sender_id === user.id;
-                                        return (
-                                            <motion.div
-                                                key={reply.id}
-                                                initial={{ opacity: 0, y: 5 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                className={cn("flex", isOwnReply ? "justify-end" : "justify-start")}
-                                            >
-                                                <div className="flex items-start gap-2 max-w-[80%]">
-                                                    {!isOwnReply && (
-                                                        <Avatar className="h-6 w-6 mt-0.5">
-                                                            <AvatarImage src={reply.sender?.avatar_url || undefined} />
-                                                            <AvatarFallback className="text-[8px] bg-slate-600">
-                                                                {getInitials(reply.sender?.full_name ?? null)}
-                                                            </AvatarFallback>
-                                                        </Avatar>
-                                                    )}
-                                                    <div className={cn(
-                                                        "rounded-xl px-3 py-1.5",
-                                                        isOwnReply ? "bg-indigo-600/80 text-white" : "bg-white/10 text-white"
-                                                    )}>
-                                                        {!isOwnReply && (
-                                                            <p className="text-[10px] text-indigo-400 font-medium">{reply.sender?.full_name}</p>
-                                                        )}
-                                                        <p className="text-sm whitespace-pre-wrap">{reply.content}</p>
-                                                        <p className="text-[9px] opacity-50 text-right mt-0.5">{formatTime(reply.created_at)}</p>
-                                                    </div>
-                                                </div>
-                                            </motion.div>
-                                        );
-                                    })}
-                                </div>
-                            )}
-                        </ScrollArea>
-
-                        {/* Thread reply input */}
-                        <div className="p-3 sm:p-4 border-t border-white/10 bg-slate-900/80 flex items-center gap-3">
-                            <Input
-                                placeholder="Écrire un commentaire..."
-                                value={threadInput}
-                                onChange={e => setThreadInput(e.target.value)}
-                                onKeyPress={e => e.key === 'Enter' && sendThreadReply()}
-                                className="flex-1 bg-white/5 border-white/10 rounded-full text-sm h-11"
-                            />
-                            <Button
-                                size="icon"
-                                onClick={sendThreadReply}
-                                disabled={!threadInput.trim()}
-                                className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0 h-11 w-11"
-                            >
-                                <Send className="h-5 w-5" />
-                            </Button>
-                        </div>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
-            {/* Point 11: Game Lobby Dialog */}
-            <Dialog open={showGameLobby} onOpenChange={setShowGameLobby}>
-                <DialogContent className="max-w-sm max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <Gamepad2 className="h-5 w-5 text-indigo-400" />
-                            {activeGameSession?.gameType === 'quiz' ? 'Duel Biblique' : 'Jeu de Groupe'} 🎮
-                        </DialogTitle>
-                    </DialogHeader>
-                    {activeGameSession && (
-                        <div className="space-y-4">
-                            {/* Status */}
-                            <div className="text-center">
-                                <motion.div
-                                    animate={{ scale: [1, 1.1, 1] }}
-                                    transition={{ repeat: Infinity, duration: 2 }}
-                                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-indigo-500/20 to-purple-500/20 border border-indigo-500/30"
-                                >
-                                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                                    <span className="text-sm text-indigo-300 font-medium">
-                                        {activeGameSession.status === 'waiting' ? 'En attente de joueurs...' : 'Partie en cours'}
-                                    </span>
-                                </motion.div>
-                            </div>
-
-                            {/* Players */}
-                            <div className="space-y-2">
-                                <p className="text-xs text-slate-400 font-medium">Joueurs ({activeGameSession.players.length})</p>
-                                <div className="space-y-1">
-                                    {activeGameSession.players.map((player, i) => (
-                                        <div key={player.id} className="flex items-center gap-2 p-2 rounded-lg bg-white/5">
-                                            <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-[10px] font-bold">
-                                                {i + 1}
-                                            </div>
-                                            <span className="text-sm text-white flex-1">{player.name}</span>
-                                            {player.id === activeGameSession.creatorId && (
-                                                <Badge className="bg-amber-500/20 text-amber-400 text-[9px]">Hôte</Badge>
-                                            )}
-                                            <span className="text-xs text-indigo-400 font-mono">{player.score} pts</span>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Actions */}
-                            <div className="flex gap-2">
-                                {activeGameSession.creatorId === user.id && activeGameSession.status === 'waiting' && (
-                                    <Button
-                                        onClick={() => {
-                                            if (activeGameSession.players.length < 1) {
-                                                toast.error('Au moins 1 joueur requis');
-                                                return;
-                                            }
-                                            toast.success('La partie commence ! 🎮');
-                                            setShowGameLobby(false);
-                                            // Navigate to quiz — the QuizDuelGame component handles the game itself
-                                        }}
-                                        className="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold"
-                                    >
-                                        <Play className="h-4 w-4 mr-2" />
-                                        Lancer la partie
-                                    </Button>
-                                )}
-                                <Button
-                                    variant="outline"
-                                    onClick={() => {
-                                        endGroupGame();
-                                        setShowGameLobby(false);
-                                    }}
-                                    className="border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                >
-                                    <X className="h-4 w-4 mr-1" />
-                                    Quitter
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
-
             {/* WebRTC Call Overlay */}
             {activeCall && (
                 <WebRTCCall
@@ -5083,15 +3427,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     mode={activeCall.mode}
                     remoteUser={activeCall.mode === 'private' && currentRecipient ? {
                         id: currentRecipient.id,
-                        name: currentRecipient.full_name || 'Utilisateur',
+                        name: currentRecipient.full_name,
                         avatar: currentRecipient.avatar_url
                     } : undefined}
                     conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
                     groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
                     groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
-                    groupMembers={activeCall.mode === 'group' ? groupMembers.map(m => ({ ...m, full_name: m.full_name || 'Membre' })) : undefined}
+                    groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
                     isIncoming={activeCall.isIncoming}
-                    onEnd={() => { setActiveCall(null); if (activeCall?.mode === 'group') endGroupMeeting(); }}
+                    onEnd={() => setActiveCall(null)}
                 />
             )}
 
@@ -5112,20 +3456,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     onReject={() => setIncomingCall(null)}
                 />
             )}
-
-            {/* ── Voice Salon Dialog (Discord/PTT) ── */}
-            <Dialog open={showVoiceSalon} onOpenChange={setShowVoiceSalon}>
-                <DialogContent className="max-w-sm p-0 bg-transparent border-0 shadow-none">
-                    {currentGroup && user && (
-                        <VoiceSalon
-                            groupId={currentGroup.id}
-                            groupName={currentGroup.name}
-                            user={user}
-                            onClose={() => setShowVoiceSalon(false)}
-                        />
-                    )}
-                </DialogContent>
-            </Dialog>
         </div>
     );
 }

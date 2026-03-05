@@ -177,8 +177,9 @@ export function AuthView() {
                             </TabsList>
 
                             <AnimatePresence mode="wait">
-                                <TabsContent value="login" className="space-y-4">
+                                <TabsContent key="tab-login" value="login" className="space-y-4">
                                     <motion.form
+                                        key="login-form"
                                         initial={{ x: -20, opacity: 0 }}
                                         animate={{ x: 0, opacity: 1 }}
                                         exit={{ x: 20, opacity: 0 }}
@@ -251,8 +252,9 @@ export function AuthView() {
                                     </motion.form>
                                 </TabsContent>
 
-                                <TabsContent value="signup" className="space-y-4">
+                                <TabsContent key="tab-signup" value="signup" className="space-y-4">
                                     <motion.form
+                                        key="signup-form"
                                         initial={{ x: 20, opacity: 0 }}
                                         animate={{ x: 0, opacity: 1 }}
                                         exit={{ x: -20, opacity: 0 }}

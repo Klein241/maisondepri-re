@@ -195,14 +195,14 @@ export const GAMES: GameConfig[] = [
     },
 ];
 
-// ── Characters (Biblical symbols) ────────────────
+// ── Characters (Super Mario style) ────────────────
 export const CHARS = [
-    { id: 'lion', name: 'Lion de Juda', emoji: '🦁', color: '#f59e0b', speed: 1.15, desc: 'Puissant et rapide' },
-    { id: 'wheat', name: 'Blé de Ruth', emoji: '🌾', color: '#84cc16', speed: 1.0, desc: 'Fidèle et résistant' },
-    { id: 'dove', name: 'Colombe', emoji: '🕊️', color: '#38bdf8', speed: 1.2, desc: 'Agile et léger' },
-    { id: 'lamb', name: 'Agneau de Dieu', emoji: '🐑', color: '#f1f5f9', speed: 0.95, desc: 'Protection divine' },
-    { id: 'star', name: 'Étoile de Bethléem', emoji: '⭐', color: '#fbbf24', speed: 1.1, desc: 'Guide lumineux' },
-    { id: 'fish', name: 'Poisson (Ichthus)', emoji: '🐟', color: '#6366f1', speed: 1.05, desc: 'Discret et sage' },
+    { id: 'hero', name: 'Héros Aventurier', emoji: '🧑‍🚀', color: '#e74c3c', speed: 1.15, desc: 'Courageux et rapide' },
+    { id: 'knight', name: 'Chevalier Brave', emoji: '🤺', color: '#3498db', speed: 1.0, desc: 'Solide et résistant' },
+    { id: 'ninja', name: 'Ninja Agile', emoji: '🥷', color: '#2c3e50', speed: 1.25, desc: 'Ultra rapide et furtif' },
+    { id: 'wizard', name: 'Mage Lumineux', emoji: '🧙', color: '#9b59b6', speed: 0.95, desc: 'Puissance magique' },
+    { id: 'robot', name: 'Robot Turbo', emoji: '🤖', color: '#1abc9c', speed: 1.1, desc: 'Mécanique et précis' },
+    { id: 'pirate', name: 'Pirate Intrépide', emoji: '🏴‍☠️', color: '#f39c12', speed: 1.05, desc: 'Malin et débrouillard' },
 ];
 
 // ── Maze Generator (Recursive Backtracker) ───────

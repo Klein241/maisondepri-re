@@ -55,14 +55,34 @@ export default function LabyrinthGame({ onBack }: Props) {
         setPhase('playing');
     }, [char]);
 
-    // ── Canvas Resize — uses window dimensions directly for mobile reliability ──
+    // ── Canvas Resize — Standard sizes per device type ──
     useEffect(() => {
         const resize = () => {
             if (!canvasRef.current) return;
             const container = containerRef.current;
-            // Use container if available, else fallback to window
-            const w = container ? container.clientWidth : window.innerWidth;
-            const h = container ? container.clientHeight : window.innerHeight - 40; // 40px for top bar
+            const screenW = window.innerWidth;
+            const screenH = window.innerHeight;
+
+            // Determine device type and apply standard canvas sizes
+            let maxW: number, maxH: number;
+            if (screenW < 640) {
+                // Mobile: standard 400x700 max, fit within viewport
+                maxW = Math.min(screenW, 400);
+                maxH = Math.min(screenH - 50, 700);
+            } else if (screenW < 1024) {
+                // Tablet: standard 768x1024 max
+                maxW = Math.min(screenW, 768);
+                maxH = Math.min(screenH - 50, 900);
+            } else {
+                // PC: standard 900x700 max
+                maxW = Math.min(screenW, 900);
+                maxH = Math.min(screenH - 50, 700);
+            }
+
+            // Use container if available, clamp to standard max
+            const w = container ? Math.min(container.clientWidth, maxW) : maxW;
+            const h = container ? Math.min(container.clientHeight, maxH) : maxH;
+
             // Guard against 0 dimensions (happens on some mobile browsers)
             if (w <= 0 || h <= 0) return;
             const dpr = window.devicePixelRatio || 1;
@@ -405,12 +425,17 @@ export default function LabyrinthGame({ onBack }: Props) {
 
     if (phase === 'menu') {
         return (
-            <div className="flex flex-col min-h-dvh bg-linear-to-b from-slate-900 to-slate-950 text-white overflow-y-auto pb-safe">
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 sticky top-0 z-10 bg-slate-900/95 backdrop-blur-md">
+            <div className="flex flex-col min-h-dvh text-white overflow-y-auto pb-safe relative">
+                {/* Background image */}
+                <div className="absolute inset-0 z-0">
+                    <img src="/images/labyrinth-bg.png" alt="" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-gradient-to-b from-slate-900/85 via-slate-900/70 to-slate-950/95" />
+                </div>
+                <div className="relative z-10 flex items-center gap-3 px-4 py-3 border-b border-white/10 shrink-0 sticky top-0 bg-slate-900/80 backdrop-blur-md">
                     {onBack && <button onClick={onBack} className="text-slate-400 hover:text-white text-xl">←</button>}
                     <h1 className="text-base sm:text-lg font-black">🏰 Labyrinthes de la Foi</h1>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 pb-28">
+                <div className="relative z-10 grid grid-cols-1 sm:grid-cols-2 gap-3 p-3 sm:p-4 pb-28">
                     {GAMES.map(g => {
                         const sv = loadGame(g.id);
                         return (
@@ -480,11 +505,28 @@ export default function LabyrinthGame({ onBack }: Props) {
     }
 
     if (phase === 'playing') {
+        // Request fullscreen + landscape on mobile
+        const requestLandscape = () => {
+            try {
+                const el = document.documentElement;
+                if (el.requestFullscreen && window.innerWidth < 768) {
+                    el.requestFullscreen().then(() => {
+                        try {
+                            (screen.orientation as any)?.lock?.('landscape').catch(() => { });
+                        } catch { }
+                    }).catch(() => { });
+                }
+            } catch { }
+        };
+
         return (
-            <div className="fixed inset-0 flex flex-col bg-black text-white z-60" style={{ height: '100dvh' }}>
+            <div className="fixed inset-0 flex flex-col bg-black text-white z-60" style={{ height: '100dvh' }} onClick={requestLandscape}>
                 {/* Top bar */}
                 <div className="flex items-center justify-between px-3 py-2 bg-black/90 shrink-0 text-sm z-10">
-                    <button onClick={() => setPhase('menu')} className="text-slate-400 hover:text-white p-1 text-base">✕</button>
+                    <button onClick={() => {
+                        try { document.exitFullscreen?.(); (screen.orientation as any)?.unlock?.(); } catch { }
+                        setPhase('menu');
+                    }} className="text-slate-400 hover:text-white p-1 text-base">✕</button>
                     <span className={timeLeft < 15 ? 'text-red-400 animate-pulse font-bold' : 'text-slate-300'}>
                         ⏱{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
                     </span>
@@ -596,7 +638,10 @@ export default function LabyrinthGame({ onBack }: Props) {
                     <div className="flex gap-3">
                         <button onClick={() => { setTotalScore(0); if (game) startLevel(game, 1); }}
                             className="flex-1 py-3 rounded-xl bg-indigo-600 font-bold text-sm">🔄 Rejouer</button>
-                        <button onClick={() => setPhase('menu')}
+                        <button onClick={() => {
+                            try { document.exitFullscreen?.(); (screen.orientation as any)?.unlock?.(); } catch { }
+                            setPhase('menu');
+                        }}
                             className="flex-1 py-3 rounded-xl bg-white/10 font-bold text-sm">📋 Menu</button>
                     </div>
                 </motion.div>
@@ -614,7 +659,10 @@ export default function LabyrinthGame({ onBack }: Props) {
                     <h2 className="text-xl font-black">{game.name} terminé !</h2>
                     <p className="text-lg text-yellow-400 font-bold">⭐ {totalScore}</p>
                     <p className="text-slate-400 text-sm">{game.rewardName} débloqué !</p>
-                    <button onClick={() => { setTotalScore(0); setPhase('menu') }}
+                    <button onClick={() => {
+                        try { document.exitFullscreen?.(); (screen.orientation as any)?.unlock?.(); } catch { }
+                        setTotalScore(0); setPhase('menu');
+                    }}
                         className="w-full py-3.5 rounded-2xl bg-linear-to-r from-yellow-600 to-amber-600 font-bold text-base">
                         📋 Retour
                     </button>

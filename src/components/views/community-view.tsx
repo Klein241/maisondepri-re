@@ -1753,11 +1753,15 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             {/* Guest Auth Prompt Dialog */}
             <Dialog open={showAuthPrompt} onOpenChange={setShowAuthPrompt}>
                 <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-sm rounded-3xl p-0 overflow-hidden">
+                    <DialogHeader className="sr-only">
+                        <DialogTitle>Connexion requise</DialogTitle>
+                        <DialogDescription>Connectez-vous ou créez un compte pour interagir avec la communauté.</DialogDescription>
+                    </DialogHeader>
                     <div className="p-8 text-center">
                         <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
                             <Lock className="w-10 h-10 text-white" />
                         </div>
-                        <h3 className="text-xl font-black mb-2">Connexion requise</h3>
+                        <h3 className="text-xl font-black mb-2" aria-hidden="true">Connexion requise</h3>
                         <p className="text-slate-400 text-sm mb-6">
                             Connectez-vous ou créez un compte pour interagir avec la communauté.
                         </p>
