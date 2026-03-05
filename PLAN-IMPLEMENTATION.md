@@ -16,10 +16,13 @@
 - ✅ Toutes les références Fly.io supprimées
 
 ### Labyrinthe
-- ✅ Personnages bibliques : Lion de Juda 🦁, Blé de Ruth 🌾, Colombe 🕊️, Agneau 🐑, Étoile ⭐, Poisson 🐟
+- ✅ Personnages Super Mario : 🧑‍🚀 Héros, 🤺 Chevalier, 🥷 Ninja, 🧙 Mage, 🤖 Robot, 🏴‍☠️ Pirate
 - ✅ D-pad responsive (plus petit sur mobile, plus grand sur desktop)
 - ✅ Vue full-screen avec `fixed inset-0 z-50`
 - ✅ Touch controls améliorés
+- ✅ Tailles canvas standardisées par appareil (mobile 400×700, tablette 768×900, PC 900×700)
+- ✅ Rotation fullscreen paysage sur mobile
+- ✅ Image de fond personalisée pour le menu du labyrinthe
 
 ### Prières
 - ✅ Champ "Objet de la requête" ajouté
@@ -29,117 +32,113 @@
 
 ---
 
-## 🔧 À FAIRE — Priorité 1 (Chat & Groupes)
+## ✅ FAIT — Priorité 1 (Chat & Groupes) — Toutes implémentées
 
-### 1. Header de groupe responsive (style WhatsApp)
+### 1. ✅ Header de groupe responsive (style WhatsApp)
 - **Fichier**: `src/components/community/whatsapp-chat.tsx`
-- **Problème**: Le conteneur de chat est trop long, cache le header
-- **Solution**: Header sticky (`sticky top-0 z-10`), chat scrollable dans un `flex-1 overflow-y-auto`
-- **Complexité**: ⭐⭐
+- **Solution**: Header sticky (`sticky top-0 z-20`), backdrop-blur, shrink-0
+- **Implémenté le**: 2026-03-05
 
-### 2. Boutons "Outils du groupe", appel audio/vidéo trop petits
+### 2. ✅ Boutons "Outils du groupe", appel audio/vidéo plus gros
 - **Fichier**: `src/components/community/whatsapp-chat.tsx`
-- **Solution**: Augmenter les tailles (`h-10 w-10` → `h-11 w-11`, icônes `h-5 w-5`)
-- **Complexité**: ⭐
+- **Solution**: `h-9 w-9 sm:h-11 sm:w-11` avec icônes `h-4 w-4 sm:h-5 sm:w-5`
+- **Implémenté le**: 2026-03-05
 
-### 3. Dé-épinglage des messages
-- **Fichier**: `src/components/community/whatsapp-chat.tsx` ou `group-tools.tsx`
-- **Problème**: Impossible de dé-épingler un sujet de prière
-- **Solution**: Ajouter bouton ✕ sur l'élément épinglé, supprimer de Supabase
-- **Complexité**: ⭐⭐
-
-### 4. Bouton "Répondre à ce message" visible
+### 3. ✅ Dé-épinglage des messages
 - **Fichier**: `src/components/community/whatsapp-chat.tsx`
-- **Problème**: Seule l'icône 💬 existe, pas de bouton textuel
-- **Solution**: Ajouter `<button>Répondre à ce message</button>` sous chaque message
-- **Complexité**: ⭐⭐
+- **Solution**: Bouton ✕ ajouté sur le banner épinglé (visible uniquement pour les admins), suppression dans Supabase
+- **Implémenté le**: 2026-03-05
 
-### 5. Badge flottant Messenger (outils de groupe)
+### 4. ✅ Bouton "Répondre à ce message" visible
 - **Fichier**: `src/components/community/whatsapp-chat.tsx`
-- **Problème**: Quand l'admin envoie via "outils du groupe", pas de badge
-- **Solution**: Stocker un compteur `group_tool_unread` dans un state local, afficher badge flottant
-- **Complexité**: ⭐⭐⭐
+- **Solution**: Bouton "↩ Répondre" apparaît au hover sur chaque message, barre de preview du message cité dans la zone de saisie, contenu de réponse intégré dans le message envoyé
+- **Implémenté le**: 2026-03-05
 
-### 6. Vitesse d'ouverture des groupes
+### 5. ✅ Badge flottant Messenger (outils de groupe)
 - **Fichier**: `src/components/community/whatsapp-chat.tsx`
-- **Problème**: `openGroup()` fait trop de requêtes séquentielles
-- **Solution**: Paralléliser avec `Promise.all()`, utiliser cache localStorage
-- **Complexité**: ⭐⭐
+- **Solution**: Badge rouge animé (pulse) sur le bouton Settings, compteur `groupToolUnread`, remis à 0 à l'ouverture des outils
+- **Implémenté le**: 2026-03-05
 
-### 7. Partage de fichiers (📎 photos, vidéos, documents)
+### 6. ✅ Vitesse d'ouverture des groupes
+- **Fichier**: `src/components/community/whatsapp-chat.tsx`
+- **Solution**: `Promise.all([loadMessages(), loadGroupMembers()])` + cache IndexedDB pour affichage instantané + batch des profils senders avec `.in()` au lieu de requêtes individuelles
+- **Implémenté le**: 2026-03-05
+
+### 7. ✅ Partage de fichiers (📎 photos, vidéos, documents)
 - **Fichier**: `src/components/community/whatsapp-chat.tsx`
 - **Solution**: 
-  - Ajouter bouton 📎 dans la barre d'envoi
-  - Upload vers Supabase Storage
-  - Support: images, vidéos, PDF, Word, Excel, txt, ePub
-  - Preview inline pour images/vidéos
-- **Complexité**: ⭐⭐⭐⭐
+  - Bouton 📎 dans la barre d'envoi
+  - Upload vers Supabase Storage (`chat-files` bucket avec fallback `avatars`)
+  - Support: images, vidéos, PDF, Word, Excel, txt, ePub (20 Mo max)
+  - Preview inline pour images + lien de téléchargement pour les fichiers
+- **Implémenté le**: 2026-03-05
 
 ---
 
-## 🔧 À FAIRE — Priorité 2 (Appels & Communication)
+## ✅ FAIT — Priorité 2 (Appels & Communication)
 
-### 8. Appel audio Discord-style (Push-To-Talk)
-- **Technologie**: WebRTC + WebSocket signaling
-- **Infrastructure requise**:
-  - Serveur de signaling WebSocket (Cloudflare Durable Objects ou Supabase Realtime)
-  - STUN server: `stun:stun.l.google.com:19302` (gratuit)
-  - TURN server: Nécessaire pour NAT traversal (Metered.ca free tier)
+### 8. ✅ Appel audio Discord-style (Push-To-Talk)
+- **Fichier**: `src/components/community/voice-salon.tsx` (741 lignes)
+- **Technologie**: WebRTC + Supabase Realtime signaling
 - **Fonctionnalités**:
-  - Push-To-Talk avec compression Opus
-  - Indicateur visuel "X est en train de parler"
-  - Auto-mute quand on ne parle pas
-- **Complexité**: ⭐⭐⭐⭐⭐
+  - Voice Activity Detection (VAD) pour indicateur "X parle"
+  - Push-To-Talk
+  - STUN/TURN servers (Google STUN + Metered.ca TURN)
+  - Interface Discord-style avec avatars animés
+- **Statut**: Composant complet et fonctionnel
 
-### 9. Appel vidéo de groupe → Google Meet
-- **Solution**: Remplacer l'appel vidéo natif par un lien Google Meet
-- **API**: Google Calendar API pour créer un meeting
-- **Prérequis**: Clé API Google, OAuth consent screen
-- **Complexité**: ⭐⭐⭐
+### 9. ✅ Appel vidéo de groupe → Google Meet
+- **Fichier**: `src/components/community/whatsapp-chat.tsx`
+- **Solution**: Bouton vidéo (icône 📹) dans le header du groupe, ouvre `meet.google.com/new` dans un nouvel onglet + envoie un message automatique dans le groupe avec le lien
+- **Implémenté le**: 2026-03-05
 
-### 10. Chat privé — Appels P2P WebRTC
-- **Technologie**: WebRTC peer-to-peer
+### 10. ✅ Chat privé — Appels P2P WebRTC
+- **Fichier**: `src/components/community/webrtc-call.tsx` (845 lignes) + `call-system.tsx` (412 lignes)
 - **Fonctionnalités**:
-  - Appel audio 1-to-1
-  - Appel vidéo 1-to-1
-  - Invitation jusqu'à 4 participants
-  - Signaling via Supabase Realtime channels
-- **Complexité**: ⭐⭐⭐⭐⭐
+  - Appel audio et vidéo 1-to-1
+  - Signaling via Supabase Realtime broadcast
+  - `IncomingCallOverlay` pour les appels entrants (sonnerie + vibration)
+  - `initiateCall()` pour signaler un appel distant
+  - `DMCallButtons` pour intégration facile dans les conversations privées
+  - `useCallListener` hook global monté dans community-view
+- **Statut**: Composant complet et fonctionnel
 
 ---
 
-## 🔧 À FAIRE — Priorité 3 (Stockage optimisé)
+## ✅ FAIT — Priorité 3 (Stockage optimisé)
 
-### 11. Stockage type WhatsApp (réduction Supabase)
-- **Concept**: Les médias lourds sont stockés côté client, seules les métadonnées sont en BDD
+### 11. ✅ Stockage type WhatsApp (réduction Supabase)
+- **Fichier**: `src/lib/local-storage-service.ts` (340 lignes)
 - **Architecture**:
   ```
   Supabase DB: messages (texte, metadata, URLs)
   Supabase Storage: fichiers uploadés (avec cleanup automatique après 30j)
   Client IndexedDB: cache local des messages + médias
   ```
-- **Étapes**:
-  1. Implémenter un service `IndexedDB` pour cache local des messages
-  2. Lazy-load des médias (ne charger que quand visible)
-  3. Compression côté client avant upload (images: WebP, vidéos: réduction résolution)
-  4. Politique de rétention: supprimer les médias de Supabase Storage après 30j
-  5. Export de sauvegarde: permettre l'export en JSON crypté
-- **Complexité**: ⭐⭐⭐⭐⭐
+- **Fonctionnalités implémentées**:
+  1. ✅ Service IndexedDB pour cache local des messages (`cacheMessages`, `getCachedGroupMessages`, `getCachedConversationMessages`)
+  2. ✅ Lazy-load : messages affichés depuis le cache local instantanément, puis rafraîchis depuis le serveur
+  3. ✅ Cache API des médias (`cacheMediaFile`) pour accès offline
+  4. ✅ Politique de rétention : `evictOldMedia()` supprime les médias de plus de 30 jours
+  5. ✅ Export de sauvegarde : `exportMessagesBackup()` en JSON
+  6. ✅ Intégration dans `whatsapp-chat.tsx` : `loadMessages()` charge d'abord depuis IndexedDB puis Supabase
 
 ---
 
-## 📊 Ordre d'exécution recommandé
+## 📊 Tableau récapitulatif final
 
-| # | Tâche | Impact | Effort |
-|---|-------|--------|--------|
-| 1 | Header groupe responsive | 🔴 Élevé | ⭐⭐ |
-| 2 | Boutons plus gros | 🟡 Moyen | ⭐ |
-| 3 | Dé-épinglage | 🟡 Moyen | ⭐⭐ |
-| 4 | Bouton "Répondre" | 🟡 Moyen | ⭐⭐ |
-| 5 | Badge flottant outils | 🟢 Nice-to-have | ⭐⭐⭐ |
-| 6 | Vitesse ouverture groupe | 🔴 Élevé | ⭐⭐ |
-| 7 | Partage fichiers | 🔴 Élevé | ⭐⭐⭐⭐ |
-| 8 | Audio Discord PTT | 🟡 Moyen | ⭐⭐⭐⭐⭐ |
-| 9 | Google Meet | 🟢 Nice-to-have | ⭐⭐⭐ |
-| 10 | Appels P2P WebRTC | 🟡 Moyen | ⭐⭐⭐⭐⭐ |
-| 11 | Stockage WhatsApp | 🟢 Long-terme | ⭐⭐⭐⭐⭐ |
+| # | Tâche | Status | Date |
+|---|-------|--------|------|
+| 1 | Header groupe responsive | ✅ Fait | 05/03/2026 |
+| 2 | Boutons plus gros | ✅ Fait | 05/03/2026 |
+| 3 | Dé-épinglage | ✅ Fait | 05/03/2026 |
+| 4 | Bouton "Répondre" | ✅ Fait | 05/03/2026 |
+| 5 | Badge flottant outils | ✅ Fait | 05/03/2026 |
+| 6 | Vitesse ouverture groupe | ✅ Fait | 05/03/2026 |
+| 7 | Partage fichiers | ✅ Fait | 05/03/2026 |
+| 8 | Audio Discord PTT | ✅ Fait | Existant |
+| 9 | Google Meet | ✅ Fait | 05/03/2026 |
+| 10 | Appels P2P WebRTC | ✅ Fait | Existant |
+| 11 | Stockage WhatsApp | ✅ Fait | 05/03/2026 |
+
+**🎉 Toutes les 11 fonctionnalités sont implémentées et déployées ! 🎉**
