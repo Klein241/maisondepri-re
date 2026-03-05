@@ -995,6 +995,13 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
             gradient: 'from-rose-500 to-pink-600',
             description: 'Communiqués'
         },
+        {
+            id: 'program' as const,
+            icon: FileText,
+            label: 'Programme',
+            gradient: 'from-lime-500 to-green-600',
+            description: 'Jeûne & Prière'
+        },
     ];
 
     return (
@@ -1164,6 +1171,190 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                             <div className="text-center py-4">
                                                 <Megaphone className="h-8 w-8 text-slate-700 mx-auto mb-2" />
                                                 <p className="text-xs text-slate-500">Aucune annonce du créateur</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                                {activeSection === 'program' && (
+                                    <div className="space-y-3">
+                                        {/* Published day display */}
+                                        {publishedDay && (() => {
+                                            const day = allProgramDays.find(d => d.day === publishedDay);
+                                            if (!day) return null;
+                                            return (
+                                                <div className="bg-lime-500/10 border border-lime-500/20 rounded-xl p-4 space-y-2">
+                                                    <div className="flex items-center justify-between">
+                                                        <div className="flex items-center gap-1.5">
+                                                            <FileText className="h-4 w-4 text-lime-400" />
+                                                            <span className="text-xs font-bold text-lime-400 uppercase">Jour {day.day}</span>
+                                                        </div>
+                                                        {isCreator && (
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 text-[10px] text-red-400"
+                                                                onClick={() => {
+                                                                    localStorage.removeItem(`group_program_day_${groupId}`);
+                                                                    setPublishedDay(null);
+                                                                }}
+                                                            >
+                                                                <X className="h-3 w-3 mr-0.5" /> Retirer
+                                                            </Button>
+                                                        )}
+                                                    </div>
+                                                    <h3 className="text-sm font-bold text-white">{day.title}</h3>
+                                                    <p className="text-xs text-slate-400 italic">{day.theme}</p>
+                                                    <div className="bg-black/20 rounded-lg p-2 mt-2">
+                                                        <p className="text-[10px] font-bold text-sky-400 uppercase">📖 Lecture</p>
+                                                        <p className="text-xs text-slate-300">{day.bibleReading.reference}</p>
+                                                        {day.bibleReading.passage && (
+                                                            <p className="text-xs text-slate-400 italic mt-1">{day.bibleReading.passage}</p>
+                                                        )}
+                                                    </div>
+                                                    {day.prayerFocus.length > 0 && (
+                                                        <div className="bg-black/20 rounded-lg p-2">
+                                                            <p className="text-[10px] font-bold text-amber-400 uppercase mb-1">🙏 Sujets de prière</p>
+                                                            {day.prayerFocus.map((f, i) => (
+                                                                <p key={i} className="text-xs text-slate-300">• {f}</p>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                    {day.meditation && (
+                                                        <div className="bg-black/20 rounded-lg p-2">
+                                                            <p className="text-[10px] font-bold text-purple-400 uppercase">💭 Méditation</p>
+                                                            <p className="text-xs text-slate-300 italic">{day.meditation}</p>
+                                                        </div>
+                                                    )}
+                                                    {day.practicalAction && (
+                                                        <div className="bg-black/20 rounded-lg p-2">
+                                                            <p className="text-[10px] font-bold text-emerald-400 uppercase">✅ Action pratique</p>
+                                                            <p className="text-xs text-slate-300">{day.practicalAction}</p>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })()}
+
+                                        {/* Creator: publish a day */}
+                                        {isCreator ? (
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-slate-400">Sélectionnez un jour du programme à publier dans le groupe :</p>
+                                                <div className="max-h-[300px] overflow-y-auto space-y-1.5 pr-1">
+                                                    {allProgramDays.map(day => (
+                                                        <div
+                                                            key={day.day}
+                                                            className={cn(
+                                                                "flex items-center justify-between p-2.5 rounded-xl border cursor-pointer transition-all",
+                                                                publishedDay === day.day
+                                                                    ? "bg-lime-500/20 border-lime-500/40"
+                                                                    : "bg-white/5 border-white/10 hover:bg-white/10"
+                                                            )}
+                                                            onClick={() => publishProgram(day.day)}
+                                                        >
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={cn(
+                                                                        "text-xs font-bold shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
+                                                                        day.day > programData.length
+                                                                            ? "bg-gradient-to-br from-orange-500 to-red-600 text-white"
+                                                                            : "bg-gradient-to-br from-lime-500 to-green-600 text-white"
+                                                                    )}>
+                                                                        J{day.day}
+                                                                    </span>
+                                                                    <div className="min-w-0">
+                                                                        <p className="text-xs font-bold text-white truncate">{day.title}</p>
+                                                                        <p className="text-[10px] text-slate-500 truncate">{day.theme}</p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                            {publishedDay === day.day && (
+                                                                <Badge className="bg-lime-500/20 text-lime-400 border-none text-[8px] shrink-0 ml-2">
+                                                                    <Check className="h-2.5 w-2.5 mr-0.5" /> Publié
+                                                                </Badge>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+
+                                                {/* Add custom day button */}
+                                                {!showAddDay ? (
+                                                    <Button
+                                                        className="w-full h-9 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 font-bold text-xs"
+                                                        onClick={() => setShowAddDay(true)}
+                                                    >
+                                                        <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
+                                                        Ajouter un jour (Jour {allProgramDays.length + 1})
+                                                    </Button>
+                                                ) : (
+                                                    <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-3 space-y-2">
+                                                        <div className="flex items-center justify-between">
+                                                            <h4 className="text-xs font-bold text-orange-400">Nouveau Jour {allProgramDays.length + 1}</h4>
+                                                            <Button
+                                                                variant="ghost"
+                                                                size="sm"
+                                                                className="h-6 px-2 text-slate-400"
+                                                                onClick={() => setShowAddDay(false)}
+                                                            >
+                                                                <X className="h-3 w-3" />
+                                                            </Button>
+                                                        </div>
+                                                        <Input
+                                                            value={newDayTitle}
+                                                            onChange={e => setNewDayTitle(e.target.value)}
+                                                            placeholder="Titre du jour *"
+                                                            className="bg-white/5 border-white/10 rounded-lg h-8 text-xs"
+                                                        />
+                                                        <Input
+                                                            value={newDayTheme}
+                                                            onChange={e => setNewDayTheme(e.target.value)}
+                                                            placeholder="Thème du jour *"
+                                                            className="bg-white/5 border-white/10 rounded-lg h-8 text-xs"
+                                                        />
+                                                        <Input
+                                                            value={newDayReading}
+                                                            onChange={e => setNewDayReading(e.target.value)}
+                                                            placeholder="Référence biblique (ex: Jean 3:16)"
+                                                            className="bg-white/5 border-white/10 rounded-lg h-8 text-xs"
+                                                        />
+                                                        <Textarea
+                                                            value={newDayPassage}
+                                                            onChange={e => setNewDayPassage(e.target.value)}
+                                                            placeholder="Passage / texte de lecture..."
+                                                            className="bg-white/5 border-white/10 rounded-lg min-h-[60px] resize-none text-xs"
+                                                        />
+                                                        <Textarea
+                                                            value={newDayPrayers}
+                                                            onChange={e => setNewDayPrayers(e.target.value)}
+                                                            placeholder="Sujets de prière (un par ligne)"
+                                                            className="bg-white/5 border-white/10 rounded-lg min-h-[60px] resize-none text-xs"
+                                                        />
+                                                        <Textarea
+                                                            value={newDayMeditation}
+                                                            onChange={e => setNewDayMeditation(e.target.value)}
+                                                            placeholder="Méditation..."
+                                                            className="bg-white/5 border-white/10 rounded-lg min-h-[50px] resize-none text-xs"
+                                                        />
+                                                        <Input
+                                                            value={newDayAction}
+                                                            onChange={e => setNewDayAction(e.target.value)}
+                                                            placeholder="Action pratique"
+                                                            className="bg-white/5 border-white/10 rounded-lg h-8 text-xs"
+                                                        />
+                                                        <Button
+                                                            className="w-full h-9 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 font-bold text-xs"
+                                                            onClick={addCustomDay}
+                                                            disabled={!newDayTitle.trim() || !newDayTheme.trim()}
+                                                        >
+                                                            <Check className="h-3.5 w-3.5 mr-1.5" />
+                                                            Ajouter le Jour {allProgramDays.length + 1}
+                                                        </Button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ) : !publishedDay && (
+                                            <div className="text-center py-4">
+                                                <FileText className="h-8 w-8 text-slate-700 mx-auto mb-2" />
+                                                <p className="text-xs text-slate-500">Le créateur n&apos;a pas encore publié le programme du jour</p>
                                             </div>
                                         )}
                                     </div>

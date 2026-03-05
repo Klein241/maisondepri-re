@@ -31,78 +31,7 @@ import { EmojiPicker } from '@/components/ui/emoji-picker';
 import { notifyDirectMessage } from '@/lib/notifications';
 import { useAppStore } from '@/lib/store';
 import { cacheMessages, getCachedGroupMessages, getCachedConversationMessages, evictOldMedia, CachedMessage } from '@/lib/local-storage-service';
-
-// Types
-interface ChatUser {
-    id: string;
-    full_name: string | null;
-    avatar_url: string | null;
-    is_online?: boolean;
-    last_seen?: string;
-}
-
-interface Conversation {
-    id: string;
-    participantId: string;
-    participant: ChatUser;
-    lastMessage: string;
-    lastMessageAt: string;
-    unreadCount: number;
-}
-
-interface ChatGroup {
-    id: string;
-    name: string;
-    description: string | null;
-    is_urgent: boolean;
-    member_count: number;
-    lastMessage?: string;
-    lastMessageAt?: string;
-    unreadCount: number;
-    is_admin_created: boolean;
-    prayer_request_id?: string;
-    avatar_url?: string | null;
-    created_by?: string;
-    created_at?: string;
-}
-
-interface GroupMember {
-    id: string;
-    full_name: string | null;
-    avatar_url: string | null;
-    is_online?: boolean;
-    role?: string;
-}
-
-interface Message {
-    id: string;
-    content: string;
-    type: 'text' | 'voice' | 'image' | 'file';
-    voice_url?: string;
-    voice_duration?: number;
-    image_url?: string;
-    file_url?: string;
-    file_name?: string;
-    file_type?: string;
-    reply_to?: string;
-    reply_to_content?: string;
-    reply_to_sender?: string;
-    sender_id: string;
-    sender?: ChatUser;
-    created_at: string;
-    is_read: boolean;
-    read_by?: string[];
-}
-
-interface TypingUser {
-    userId: string;
-    userName: string;
-}
-
-interface WhatsAppChatProps {
-    user: { id: string; name: string; avatar?: string } | null;
-    onHideNav?: (hide: boolean) => void;
-}
+import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUser, WhatsAppChatProps, GameSession } from './chat-types';
 
 // Voice Message Player Component
 function VoiceMessagePlayer({ voiceUrl, duration }: { voiceUrl: string; duration?: number }) {
