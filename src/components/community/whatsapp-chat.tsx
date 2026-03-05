@@ -2407,11 +2407,43 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         </div>
                     ) : activeTab === 'groups' ? (
                         <div className="p-3 space-y-4">
+                            {/* Create group button */}
+                            <button
+                                onClick={() => {
+                                    const name = window.prompt('Nom du nouveau groupe :');
+                                    if (!name?.trim()) return;
+                                    supabase.from('prayer_groups').insert({
+                                        name: name.trim(),
+                                        created_by: user.id,
+                                        is_open: true,
+                                        member_count: 1,
+                                    }).select('*').single().then(({ data, error }) => {
+                                        if (error) { toast.error('Erreur: ' + error.message); return; }
+                                        if (data) {
+                                            // Add creator as member
+                                            supabase.from('prayer_group_members').insert({
+                                                group_id: data.id,
+                                                user_id: user.id,
+                                                role: 'admin',
+                                            });
+                                            setGroups(prev => [data, ...prev]);
+                                            toast.success('Groupe créé ! 🎉');
+                                        }
+                                    });
+                                }}
+                                className="w-full p-4 flex items-center gap-3 hover:bg-white/5 transition-colors rounded-xl"
+                            >
+                                <div className="w-12 h-12 rounded-full bg-green-600 flex items-center justify-center">
+                                    <Plus className="h-6 w-6 text-white" />
+                                </div>
+                                <span className="text-green-400 font-medium">Créer un Groupe</span>
+                            </button>
+
                             {groups.length === 0 ? (
                                 <div className="text-center py-12 text-muted-foreground">
                                     <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
                                     <p>Aucun groupe de prière</p>
-                                    <p className="text-xs mt-1">Rejoignez un groupe depuis une demande de prière</p>
+                                    <p className="text-xs mt-1">Créez un groupe ou rejoignez-en un</p>
                                 </div>
                             ) : (
                                 <>
@@ -3611,7 +3643,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 </DialogContent>
             </Dialog>
 
-            {/* Fasting Program Tool Dialog */}
+            {/* Fasting Program Tool Dialog (personnalisable) */}
             <Dialog open={showFastingTool} onOpenChange={setShowFastingTool}>
                 <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10">
                     <DialogHeader>
