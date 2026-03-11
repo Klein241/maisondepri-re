@@ -1,4 +1,4 @@
-﻿'use client';
+'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -422,11 +422,11 @@ export function QuizDuelGame({
                         <header className="px-6 pt-10 pb-4">
                             <Button variant="ghost" size="icon" onClick={onBack} className="mb-4"><ArrowLeft className="h-6 w-6" /></Button>
                             <div className="text-center">
-                                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-3xl flex items-center justify-center shadow-lg shadow-indigo-600/30 relative">
+                                <div className="w-20 h-20 mx-auto mb-4 bg-linear-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-3xl flex items-center justify-center shadow-lg shadow-indigo-600/30 relative">
                                     <span className="text-4xl">⚔️</span>
                                     <div className="absolute -top-2 -right-2 bg-amber-500 text-black text-[10px] font-black px-2 py-0.5 rounded-full">Nv.{playerStats.level}</div>
                                 </div>
-                                <h1 className="text-3xl font-black bg-gradient-to-r from-white via-indigo-200 to-purple-300 bg-clip-text text-transparent">Duel Biblique</h1>
+                                <h1 className="text-3xl font-black bg-linear-to-r from-white via-indigo-200 to-purple-300 bg-clip-text text-transparent">Duel Biblique</h1>
                                 <p className="text-slate-500 text-sm mt-1">Affrontez le quiz ultime</p>
                             </div>
                         </header>
@@ -451,7 +451,7 @@ export function QuizDuelGame({
                         {/* Daily Streak */}
                         {playerStats.dailyStreak > 0 && (
                             <div className="px-6 mb-4">
-                                <div className="bg-gradient-to-r from-orange-600/20 to-amber-600/10 rounded-2xl p-4 border border-orange-500/20 flex items-center gap-4">
+                                <div className="bg-linear-to-r from-orange-600/20 to-amber-600/10 rounded-2xl p-4 border border-orange-500/20 flex items-center gap-4">
                                     <div className="w-12 h-12 bg-orange-500/20 rounded-xl flex items-center justify-center"><Flame className="w-6 h-6 text-orange-400" /></div>
                                     <div className="flex-1">
                                         <p className="font-bold text-white">{playerStats.dailyStreak} jours consécutifs</p>
@@ -471,7 +471,7 @@ export function QuizDuelGame({
                                         <Button
                                             key={d}
                                             variant="ghost"
-                                            className={`w-full h-20 rounded-2xl bg-gradient-to-r from-${config.color}-600/20 to-${config.color}-600/5 border border-${config.color}-500/20 hover:border-${config.color}-500/40 justify-start px-5 group transition-all hover:scale-[1.02]`}
+                                            className={`w-full h-20 rounded-2xl bg-linear-to-r from-${config.color}-600/20 to-${config.color}-600/5 border border-${config.color}-500/20 hover:border-${config.color}-500/40 justify-start px-5 group transition-all hover:scale-[1.02]`}
                                             onClick={() => startSoloGame(d)}
                                         >
                                             <div className="flex items-center gap-3 w-full">
@@ -534,7 +534,7 @@ export function QuizDuelGame({
                                 </div>
                             ) : leaderboard.map((entry, i) => (
                                 <div key={i} className={cn("flex items-center gap-3 p-3 rounded-xl", i < 3 ? "bg-amber-500/10 border border-amber-500/20" : "bg-white/5")}>
-                                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm", i === 0 ? "bg-gradient-to-br from-amber-400 to-amber-600 text-black" : i === 1 ? "bg-gradient-to-br from-slate-300 to-slate-500 text-black" : i === 2 ? "bg-gradient-to-br from-amber-700 to-amber-900 text-white" : "bg-white/10 text-slate-400")}>
+                                    <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center font-black text-sm", i === 0 ? "bg-linear-to-br from-amber-400 to-amber-600 text-black" : i === 1 ? "bg-linear-to-br from-slate-300 to-slate-500 text-black" : i === 2 ? "bg-linear-to-br from-amber-700 to-amber-900 text-white" : "bg-white/10 text-slate-400")}>
                                         {i + 1}
                                     </div>
                                     <div className="flex-1">
@@ -569,7 +569,7 @@ export function QuizDuelGame({
                                 {Object.entries(BADGE_DEFINITIONS).map(([id, badge]) => {
                                     const unlocked = playerStats.badges.includes(id);
                                     return (
-                                        <Card key={id} className={cn("rounded-2xl border", unlocked ? "bg-gradient-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20" : "bg-white/5 border-white/5 opacity-40")}>
+                                        <Card key={id} className={cn("rounded-2xl border", unlocked ? "bg-linear-to-br from-amber-500/10 to-amber-600/5 border-amber-500/20" : "bg-white/5 border-white/5 opacity-40")}>
                                             <CardContent className="p-4 text-center">
                                                 <div className="text-3xl mb-2">{unlocked ? badge.icon : '🔒'}</div>
                                                 <h3 className="font-bold text-xs text-white">{badge.name}</h3>
@@ -602,7 +602,7 @@ export function QuizDuelGame({
                             className="text-center"
                         >
                             {countdown > 0 ? (
-                                <div className="text-9xl font-black bg-gradient-to-b from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
+                                <div className="text-9xl font-black bg-linear-to-b from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">
                                     {countdown}
                                 </div>
                             ) : (
@@ -641,7 +641,7 @@ export function QuizDuelGame({
                         <div className="max-w-2xl mx-auto mt-4">
                             <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                                 <motion.div
-                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full"
+                                    className="h-full bg-linear-to-r from-indigo-500 to-purple-500 rounded-full"
                                     initial={{ width: 0 }}
                                     animate={{ width: `${progressPercent}%` }}
                                     transition={{ duration: 0.5, ease: 'easeOut' }}
@@ -703,7 +703,7 @@ export function QuizDuelGame({
                                             <span className="text-orange-400 text-sm font-bold">Série de {streak} !</span>
                                         </motion.div>
                                     )}
-                                    <div className="bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 rounded-3xl p-8 backdrop-blur-sm shadow-2xl">
+                                    <div className="bg-linear-to-br from-white/8 to-white/2 border border-white/10 rounded-3xl p-8 backdrop-blur-sm shadow-2xl">
                                         <div className="flex justify-center mb-3">
                                             {getDifficultyBadge((gameQuestions[currentIndex] as any)?.difficulty)}
                                         </div>
@@ -720,11 +720,11 @@ export function QuizDuelGame({
                                                 <motion.button key={i} whileHover={!showResult ? { scale: 1.02, y: -2 } : {}} whileTap={!showResult ? { scale: 0.98 } : {}} onClick={() => handleAnswer(i)} disabled={selectedOption !== null}
                                                     className={cn(
                                                         "relative flex items-center gap-4 p-4 rounded-2xl border text-left transition-all duration-300",
-                                                        !showResult && `bg-gradient-to-br ${optColors[i]} cursor-pointer`,
+                                                        !showResult && `bg-linear-to-br ${optColors[i]} cursor-pointer`,
                                                         showResult && isSelected && isCorrectOption && "bg-green-500/20 border-green-500 shadow-[0_0_20px_rgba(34,197,94,0.2)]",
                                                         showResult && isSelected && !isCorrectOption && "bg-red-500/20 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.2)]",
                                                         showResult && !isSelected && isCorrectOption && "bg-green-500/10 border-green-500/50",
-                                                        showResult && !isSelected && !isCorrectOption && "bg-white/[0.02] border-white/5 opacity-40",
+                                                        showResult && !isSelected && !isCorrectOption && "bg-white/2 border-white/5 opacity-40",
                                                     )}
                                                 >
                                                     <div className={cn(
@@ -752,12 +752,12 @@ export function QuizDuelGame({
                             {gameState === 'finished' && (
                                 <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="w-full text-center space-y-8">
                                     <motion.div animate={{ y: [0, -10, 0], rotateZ: [0, -3, 3, 0] }} transition={{ repeat: Infinity, duration: 3, ease: 'easeInOut' }} className="mx-auto">
-                                        <div className="w-24 h-24 mx-auto rounded-3xl bg-gradient-to-br from-amber-400/20 to-amber-600/10 border border-amber-500/30 flex items-center justify-center shadow-2xl shadow-amber-500/10">
+                                        <div className="w-24 h-24 mx-auto rounded-3xl bg-linear-to-br from-amber-400/20 to-amber-600/10 border border-amber-500/30 flex items-center justify-center shadow-2xl shadow-amber-500/10">
                                             <Trophy className="w-12 h-12 text-amber-400" />
                                         </div>
                                     </motion.div>
                                     <div>
-                                        <h2 className="text-4xl font-black bg-gradient-to-r from-white via-amber-200 to-amber-400 bg-clip-text text-transparent">Partie terminée !</h2>
+                                        <h2 className="text-4xl font-black bg-linear-to-r from-white via-amber-200 to-amber-400 bg-clip-text text-transparent">Partie terminée !</h2>
                                         <p className="text-slate-500 mt-2">
                                             {correctCount >= gameQuestions.length * 0.8 ? '🏆 Excellent travail !' : correctCount >= gameQuestions.length * 0.6 ? '👏 Bien joué !' : correctCount >= gameQuestions.length * 0.4 ? '📖 Pas mal !' : '💪 Ne lâche rien !'}
                                         </p>
@@ -779,8 +779,8 @@ export function QuizDuelGame({
                                             <div className="text-[10px] text-slate-500 uppercase font-bold mt-1">Série max</div>
                                         </div>
                                     </div>
-                                    <div className="bg-gradient-to-br from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 rounded-2xl p-6">
-                                        <div className="text-5xl font-black bg-gradient-to-r from-indigo-300 to-purple-300 bg-clip-text text-transparent">{score}</div>
+                                    <div className="bg-linear-to-br from-indigo-600/20 to-purple-600/20 border border-indigo-500/30 rounded-2xl p-6">
+                                        <div className="text-5xl font-black bg-linear-to-r from-indigo-300 to-purple-300 bg-clip-text text-transparent">{score}</div>
                                         <div className="text-sm text-indigo-400 font-bold mt-1">SCORE TOTAL</div>
                                         {earnedXP > 0 && (
                                             <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="mt-3 flex items-center justify-center gap-2">
@@ -815,10 +815,10 @@ export function QuizDuelGame({
                                             <div className="space-y-2">
                                                 {[...players].sort((a, b) => { if (a.status === 'finished' && b.status !== 'finished') return -1; if (b.status === 'finished' && a.status !== 'finished') return 1; return (b.score || 0) - (a.score || 0); }).map((p, i) => (
                                                     <motion.div key={p.id} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: i * 0.1 }}
-                                                        className={cn("flex items-center justify-between p-3 rounded-xl", p.id === currentUserId ? "bg-indigo-500/15 border border-indigo-500/30" : "bg-white/[0.03]")}
+                                                        className={cn("flex items-center justify-between p-3 rounded-xl", p.id === currentUserId ? "bg-indigo-500/15 border border-indigo-500/30" : "bg-white/3")}
                                                     >
                                                         <div className="flex items-center gap-3">
-                                                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black", i === 0 ? "bg-gradient-to-br from-amber-400 to-amber-600 text-black" : i === 1 ? "bg-gradient-to-br from-slate-300 to-slate-500 text-black" : i === 2 ? "bg-gradient-to-br from-amber-700 to-amber-900 text-white" : "bg-white/10 text-slate-400")}>{i + 1}</div>
+                                                            <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black", i === 0 ? "bg-linear-to-br from-amber-400 to-amber-600 text-black" : i === 1 ? "bg-linear-to-br from-slate-300 to-slate-500 text-black" : i === 2 ? "bg-linear-to-br from-amber-700 to-amber-900 text-white" : "bg-white/10 text-slate-400")}>{i + 1}</div>
                                                             <span className={cn("text-sm font-medium", p.id === currentUserId && "text-indigo-300 font-bold")}>{p.display_name} {p.id === currentUserId && "(Moi)"}</span>
                                                         </div>
                                                         <div>
@@ -837,7 +837,7 @@ export function QuizDuelGame({
                                         </div>
                                     )}
                                     <div className="flex flex-col gap-3 max-w-xs mx-auto w-full">
-                                        <Button onClick={handleReplay} size="lg" className="w-full h-14 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold rounded-2xl shadow-lg shadow-emerald-600/20 text-base">
+                                        <Button onClick={handleReplay} size="lg" className="w-full h-14 bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold rounded-2xl shadow-lg shadow-emerald-600/20 text-base">
                                             <RotateCcw className="w-5 h-5 mr-2" /> Rejouer
                                         </Button>
                                         <div className="flex gap-2 justify-center">
@@ -850,9 +850,9 @@ export function QuizDuelGame({
                                         {mode === 'multiplayer' ? (
                                             <>
                                                 {isHost && roundInfo && onNextRound && roundInfo.current < roundInfo.total ? (
-                                                    <Button onClick={onNextRound} size="lg" className="w-full h-14 bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 font-bold rounded-2xl shadow-lg shadow-green-600/20 text-base">Manche suivante ({roundInfo.current}/{roundInfo.total})</Button>
+                                                    <Button onClick={onNextRound} size="lg" className="w-full h-14 bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 font-bold rounded-2xl shadow-lg shadow-green-600/20 text-base">Manche suivante ({roundInfo.current}/{roundInfo.total})</Button>
                                                 ) : (
-                                                    <Button onClick={onBack} size="lg" className="w-full h-14 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-bold rounded-2xl shadow-lg shadow-indigo-600/20 text-base">Retour au Salon</Button>
+                                                    <Button onClick={onBack} size="lg" className="w-full h-14 bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 font-bold rounded-2xl shadow-lg shadow-indigo-600/20 text-base">Retour au Salon</Button>
                                                 )}
                                                 <Button onClick={onBack} variant="ghost" className="w-full text-slate-500 hover:text-red-400 rounded-xl">Quitter la partie</Button>
                                             </>

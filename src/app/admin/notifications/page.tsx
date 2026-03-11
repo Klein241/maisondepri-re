@@ -191,7 +191,7 @@ export default function NotificationsPage() {
     return (
         <div className="max-w-4xl mx-auto space-y-6">
             <div>
-                <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                <h2 className="text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                     Communications
                 </h2>
                 <p className="text-muted-foreground mt-1">
@@ -273,7 +273,7 @@ export default function NotificationsPage() {
                                                     />
                                                     <Avatar className="h-8 w-8">
                                                         <AvatarImage src={user.avatar_url || undefined} />
-                                                        <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs">
+                                                        <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white text-xs">
                                                             {user.full_name?.[0] || 'U'}
                                                         </AvatarFallback>
                                                     </Avatar>

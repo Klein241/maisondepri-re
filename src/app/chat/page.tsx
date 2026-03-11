@@ -56,7 +56,7 @@ export default function ChatPage() {
 
     if (loading) {
         return (
-            <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950 flex items-center justify-center">
+            <div className="min-h-screen bg-linear-to-b from-slate-900 to-slate-950 flex items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
             </div>
         );
@@ -64,7 +64,7 @@ export default function ChatPage() {
 
     if (!user) {
         return (
-            <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950 flex flex-col items-center justify-center gap-4 p-4">
+            <div className="min-h-screen bg-linear-to-b from-slate-900 to-slate-950 flex flex-col items-center justify-center gap-4 p-4">
                 <h1 className="text-2xl font-bold text-white">Messages</h1>
                 <p className="text-slate-400 text-center">Connectez-vous pour accéder à vos messages</p>
                 <Link href="/">
@@ -77,7 +77,7 @@ export default function ChatPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-slate-900 to-slate-950 flex flex-col">
+        <div className="min-h-screen bg-linear-to-b from-slate-900 to-slate-950 flex flex-col">
             {/* Header */}
             <header className="p-4 border-b border-white/10 flex items-center gap-3 bg-slate-900/80 backdrop-blur-sm sticky top-0 z-50">
                 <Link href="/">

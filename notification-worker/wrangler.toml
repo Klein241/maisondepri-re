@@ -1,0 +1,63 @@
+# ══════════════════════════════════════════════════════════
+# NOTIFICATION WORKER — Maison de Prière
+# Advanced notification gateway with aggregation, KV counters, Queue + Cron
+# ══════════════════════════════════════════════════════════
+
+name = "maisondepriere-notifications"
+main = "src/index.ts"
+compatibility_date = "2025-06-01"
+
+# ── KV Namespaces ────────────────────────────────────────
+# Create each with:  npx wrangler kv namespace create <NAME>
+# Then paste the returned id below.
+
+[[kv_namespaces]]
+binding = "NOTIFICATION_CACHE"
+id = "REPLACE_WITH_KV_ID_1"
+
+[[kv_namespaces]]
+binding = "PUSH_TOKEN_CACHE"
+id = "REPLACE_WITH_KV_ID_2"
+
+[[kv_namespaces]]
+binding = "UNREAD_COUNTERS"
+id = "REPLACE_WITH_KV_ID_3"
+
+[[kv_namespaces]]
+binding = "USER_PREFERENCES"
+id = "REPLACE_WITH_KV_ID_4"
+
+# ── Queue ────────────────────────────────────────────────
+# Create with: npx wrangler queues create notification-push-queue
+
+[[queues.producers]]
+queue = "notification-push-queue"
+binding = "PUSH_QUEUE"
+
+[[queues.consumers]]
+queue = "notification-push-queue"
+max_batch_size = 100
+max_batch_timeout = 5
+max_retries = 3
+dead_letter_queue = "notification-dlq"
+retry_delay = "exponential"
+
+# ── Cron Triggers ────────────────────────────────────────
+# Runs every hour to check for prayer requests without responses (48h+)
+[triggers]
+crons = ["0 * * * *"]
+
+# ── Environment Variables ────────────────────────────────
+[vars]
+VAPID_EMAIL = "mailto:admin@maisondepriere.app"
+SUPABASE_URL = ""             # Set via: npx wrangler secret put SUPABASE_URL
+# Rate limits
+RATE_LIMIT_PUSH_INTERVAL_MS = "10000"    # 10s between pushes per user
+RATE_LIMIT_HOURLY_MAX = "50"             # Max 50 notifs/hour per user
+BROADCAST_RATE_LIMIT_MS = "100"          # 10 req/s for broadcasts
+
+# ── Secrets (set via CLI, not stored in file) ────────────
+# npx wrangler secret put SUPABASE_URL
+# npx wrangler secret put SUPABASE_SERVICE_KEY
+# npx wrangler secret put VAPID_PUBLIC_KEY
+# npx wrangler secret put VAPID_PRIVATE_KEY

@@ -263,6 +263,7 @@ FOR UPDATE USING (auth.uid() = user_id);
 -- ============================================
 
 -- Create prayer group (FIXED VERSION)
+DROP FUNCTION IF EXISTS public.create_prayer_group(TEXT, TEXT, BOOLEAN);
 CREATE OR REPLACE FUNCTION public.create_prayer_group(
     group_name TEXT,
     group_description TEXT DEFAULT NULL,
@@ -292,6 +293,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Get or create conversation (FIXED VERSION)
+DROP FUNCTION IF EXISTS public.get_or_create_conversation(UUID);
 CREATE OR REPLACE FUNCTION public.get_or_create_conversation(other_user_id UUID)
 RETURNS UUID AS $$
 DECLARE
@@ -321,6 +323,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Update online status
+DROP FUNCTION IF EXISTS public.update_presence(BOOLEAN);
 CREATE OR REPLACE FUNCTION public.update_presence(online BOOLEAN)
 RETURNS VOID AS $$
 BEGIN
@@ -331,6 +334,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Send notification to user
+DROP FUNCTION IF EXISTS public.send_notification(UUID, TEXT, TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION public.send_notification(
     target_user_id UUID,
     notif_title TEXT,
@@ -351,6 +355,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Broadcast notification to all users
+DROP FUNCTION IF EXISTS public.broadcast_notification(TEXT, TEXT, TEXT);
 CREATE OR REPLACE FUNCTION public.broadcast_notification(
     notif_title TEXT,
     notif_message TEXT,
@@ -374,18 +379,19 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 -- ============================================
 -- 12. REALTIME CONFIGURATION
 -- ============================================
--- Enable realtime for all relevant tables
-ALTER PUBLICATION supabase_realtime ADD TABLE public.community_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.prayer_group_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications;
-ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles;
+-- Enable realtime for all relevant tables (skip if already added)
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.community_messages; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.prayer_group_messages; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.direct_messages; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.notifications; EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DO $$ BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.profiles; EXCEPTION WHEN OTHERS THEN NULL; END $$;
 
 -- ============================================
 -- 13. ADMIN FUNCTIONS
 -- ============================================
 
 -- Update user role
+DROP FUNCTION IF EXISTS public.update_user_role(UUID, TEXT);
 CREATE OR REPLACE FUNCTION public.update_user_role(target_user_id UUID, new_role TEXT)
 RETURNS VOID AS $$
 BEGIN
@@ -396,6 +402,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Approve testimony
+DROP FUNCTION IF EXISTS public.approve_testimony(UUID, BOOLEAN);
 CREATE OR REPLACE FUNCTION public.approve_testimony(testimony_id UUID, approved BOOLEAN)
 RETURNS VOID AS $$
 BEGIN
@@ -406,6 +413,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Approve prayer request
+DROP FUNCTION IF EXISTS public.approve_prayer(UUID, BOOLEAN);
 CREATE OR REPLACE FUNCTION public.approve_prayer(prayer_id UUID, approved BOOLEAN)
 RETURNS VOID AS $$
 BEGIN

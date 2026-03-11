@@ -192,6 +192,56 @@ export async function searchBible(query: string, maxResults: number = 50): Promi
     return results;
 }
 
+// Advanced search: search entire Bible, group by book with occurrence count
+export interface AdvancedSearchResult {
+    bookId: string;
+    bookName: string;
+    testament: string;
+    occurrences: number;
+    verses: { chapter: number; verse: number; text: string; reference: string }[];
+}
+
+export async function advancedSearchBible(query: string): Promise<AdvancedSearchResult[]> {
+    const lowerQuery = query.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const bookResults: Map<string, AdvancedSearchResult> = new Map();
+
+    for (const book of BIBLE_BOOKS) {
+        for (let chapter = 1; chapter <= book.chapters; chapter++) {
+            const chapterData = await loadChapter(book.id, chapter);
+            if (!chapterData) continue;
+
+            for (const verse of chapterData.verses) {
+                const normalizedText = verse.text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (normalizedText.includes(lowerQuery)) {
+                    if (!bookResults.has(book.id)) {
+                        bookResults.set(book.id, {
+                            bookId: book.id,
+                            bookName: book.name,
+                            testament: book.testament,
+                            occurrences: 0,
+                            verses: []
+                        });
+                    }
+                    const entry = bookResults.get(book.id)!;
+                    entry.occurrences++;
+                    // Keep max 10 verses per book to limit memory
+                    if (entry.verses.length < 10) {
+                        entry.verses.push({
+                            chapter,
+                            verse: verse.verse,
+                            text: verse.text,
+                            reference: `${book.name} ${chapter}:${verse.verse}`
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Sort by occurrences descending
+    return Array.from(bookResults.values()).sort((a, b) => b.occurrences - a.occurrences);
+}
+
 // Get a random verse (for games and daily verse)
 export async function getRandomVerse(): Promise<BibleVerse | null> {
     const randomBook = BIBLE_BOOKS[Math.floor(Math.random() * BIBLE_BOOKS.length)];

@@ -85,7 +85,7 @@ export function DayCard({
                 {/* Progress indicator at bottom */}
                 {isCompleted && (
                     <motion.div
-                        className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-primary/50"
+                        className="absolute bottom-0 left-0 right-0 h-1 bg-linear-to-r from-primary to-primary/50"
                         initial={{ scaleX: 0 }}
                         animate={{ scaleX: 1 }}
                         transition={{ duration: 0.5 }}

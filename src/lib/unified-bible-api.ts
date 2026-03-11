@@ -3,8 +3,8 @@
  * ==================================
  * 
  * Single source of truth for all Bible data in the app.
- * Uses LOCAL FRENCH DATA from .txt files as primary source.
- * Uses bible-api.com only for English translations.
+ * Uses LOCAL FRENCH DATA from .txt files (Louis Segond 1910).
+ * All data is offline — no external API calls.
  */
 
 import {
@@ -23,11 +23,13 @@ import {
     loadVerse,
     loadVerseRange,
     searchBible as localSearchBible,
+    advancedSearchBible as localAdvancedSearchBible,
     getRandomVerse as getLocalRandomVerse,
     getRandomVerses as getLocalRandomVerses,
     getVerseOfTheDay as getLocalVerseOfTheDay,
     preloadPopularBooks
 } from './local-bible-service';
+export type { AdvancedSearchResult } from './local-bible-service';
 
 // ============================================
 // TYPES (Backward compatible)
@@ -72,13 +74,10 @@ export interface BibleTranslation {
 // CONSTANTS
 // ============================================
 
-const API_BASE_URL = 'https://bible-api.com';
 const CACHE_DURATION_MS = 1000 * 60 * 60;
 
 export const TRANSLATIONS: BibleTranslation[] = [
     { id: 'lsg', name: 'Louis Segond 1910', abbreviation: 'LSG', language: 'fr' },
-    { id: 'kjv', name: 'King James Version', abbreviation: 'KJV', language: 'en' },
-    { id: 'web', name: 'World English Bible', abbreviation: 'WEB', language: 'en' },
 ];
 
 export const DEFAULT_TRANSLATION = 'lsg';
@@ -455,6 +454,13 @@ export const bibleApi = {
             console.error('Error searching bible:', e);
             return [];
         }
+    },
+
+    /**
+     * Advanced search: search entire Bible, group by book with occurrence count
+     */
+    async advancedSearchBible(query: string) {
+        return localAdvancedSearchBible(query);
     },
 
     /**

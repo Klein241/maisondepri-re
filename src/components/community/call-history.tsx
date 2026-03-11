@@ -159,7 +159,7 @@ export function CallHistory({ userId, userName, onBack, onCall }: CallHistoryPro
     };
 
     return (
-        <div className="flex flex-col h-full bg-gradient-to-b from-slate-900/95 to-slate-950/95">
+        <div className="flex flex-col h-full bg-linear-to-b from-slate-900/95 to-slate-950/95">
             {/* Header */}
             <div className="flex items-center gap-3 p-3 sm:p-4 border-b border-white/10 bg-slate-900/80 backdrop-blur-xl">
                 <Button
@@ -234,7 +234,7 @@ export function CallHistory({ userId, userName, onBack, onCall }: CallHistoryPro
                                     <div className="relative">
                                         <Avatar className="h-11 w-11">
                                             <AvatarImage src={contact.avatar || undefined} />
-                                            <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs">
+                                            <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white text-xs">
                                                 {contact.isGroup ? <Users className="h-5 w-5" /> : getInitials(contact.name)}
                                             </AvatarFallback>
                                         </Avatar>

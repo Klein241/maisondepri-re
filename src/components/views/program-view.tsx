@@ -60,7 +60,7 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
     ];
 
     return (
-        <div className="relative min-h-screen pb-28 bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white">
+        <div className="relative min-h-screen pb-28 bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white">
             {/* Ambient Background */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-indigo-600/5 blur-[150px] rounded-full" />
@@ -86,7 +86,7 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                                     Programme
                                 </h1>
                                 <p className="text-slate-400 text-sm mt-1 font-medium">
-                                    40 jours de jeûne et prière
+                                    Maison de Prière
                                 </p>
                             </div>
                             <div className="flex items-center gap-2">
@@ -108,11 +108,11 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                             initial={{ opacity: 0, y: 20 }}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.1 }}
-                            className="mt-5 bg-gradient-to-br from-white/[0.08] to-white/[0.02] border border-white/10 rounded-2xl p-5 backdrop-blur-sm"
+                            className="mt-5 bg-linear-to-br from-white/8 to-white/2 border border-white/10 rounded-2xl p-5 backdrop-blur-sm"
                         >
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500/30 to-purple-500/30 flex items-center justify-center border border-indigo-500/20">
+                                    <div className="w-12 h-12 rounded-2xl bg-linear-to-br from-indigo-500/30 to-purple-500/30 flex items-center justify-center border border-indigo-500/20">
                                         <Target className="w-6 h-6 text-indigo-400" />
                                     </div>
                                     <div>
@@ -121,7 +121,7 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                                     </div>
                                 </div>
                                 <div className="text-right">
-                                    <span className="text-3xl font-black bg-gradient-to-r from-indigo-300 to-purple-300 bg-clip-text text-transparent">
+                                    <span className="text-3xl font-black bg-linear-to-r from-indigo-300 to-purple-300 bg-clip-text text-transparent">
                                         {progressPercent}%
                                     </span>
                                 </div>
@@ -130,7 +130,7 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                             {/* Progress Bar */}
                             <div className="h-3 bg-white/5 rounded-full overflow-hidden">
                                 <motion.div
-                                    className="h-full rounded-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500"
+                                    className="h-full rounded-full bg-linear-to-r from-indigo-500 via-purple-500 to-pink-500"
                                     initial={{ width: 0 }}
                                     animate={{ width: `${progressPercent}%` }}
                                     transition={{ duration: 1, delay: 0.3, ease: 'easeOut' }}
@@ -207,9 +207,9 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                     >
                         <button
                             onClick={() => onSelectDay(currentDay)}
-                            className="w-full bg-gradient-to-r from-indigo-600/30 to-purple-600/30 border border-indigo-500/30 rounded-2xl p-4 flex items-center gap-4 group hover:border-indigo-500/50 transition-all active:scale-[0.98]"
+                            className="w-full bg-linear-to-r from-indigo-600/30 to-purple-600/30 border border-indigo-500/30 rounded-2xl p-4 flex items-center gap-4 group hover:border-indigo-500/50 transition-all active:scale-[0.98]"
                         >
-                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-600/30">
+                            <div className="w-14 h-14 rounded-2xl bg-linear-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0 shadow-lg shadow-indigo-600/30">
                                 <span className="text-xl font-black text-white">{currentDay}</span>
                             </div>
                             <div className="flex-1 text-left">
@@ -248,8 +248,8 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                                     className={cn(
                                         "w-full flex items-center justify-between p-4 rounded-2xl transition-all",
                                         isExpanded
-                                            ? "bg-white/[0.06] border border-white/10"
-                                            : "bg-white/[0.03] border border-white/5 hover:bg-white/[0.05]",
+                                            ? "bg-white/6 border border-white/10"
+                                            : "bg-white/3 border border-white/5 hover:bg-white/5",
                                         isCurrentWeek && !isExpanded && "border-indigo-500/30"
                                     )}
                                 >
@@ -359,7 +359,7 @@ export function ProgramView({ onSelectDay }: ProgramViewProps) {
                         </Button>
                     </motion.div>
                 )}
-        </div>
+            </div>
         </div>
     );
 }

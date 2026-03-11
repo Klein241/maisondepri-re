@@ -25,7 +25,7 @@ function SplashScreen() {
     <motion.div
       initial={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-gradient-to-br from-spiritual via-primary to-spiritual/80"
+      className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-linear-to-br from-spiritual via-primary to-spiritual/80"
     >
       <motion.div
         initial={{ scale: 0.5, opacity: 0 }}
@@ -47,7 +47,7 @@ function SplashScreen() {
         >
           🙏
         </motion.div>
-        <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>MAISON DE PRIERE</h1>
+        <h1 className="text-3xl font-bold mb-2" suppressHydrationWarning>Maison de Prière</h1>
         <p className="text-white/80">Priez les uns pour les autres</p>
         <motion.div
           initial={{ width: 0 }}

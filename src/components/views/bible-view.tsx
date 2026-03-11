@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef, useCallback } from "react"
-import { bibleApi, BibleBook, TRANSLATIONS as BIBLES, DEFAULT_TRANSLATION as DEFAULT_BIBLE_ID, BibleVerse, BiblePassage } from "@/lib/unified-bible-api"
+import { bibleApi, BibleBook, TRANSLATIONS as BIBLES, DEFAULT_TRANSLATION as DEFAULT_BIBLE_ID, BibleVerse, BiblePassage, AdvancedSearchResult } from "@/lib/unified-bible-api"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import {
     Loader2, ArrowLeft, Book, ChevronRight, Languages,
@@ -87,6 +87,9 @@ export function BibleView() {
     const [verseOfDay, setVerseOfDay] = useState<any>(null)
     const [showBookFilter, setShowBookFilter] = useState<'all' | 'ot' | 'nt'>('all')
     const [recentChapters, setRecentChapters] = useState<{ bookId: string, bookName: string, chapter: string }[]>([])
+    const [advancedResults, setAdvancedResults] = useState<AdvancedSearchResult[]>([])
+    const [expandedSearchBook, setExpandedSearchBook] = useState<string | null>(null)
+    const [totalSearchOccurrences, setTotalSearchOccurrences] = useState(0)
     const [activeGame, setActiveGame] = useState<string | null>(null)
     const [gameHistory, setGameHistory] = useState<GameHistoryEntry[]>([])
     const [gameStats, setGameStats] = useState(getGameStats())
@@ -227,9 +230,16 @@ export function BibleView() {
     const handleSearch = async () => {
         if (!searchQuery.trim()) return;
         setIsSearching(true);
+        setAdvancedResults([]);
+        setExpandedSearchBook(null);
         try {
-            const results = await bibleApi.searchBible(searchQuery, currentBibleId);
-            setSearchResults(results);
+            const results = await bibleApi.advancedSearchBible(searchQuery);
+            setAdvancedResults(results);
+            const total = results.reduce((sum, r) => sum + r.occurrences, 0);
+            setTotalSearchOccurrences(total);
+            // Also keep simple results for backward compatibility
+            const simpleResults = await bibleApi.searchBible(searchQuery, currentBibleId);
+            setSearchResults(simpleResults);
         } catch (e) {
             toast.error("Erreur de recherche");
         }
@@ -369,7 +379,7 @@ export function BibleView() {
     const currentBible = BIBLES.find(b => b.id === currentBibleId);
 
     return (
-        <div className="flex flex-col h-full bg-gradient-to-b from-[#0B0E14] via-[#0F1219] to-[#0B0E14] text-slate-100 overflow-hidden relative font-sans">
+        <div className="flex flex-col h-full bg-linear-to-b from-[#0B0E14] via-[#0F1219] to-[#0B0E14] text-slate-100 overflow-hidden relative font-sans">
 
             {/* Ambient Background Effects */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden">
@@ -392,7 +402,7 @@ export function BibleView() {
                             <header className="relative px-6 pt-14 pb-8">
                                 <div className="flex items-center justify-between mb-8">
                                     <div>
-                                        <h1 className="text-4xl font-black tracking-tight bg-gradient-to-r from-white via-indigo-200 to-purple-200 bg-clip-text text-transparent">
+                                        <h1 className="text-4xl font-black tracking-tight bg-linear-to-r from-white via-indigo-200 to-purple-200 bg-clip-text text-transparent">
                                             Bible
                                         </h1>
                                         <p className="text-slate-500 text-sm font-medium mt-1">La Parole de Dieu</p>
@@ -453,7 +463,7 @@ export function BibleView() {
 
                             {/* Verse of the Day Card */}
                             <section className="px-6 mb-8">
-                                <Card className="relative overflow-hidden bg-gradient-to-br from-indigo-600/20 via-purple-600/10 to-transparent border border-white/10 rounded-3xl">
+                                <Card className="relative overflow-hidden bg-linear-to-br from-indigo-600/20 via-purple-600/10 to-transparent border border-white/10 rounded-3xl">
                                     <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-5" />
                                     <CardContent className="relative p-6">
                                         <div className="flex items-center gap-2 mb-4">
@@ -485,7 +495,7 @@ export function BibleView() {
                                 <div className="grid grid-cols-2 gap-3">
                                     <Button
                                         variant="ghost"
-                                        className="h-24 rounded-3xl bg-gradient-to-br from-emerald-600/20 to-teal-600/10 border border-white/5 flex flex-col items-start p-5 hover:scale-[1.02] transition-transform"
+                                        className="h-24 rounded-3xl bg-linear-to-br from-emerald-600/20 to-teal-600/10 border border-white/5 flex flex-col items-start p-5 hover:scale-[1.02] transition-transform"
                                         onClick={() => { if (recentChapters[0]) handleNavigation(recentChapters[0].bookId, `${recentChapters[0].bookId}.${recentChapters[0].chapter}`); else setShowSelector(true); }}
                                     >
                                         <BookOpen className="h-6 w-6 text-emerald-400 mb-2" />
@@ -494,7 +504,7 @@ export function BibleView() {
                                     </Button>
                                     <Button
                                         variant="ghost"
-                                        className="h-24 rounded-3xl bg-gradient-to-br from-purple-600/20 to-pink-600/10 border border-white/5 flex flex-col items-start p-5 hover:scale-[1.02] transition-transform"
+                                        className="h-24 rounded-3xl bg-linear-to-br from-purple-600/20 to-pink-600/10 border border-white/5 flex flex-col items-start p-5 hover:scale-[1.02] transition-transform"
                                         onClick={() => setViewState('games')}
                                     >
                                         <Gamepad2 className="h-6 w-6 text-purple-400 mb-2" />
@@ -754,69 +764,152 @@ export function BibleView() {
                                     <Button variant="ghost" size="icon" onClick={() => setViewState('home')}>
                                         <ArrowLeft className="h-5 w-5" />
                                     </Button>
-                                    <h2 className="text-2xl font-black">Rechercher</h2>
+                                    <div>
+                                        <h2 className="text-2xl font-black">Recherche Avancée</h2>
+                                        <p className="text-slate-500 text-xs">Recherchez un mot dans toute la Bible</p>
+                                    </div>
                                 </div>
 
                                 <div className="relative">
                                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-500" />
                                     <Input
-                                        placeholder="Rechercher dans la Bible..."
-                                        className="h-14 pl-12 pr-4 rounded-2xl bg-white/5 border-white/10 text-lg"
+                                        placeholder="Ex: amour, foi, espérance, grâce..."
+                                        className="h-14 pl-12 pr-24 rounded-2xl bg-white/5 border-white/10 text-lg"
                                         value={searchQuery}
                                         onChange={(e) => setSearchQuery(e.target.value)}
                                         onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                                     />
+                                    <Button
+                                        className="absolute right-2 top-1/2 -translate-y-1/2 h-10 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-sm"
+                                        onClick={handleSearch}
+                                        disabled={isSearching || !searchQuery.trim()}
+                                    >
+                                        {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Rechercher'}
+                                    </Button>
                                 </div>
                             </header>
 
                             <ScrollArea className="flex-1 px-6">
                                 {isSearching ? (
-                                    <div className="flex justify-center py-12">
-                                        <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
+                                    <div className="flex flex-col items-center justify-center py-16 gap-4">
+                                        <Loader2 className="h-10 w-10 animate-spin text-indigo-500" />
+                                        <p className="text-slate-500 text-sm animate-pulse">Recherche dans toute la Bible...</p>
                                     </div>
-                                ) : searchResults.length > 0 ? (
+                                ) : advancedResults.length > 0 ? (
                                     <div className="space-y-4 pb-32">
-                                        <p className="text-sm text-slate-500">{searchResults.length} résultats</p>
-                                        {searchResults.map((result, i) => (
-                                            <Card key={i} className="bg-white/5 border-white/5 rounded-2xl overflow-hidden">
-                                                <CardContent className="p-5">
-                                                    <Badge variant="outline" className="border-indigo-500/30 text-indigo-400 mb-3">
-                                                        {result.reference}
-                                                    </Badge>
-                                                    <p className="text-slate-200 leading-relaxed" dangerouslySetInnerHTML={{ __html: result.text }} />
-                                                    <div className="flex gap-2 mt-4">
-                                                        <Button
-                                                            variant="ghost"
-                                                            size="sm"
-                                                            className="rounded-xl"
-                                                            onClick={() => {
-                                                                const [book, chapter] = result.reference.split(' ');
-                                                                // Fix search navigation parsing
-                                                                const chapterNum = chapter?.split(':')[0] || "1";
-                                                                const chId = `${result.bookId || book}.${chapterNum}`;
-                                                                handleNavigation(result.bookId || book, chId);
-                                                            }}
-                                                        >
-                                                            <BookOpen className="h-4 w-4 mr-2" />
-                                                            Lire
-                                                        </Button>
-                                                        <Button variant="ghost" size="sm" className="rounded-xl" onClick={() => copyVerse(result.text, result.reference)}>
-                                                            <Copy className="h-4 w-4 mr-2" />
-                                                            Copier
-                                                        </Button>
+                                        {/* Summary Header */}
+                                        <div className="bg-linear-to-r from-indigo-600/20 to-purple-600/10 border border-indigo-500/20 rounded-2xl p-4">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <p className="text-xs text-indigo-400 font-bold uppercase tracking-wider">Résultat pour « {searchQuery} »</p>
+                                                    <p className="text-2xl font-black text-white mt-1">{totalSearchOccurrences} <span className="text-sm font-medium text-slate-400">occurrences</span></p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <p className="text-3xl font-black text-indigo-400">{advancedResults.length}</p>
+                                                    <p className="text-[10px] text-slate-500 uppercase tracking-wider">livres</p>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Book Results */}
+                                        {advancedResults.map((bookResult) => (
+                                            <div key={bookResult.bookId} className="rounded-2xl overflow-hidden border border-white/5">
+                                                <button
+                                                    onClick={() => setExpandedSearchBook(
+                                                        expandedSearchBook === bookResult.bookId ? null : bookResult.bookId
+                                                    )}
+                                                    className="w-full flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 transition-all"
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${bookResult.testament === 'AT'
+                                                                ? 'bg-amber-500/20 text-amber-400'
+                                                                : 'bg-indigo-500/20 text-indigo-400'
+                                                            }`}>
+                                                            {bookResult.occurrences}
+                                                        </div>
+                                                        <div className="text-left">
+                                                            <p className="font-bold text-white text-sm">{bookResult.bookName}</p>
+                                                            <p className="text-[10px] text-slate-500">
+                                                                {bookResult.occurrences} fois • {bookResult.testament === 'AT' ? 'Ancien Testament' : 'Nouveau Testament'}
+                                                            </p>
+                                                        </div>
                                                     </div>
-                                                </CardContent>
-                                            </Card>
+                                                    <ChevronDown className={`h-4 w-4 text-slate-500 transition-transform ${expandedSearchBook === bookResult.bookId ? 'rotate-180' : ''
+                                                        }`} />
+                                                </button>
+
+                                                {expandedSearchBook === bookResult.bookId && (
+                                                    <motion.div
+                                                        initial={{ height: 0, opacity: 0 }}
+                                                        animate={{ height: 'auto', opacity: 1 }}
+                                                        className="border-t border-white/5"
+                                                    >
+                                                        <div className="p-3 space-y-2">
+                                                            {bookResult.verses.map((v, i) => {
+                                                                // Highlight the search query in the text
+                                                                const regex = new RegExp(`(${searchQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+                                                                const parts = v.text.split(regex);
+                                                                return (
+                                                                    <div key={i} className="p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-all">
+                                                                        <Badge variant="outline" className="border-indigo-500/30 text-indigo-400 mb-2 text-[10px]">
+                                                                            {v.reference}
+                                                                        </Badge>
+                                                                        <p className="text-sm text-slate-300 leading-relaxed">
+                                                                            {parts.map((part, j) =>
+                                                                                regex.test(part)
+                                                                                    ? <mark key={j} className="bg-amber-500/30 text-amber-200 rounded px-0.5">{part}</mark>
+                                                                                    : <span key={j}>{part}</span>
+                                                                            )}
+                                                                        </p>
+                                                                        <div className="flex gap-1 mt-2">
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-7 text-[10px] rounded-lg"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    handleNavigation(bookResult.bookId, `${bookResult.bookId}.${v.chapter}`);
+                                                                                }}
+                                                                            >
+                                                                                <BookOpen className="h-3 w-3 mr-1" />
+                                                                                Lire
+                                                                            </Button>
+                                                                            <Button
+                                                                                variant="ghost"
+                                                                                size="sm"
+                                                                                className="h-7 text-[10px] rounded-lg"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    copyVerse(v.text, v.reference);
+                                                                                }}
+                                                                            >
+                                                                                <Copy className="h-3 w-3 mr-1" />
+                                                                                Copier
+                                                                            </Button>
+                                                                        </div>
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                            {bookResult.occurrences > 10 && (
+                                                                <p className="text-center text-[10px] text-slate-500 py-2">
+                                                                    + {bookResult.occurrences - 10} autres versets dans ce livre
+                                                                </p>
+                                                            )}
+                                                        </div>
+                                                    </motion.div>
+                                                )}
+                                            </div>
                                         ))}
                                     </div>
-                                ) : searchQuery ? (
+                                ) : searchQuery && !isSearching ? (
                                     <div className="text-center py-12 text-slate-500">
-                                        Aucun résultat pour "{searchQuery}"
+                                        Aucun résultat pour « {searchQuery} »
                                     </div>
                                 ) : (
                                     <div className="text-center py-12 text-slate-500">
                                         <Search className="h-12 w-12 mx-auto mb-4 opacity-30" />
-                                        Recherchez des versets, des mots ou des thèmes
+                                        <p className="font-bold mb-1">Recherche dans toute la Bible</p>
+                                        <p className="text-sm">Tapez un mot (ex: amour, foi, grâce) pour voir tous les livres, chapitres et versets qui le contiennent.</p>
                                     </div>
                                 )}
                             </ScrollArea>
@@ -881,17 +974,17 @@ export function BibleView() {
                                                             <p className="text-2xl font-black text-white">{stats.totalGamesPlayed}</p>
                                                             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Parties</p>
                                                         </div>
-                                                        <div className="w-[1px] h-8 bg-white/10" />
+                                                        <div className="w-px h-8 bg-white/10" />
                                                         <div className="text-center">
                                                             <p className="text-2xl font-black text-amber-400">{stats.bestScore}</p>
                                                             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Meilleur</p>
                                                         </div>
-                                                        <div className="w-[1px] h-8 bg-white/10" />
+                                                        <div className="w-px h-8 bg-white/10" />
                                                         <div className="text-center">
                                                             <p className="text-2xl font-black text-indigo-400">{Math.floor(stats.totalTimeSeconds / 60)}m</p>
                                                             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Temps</p>
                                                         </div>
-                                                        <div className="w-[1px] h-8 bg-white/10" />
+                                                        <div className="w-px h-8 bg-white/10" />
                                                         <div className="text-center">
                                                             <p className="text-2xl font-black text-emerald-400">{stats.totalStars}⭐</p>
                                                             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Étoiles</p>
@@ -946,7 +1039,7 @@ export function BibleView() {
                                         <div className="space-y-4">
                                             {/* Quiz Card */}
                                             <Card
-                                                className="bg-gradient-to-br from-emerald-600/20 to-teal-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-emerald-500/30 transition-all group hover:scale-[1.02]"
+                                                className="bg-linear-to-br from-emerald-600/20 to-teal-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-emerald-500/30 transition-all group hover:scale-[1.02]"
                                                 onClick={() => setActiveGame('quiz')}
                                             >
                                                 <CardContent className="p-6">
@@ -976,7 +1069,7 @@ export function BibleView() {
 
                                             {/* Memory Card */}
                                             <Card
-                                                className="bg-gradient-to-br from-purple-600/20 to-pink-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-purple-500/30 transition-all group hover:scale-[1.02]"
+                                                className="bg-linear-to-br from-purple-600/20 to-pink-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-purple-500/30 transition-all group hover:scale-[1.02]"
                                                 onClick={() => setActiveGame('memory')}
                                             >
                                                 <CardContent className="p-6">
@@ -1001,7 +1094,7 @@ export function BibleView() {
 
                                             {/* Multiplayer Duel Card */}
                                             <Card
-                                                className="bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-indigo-500/30 transition-all group hover:scale-[1.02]"
+                                                className="bg-linear-to-br from-indigo-600/20 to-purple-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-indigo-500/30 transition-all group hover:scale-[1.02]"
                                                 onClick={() => setActiveGame('multiplayer_manager')}
                                             >
                                                 <CardContent className="p-6">
@@ -1030,7 +1123,7 @@ export function BibleView() {
 
                                             {/* Word Search */}
                                             <Card
-                                                className="bg-gradient-to-br from-blue-600/20 to-cyan-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-blue-500/30 transition-all group hover:scale-[1.02]"
+                                                className="bg-linear-to-br from-blue-600/20 to-cyan-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-blue-500/30 transition-all group hover:scale-[1.02]"
                                                 onClick={() => setActiveGame('word_search')}
                                             >
                                                 <CardContent className="p-6">
@@ -1055,7 +1148,7 @@ export function BibleView() {
 
                                             {/* Chrono Game */}
                                             <Card
-                                                className="bg-gradient-to-br from-amber-600/20 to-orange-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-amber-500/30 transition-all group hover:scale-[1.02]"
+                                                className="bg-linear-to-br from-amber-600/20 to-orange-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-amber-500/30 transition-all group hover:scale-[1.02]"
                                                 onClick={() => setActiveGame('chrono')}
                                             >
                                                 <CardContent className="p-6">
@@ -1080,7 +1173,7 @@ export function BibleView() {
 
                                             {/* Who Am I Game */}
                                             <Card
-                                                className="bg-gradient-to-br from-cyan-600/20 to-blue-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-cyan-500/30 transition-all group hover:scale-[1.02]"
+                                                className="bg-linear-to-br from-cyan-600/20 to-blue-600/10 border-white/5 rounded-3xl overflow-hidden cursor-pointer hover:border-cyan-500/30 transition-all group hover:scale-[1.02]"
                                                 onClick={() => setActiveGame('who_am_i')}
                                             >
                                                 <CardContent className="p-6">

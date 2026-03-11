@@ -221,7 +221,7 @@ export function ProfileView() {
 
     if (!user) {
         return (
-            <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24">
+            <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24">
                 <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                     <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-pink-600/5 blur-[150px] rounded-full" />
                     <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-purple-600/5 blur-[150px] rounded-full" />
@@ -421,7 +421,7 @@ export function ProfileView() {
     const nextLevelProgress = ((totalDaysCompleted % 5) / 5) * 100
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24 overflow-y-auto">
+        <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24 overflow-y-auto">
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-pink-600/5 blur-[150px] rounded-full" />
                 <div className="absolute bottom-[-20%] left-[-20%] w-[50%] h-[50%] bg-purple-600/5 blur-[150px] rounded-full" />
@@ -465,12 +465,12 @@ export function ProfileView() {
                                 <Camera className="h-4 w-4" />
                             )}
                         </button>
-                        <Badge className="absolute -bottom-2 -left-2 px-3 py-1 bg-gradient-to-r from-yellow-500 to-amber-600 border-none text-white shadow-lg">
+                        <Badge className="absolute -bottom-2 -left-2 px-3 py-1 bg-linear-to-r from-yellow-500 to-amber-600 border-none text-white shadow-lg">
                             Niveau {level}
                         </Badge>
                     </div>
 
-                    <h2 className="text-2xl font-bold bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                    <h2 className="text-2xl font-bold bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                         {user.name}
                     </h2>
                     {(user.city || user.country) && (
@@ -487,7 +487,7 @@ export function ProfileView() {
                 {/* Stats Grid */}
                 <div className="grid grid-cols-3 gap-4 mb-8">
                     <Card className="bg-card/50 backdrop-blur-sm border-orange-500/20 shadow-sm relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-linear-to-br from-orange-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <CardContent className="flex flex-col items-center justify-center p-4">
                             <Flame className="h-6 w-6 text-orange-500 mb-2" />
                             <span className="text-2xl font-bold">{streak}</span>
@@ -496,7 +496,7 @@ export function ProfileView() {
                     </Card>
 
                     <Card className="bg-card/50 backdrop-blur-sm border-blue-500/20 shadow-sm relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-linear-to-br from-blue-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <CardContent className="flex flex-col items-center justify-center p-4">
                             <Calendar className="h-6 w-6 text-blue-500 mb-2" />
                             <span className="text-2xl font-bold">{totalDaysCompleted}</span>
@@ -505,7 +505,7 @@ export function ProfileView() {
                     </Card>
 
                     <Card className="bg-card/50 backdrop-blur-sm border-yellow-500/20 shadow-sm relative overflow-hidden group">
-                        <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="absolute inset-0 bg-linear-to-br from-yellow-500/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                         <CardContent className="flex flex-col items-center justify-center p-4">
                             <Trophy className="h-6 w-6 text-yellow-500 mb-2" />
                             <span className="text-2xl font-bold">{unlockedAchievements.length}</span>
@@ -530,7 +530,7 @@ export function ProfileView() {
                     transition={{ delay: 0.3 }}
                     className="mb-8"
                 >
-                    <Card className="bg-gradient-to-br from-indigo-500/10 to-purple-500/5 border-indigo-500/20 backdrop-blur-sm overflow-hidden">
+                    <Card className="bg-linear-to-br from-indigo-500/10 to-purple-500/5 border-indigo-500/20 backdrop-blur-sm overflow-hidden">
                         <CardContent className="p-4">
                             <div className="flex items-center justify-between mb-3">
                                 <div className="flex items-center gap-3">
@@ -542,14 +542,13 @@ export function ProfileView() {
                                         <p className="text-[10px] text-slate-400">{myGroups.length} groupe{myGroups.length !== 1 ? 's' : ''}</p>
                                     </div>
                                 </div>
-                                <Button
-                                    size="sm"
-                                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs h-8 px-3"
+                                <Badge
+                                    className="bg-linear-to-r from-indigo-600 to-purple-600 border-none text-white text-xs font-bold px-4 py-2 cursor-pointer hover:from-indigo-700 hover:to-purple-700 transition-all shadow-lg shadow-indigo-500/30"
                                     onClick={() => { setShowCommunity(!showCommunity); if (!showCommunity) loadMyGroups(); }}
                                 >
                                     {showCommunity ? 'Fermer' : 'Gérer'}
                                     <ChevronRight className={`h-3 w-3 ml-1 transition-transform ${showCommunity ? 'rotate-90' : ''}`} />
-                                </Button>
+                                </Badge>
                             </div>
 
                             {showCommunity && (
@@ -586,8 +585,8 @@ export function ProfileView() {
                                                 >
                                                     <div className="flex items-center gap-3">
                                                         <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${group.is_urgent
-                                                            ? 'bg-gradient-to-br from-red-500 to-orange-500'
-                                                            : 'bg-gradient-to-br from-indigo-500 to-purple-500'
+                                                            ? 'bg-linear-to-br from-red-500 to-orange-500'
+                                                            : 'bg-linear-to-br from-indigo-500 to-purple-500'
                                                             }`}>
                                                             {group.avatar_url ? (
                                                                 <img src={group.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
@@ -648,7 +647,7 @@ export function ProfileView() {
                                     whileTap={{ scale: 0.98 }}
                                 >
                                     <Card className={`h-full border-none shadow-sm transition-colors ${isUnlocked
-                                        ? 'bg-gradient-to-br from-card to-primary/5'
+                                        ? 'bg-linear-to-br from-card to-primary/5'
                                         : 'bg-muted/50 opacity-60 grayscale'
                                         }`}>
                                         <CardContent className="p-4 flex flex-col items-center text-center h-full">
@@ -925,8 +924,8 @@ export function ProfileView() {
                                 className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50 transition-colors"
                                 onClick={() => {
                                     const shareData = {
-                                        title: 'Marathon de Prière',
-                                        text: 'Rejoins-moi sur l\'application Marathon de Prière ! Prions ensemble.',
+                                        title: 'Maison de Prière',
+                                        text: 'Rejoins-moi sur Maison de Prière ! Une communauté de prière, Bible et partage spirituel.',
                                         url: window.location.origin
                                     };
                                     if (navigator.share && navigator.canShare(shareData)) {
@@ -964,7 +963,7 @@ export function ProfileView() {
                 </div>
 
                 <div className="text-center mt-8 text-xs text-slate-600">
-                    Version 1.0.0 • Marathon de Prière
+                    Version 1.4.0 • Maison de Prière
                 </div>
 
                 {/* Migrate Members Dialog */}
@@ -1032,7 +1031,7 @@ export function ProfileView() {
                             <Button
                                 onClick={handleMigrateMembers}
                                 disabled={!migrateSourceGroup || !migrateTargetGroup || isMigrating}
-                                className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
+                                className="w-full bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
                             >
                                 {isMigrating ? (
                                     <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Migration en cours...</>

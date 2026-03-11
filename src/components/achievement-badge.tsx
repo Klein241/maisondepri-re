@@ -44,7 +44,7 @@ export function AchievementBadge({
                     'relative rounded-full flex items-center justify-center transition-all duration-300',
                     sizeClasses[size],
                     isUnlocked
-                        ? 'bg-gradient-to-br from-gold to-amber-500 shadow-lg animate-pulse-gold'
+                        ? 'bg-linear-to-br from-gold to-amber-500 shadow-lg animate-pulse-gold'
                         : 'bg-muted'
                 )}
             >

@@ -440,12 +440,12 @@ export function MultiplayerLobby({ onStartGame, onBack, initialView }: Multiplay
         return (
             <div className="w-full max-w-md mx-auto space-y-6">
                 <div className="text-center">
-                    <h2 className="text-3xl font-black mb-2 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-purple-400">Duel Biblique</h2>
+                    <h2 className="text-3xl font-black mb-2 bg-clip-text text-transparent bg-linear-to-r from-indigo-400 to-purple-400">Duel Biblique</h2>
                     <p className="text-slate-400">Affrontez vos amis en temps réel</p>
                 </div>
 
                 {/* Join via code - prominent at top */}
-                <Card className="bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border-indigo-500/30 hover:border-indigo-500/50 transition-all">
+                <Card className="bg-linear-to-br from-indigo-600/20 to-purple-600/10 border-indigo-500/30 hover:border-indigo-500/50 transition-all">
                     <CardContent className="p-4 flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl bg-indigo-500/20 flex items-center justify-center text-2xl shrink-0">🔑</div>
                         <div className="flex-1">

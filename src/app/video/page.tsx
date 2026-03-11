@@ -261,9 +261,9 @@ function VideoContent() {
     const totalComments = comments.reduce((acc, c) => acc + 1 + (c.replies?.length || 0), 0);
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#050709] to-[#0a0d14] flex flex-col">
+        <div className="min-h-screen bg-linear-to-b from-[#050709] to-[#0a0d14] flex flex-col">
             {/* Header */}
-            <header className="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 pt-10 pb-3 bg-gradient-to-b from-[#050709]/95 to-transparent backdrop-blur-sm">
+            <header className="fixed top-0 left-0 right-0 z-50 flex items-center gap-3 px-4 pt-10 pb-3 bg-linear-to-b from-[#050709]/95 to-transparent backdrop-blur-sm">
                 <Button variant="ghost" size="icon" onClick={() => router.back()} className="h-9 w-9 shrink-0">
                     <ArrowLeft className="h-5 w-5" />
                 </Button>
@@ -480,7 +480,7 @@ function CommentBubble({
             <div className="flex-1 min-w-0">
                 <div className="bg-slate-800/60 rounded-2xl px-3 py-2 inline-block max-w-full">
                     <p className="font-bold text-[11px] text-blue-300 mb-0.5">{name}</p>
-                    <p className="text-sm text-white break-words">{comment.content}</p>
+                    <p className="text-sm text-white wrap-break-word">{comment.content}</p>
                 </div>
                 <div className="flex items-center gap-3 mt-1 px-1">
                     <span className="text-[9px] text-slate-500">

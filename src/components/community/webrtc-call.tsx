@@ -629,7 +629,7 @@ export function WebRTCCall({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] bg-gradient-to-b from-slate-900 via-slate-950 to-black flex flex-col"
+            className="fixed inset-0 z-9999 bg-linear-to-b from-slate-900 via-slate-950 to-black flex flex-col"
         >
             {/* Header */}
             <div className="px-6 pt-12 pb-4 text-center">

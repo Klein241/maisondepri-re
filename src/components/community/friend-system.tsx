@@ -464,7 +464,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Cover/Banner */}
-                        <div className="h-24 bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 relative">
+                        <div className="h-24 bg-linear-to-r from-indigo-600 via-purple-600 to-pink-600 relative">
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -480,7 +480,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                             <div className="relative">
                                 <Avatar className="h-24 w-24 border-4 border-[#1a1f2e]">
                                     <AvatarImage src={profile.avatar_url || undefined} />
-                                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-2xl font-bold">
+                                    <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-600 text-white text-2xl font-bold">
                                         {profile.full_name?.[0] || '?'}
                                     </AvatarFallback>
                                 </Avatar>
@@ -524,7 +524,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                                         {mutual.names.slice(0, 3).map((name, i) => (
                                             <div
                                                 key={i}
-                                                className="h-6 w-6 rounded-full bg-gradient-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-[9px] text-white font-bold border-2 border-[#1a1f2e]"
+                                                className="h-6 w-6 rounded-full bg-linear-to-br from-indigo-400 to-purple-500 flex items-center justify-center text-[9px] text-white font-bold border-2 border-[#1a1f2e]"
                                             >
                                                 {name[0]}
                                             </div>
@@ -701,7 +701,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                                                 className="bg-white/5 rounded-2xl overflow-hidden border border-white/5 hover:border-indigo-500/30 transition-all"
                                             >
                                                 {/* Mini banner */}
-                                                <div className="h-12 bg-gradient-to-r from-indigo-600/30 to-purple-600/30" />
+                                                <div className="h-12 bg-linear-to-r from-indigo-600/30 to-purple-600/30" />
                                                 <div className="px-3 pb-3 -mt-6">
                                                     <div
                                                         className="cursor-pointer"
@@ -709,7 +709,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                                                     >
                                                         <Avatar className="h-12 w-12 border-2 border-[#0F1219] mb-2">
                                                             <AvatarImage src={u.avatar_url || undefined} />
-                                                            <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold">
+                                                            <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-600 text-white font-bold">
                                                                 {u.full_name?.[0] || '?'}
                                                             </AvatarFallback>
                                                         </Avatar>
@@ -773,7 +773,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                                             <div className="relative">
                                                 <Avatar className="h-11 w-11 border border-white/10">
                                                     <AvatarImage src={u.avatar_url || undefined} />
-                                                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm">
+                                                    <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-600 text-white font-bold text-sm">
                                                         {u.full_name?.[0] || '?'}
                                                     </AvatarFallback>
                                                 </Avatar>
@@ -931,7 +931,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                                                 <div className="relative">
                                                     <Avatar className="h-14 w-14 border-2 border-green-500/50">
                                                         <AvatarImage src={friend.avatar_url || undefined} />
-                                                        <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold">
+                                                        <AvatarFallback className="bg-linear-to-br from-emerald-500 to-teal-600 text-white font-bold">
                                                             {friend.full_name?.[0] || '?'}
                                                         </AvatarFallback>
                                                     </Avatar>
@@ -976,7 +976,7 @@ export function FriendSystem({ userId, userName, onClose, onStartChat }: FriendS
                                                 <div className="relative">
                                                     <Avatar className="h-12 w-12 border border-white/10">
                                                         <AvatarImage src={friend.avatar_url || undefined} />
-                                                        <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white font-bold">
+                                                        <AvatarFallback className="bg-linear-to-br from-emerald-500 to-teal-600 text-white font-bold">
                                                             {friend.full_name?.[0] || '?'}
                                                         </AvatarFallback>
                                                     </Avatar>

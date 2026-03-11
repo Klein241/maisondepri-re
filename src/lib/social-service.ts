@@ -383,7 +383,7 @@ export const socialService = {
         if (navigator.share) {
             try {
                 await navigator.share({
-                    title: title || 'Partagé depuis le Marathon de Prière',
+                    title: title || 'Partagé depuis Maison de Prière',
                     text: content,
                     url: window.location.href
                 });

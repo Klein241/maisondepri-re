@@ -142,7 +142,7 @@ export function PWAManager() {
             setIsInstalled(true);
             setDeferredPrompt(null);
             toast.success('🎉 Application installée !', {
-                description: 'MAISON DE PRIERE est maintenant sur votre écran d\'accueil.',
+                description: 'Maison de Prière est maintenant sur votre écran d\'accueil.',
             });
         };
 
@@ -188,7 +188,7 @@ export function PWAManager() {
                 }
 
                 if (swRegistration) {
-                    swRegistration.showNotification('MAISON DE PRIERE', {
+                    swRegistration.showNotification('Maison de Prière', {
                         body: 'Les notifications sont activées ! Vous recevrez des rappels quotidiens.',
                         icon: '/icon-192.png',
                         badge: '/icon-192.png',
@@ -330,7 +330,7 @@ export function PWAManager() {
                         initial={{ y: -50, opacity: 0 }}
                         animate={{ y: 0, opacity: 1 }}
                         exit={{ y: -50, opacity: 0 }}
-                        className="fixed top-14 left-2 right-2 z-[9999] bg-amber-600/95 backdrop-blur-md text-white text-center py-2 px-4 text-xs font-bold rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
+                        className="fixed top-14 left-2 right-2 z-9999 bg-amber-600/95 backdrop-blur-md text-white text-center py-2 px-4 text-xs font-bold rounded-xl shadow-lg shadow-amber-600/30 flex items-center justify-center gap-2"
                     >
                         <span>📴 Mode hors-ligne — Synchronisation automatique au retour</span>
                     </motion.div>
@@ -345,7 +345,7 @@ export function PWAManager() {
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.8, y: 20 }}
                         transition={{ delay: 2, duration: 0.4 }}
-                        className="fixed bottom-40 left-4 z-[9998] flex flex-col items-start gap-2"
+                        className="fixed bottom-40 left-4 z-9998 flex flex-col items-start gap-2"
                     >
                         {/* Dismiss button */}
                         <button
@@ -360,7 +360,7 @@ export function PWAManager() {
                             onClick={installApp}
                             whileHover={{ scale: 1.05 }}
                             whileTap={{ scale: 0.95 }}
-                            className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-2xl shadow-indigo-500/30 border border-indigo-500/30 hover:shadow-indigo-500/50 transition-shadow"
+                            className="flex items-center gap-2.5 px-4 py-3 rounded-2xl bg-linear-to-r from-indigo-600 to-purple-600 text-white shadow-2xl shadow-indigo-500/30 border border-indigo-500/30 hover:shadow-indigo-500/50 transition-shadow"
                         >
                             <div className="h-9 w-9 rounded-xl bg-white/20 flex items-center justify-center shrink-0">
                                 <Download className="h-5 w-5" />

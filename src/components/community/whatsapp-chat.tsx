@@ -20,6 +20,7 @@ import { supabase } from '@/lib/supabase';
 import { WebRTCCall } from './webrtc-call';
 import { IncomingCallOverlay, initiateCall } from './call-system';
 import { GroupToolsPanel } from './group-tools';
+import { GroupAdminDialogs } from './group-admin-dialogs';
 import { EventCalendarButton } from './event-calendar';
 import { CallHistory } from './call-history';
 import { VoiceSalon } from './voice-salon';
@@ -32,80 +33,7 @@ import { notifyDirectMessage } from '@/lib/notifications';
 import { useAppStore } from '@/lib/store';
 import { cacheMessages, getCachedGroupMessages, getCachedConversationMessages, evictOldMedia, CachedMessage } from '@/lib/local-storage-service';
 import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUser, WhatsAppChatProps, GameSession } from './chat-types';
-
-// Voice Message Player Component
-function VoiceMessagePlayer({ voiceUrl, duration }: { voiceUrl: string; duration?: number }) {
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [progress, setProgress] = useState(0);
-    const [currentTime, setCurrentTime] = useState(0);
-    const audioRef = useRef<HTMLAudioElement | null>(null);
-
-    useEffect(() => {
-        const audio = new Audio(voiceUrl);
-        audioRef.current = audio;
-
-        audio.addEventListener('timeupdate', () => {
-            if (audio.duration) {
-                setProgress((audio.currentTime / audio.duration) * 100);
-                setCurrentTime(audio.currentTime);
-            }
-        });
-
-        audio.addEventListener('ended', () => {
-            setIsPlaying(false);
-            setProgress(0);
-            setCurrentTime(0);
-        });
-
-        return () => {
-            audio.pause();
-            audio.src = '';
-        };
-    }, [voiceUrl]);
-
-    const togglePlay = () => {
-        if (!audioRef.current) return;
-
-        if (isPlaying) {
-            audioRef.current.pause();
-        } else {
-            audioRef.current.play();
-        }
-        setIsPlaying(!isPlaying);
-    };
-
-    const formatTime = (seconds: number) => {
-        const mins = Math.floor(seconds / 60);
-        const secs = Math.floor(seconds % 60);
-        return `${mins}:${secs.toString().padStart(2, '0')}`;
-    };
-
-    return (
-        <div className="flex items-center gap-3 min-w-[200px]">
-            <button
-                onClick={togglePlay}
-                className="w-10 h-10 rounded-full bg-white/20 flex items-center justify-center hover:bg-white/30 transition-colors"
-            >
-                {isPlaying ? (
-                    <Pause className="h-5 w-5 text-white" />
-                ) : (
-                    <Play className="h-5 w-5 text-white ml-0.5" />
-                )}
-            </button>
-            <div className="flex-1">
-                <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-                    <div
-                        className="h-full bg-white/60 transition-all duration-100"
-                        style={{ width: `${progress}%` }}
-                    />
-                </div>
-                <span className="text-[10px] opacity-70 mt-1 block">
-                    {formatTime(currentTime)} / {formatTime(duration || 0)}
-                </span>
-            </div>
-        </div>
-    );
-}
+import { VoiceMessagePlayer } from './voice-message-player';
 
 export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
     // View State
@@ -1578,10 +1506,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             });
         };
 
-        if (!hasUrl) return <p className="text-sm whitespace-pre-wrap break-words">{renderWithFormatting(content)}</p>;
+        if (!hasUrl) return <p className="text-sm whitespace-pre-wrap wrap-break-word">{renderWithFormatting(content)}</p>;
 
         return (
-            <div className="text-sm whitespace-pre-wrap break-words">
+            <div className="text-sm whitespace-pre-wrap wrap-break-word">
                 {parts.map((part, i) => {
                     if (urlRegex.test(part)) {
                         urlRegex.lastIndex = 0; // Reset regex
@@ -1818,14 +1746,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
             const res = await fetch(`/bible/${fileName}`);
             if (!res.ok) {
-                // Try API fallback
-                const apiRes = await fetch(`/api/bible?reference=${encodeURIComponent(bibleReference)}&translation=${bibleVersion.toLowerCase()}`);
-                if (apiRes.ok) {
-                    const apiData = await apiRes.json();
-                    setBibleContent(apiData.text || apiData.content || 'Passage non trouvé');
-                } else {
-                    setBibleContent(`[Passage non trouvé. Vérifiez le livre "${bookRaw}" et le chapitre ${chapter}.]`);
-                }
+                setBibleContent(`[Passage non trouvé. Vérifiez le livre "${bookRaw}" et le chapitre ${chapter}.]`);
                 setIsFetchingBible(false);
                 return;
             }
@@ -2192,7 +2113,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     if (view === 'list') {
         return (
-            <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
+            <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-linear-to-b from-slate-900 to-slate-950">
                 {/* Header */}
                 <div className="p-4 border-b border-white/10">
                     <div className="flex items-center justify-between mb-4">
@@ -2302,7 +2223,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                         <div className="relative">
                                             <Avatar className="h-12 w-12">
                                                 <AvatarImage src={conv.participant.avatar_url || undefined} />
-                                                <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                                                <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white">
                                                     {getInitials(conv.participant.full_name)}
                                                 </AvatarFallback>
                                             </Avatar>
@@ -2392,14 +2313,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     <button
                                                         key={group.id}
                                                         onClick={() => openGroup(group)}
-                                                        className="w-full p-3 rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-green-500/30 hover:bg-white/10 transition-all text-left group/card"
+                                                        className="w-full p-3 rounded-xl bg-linear-to-br from-white/5 to-white/2 border border-white/10 hover:border-green-500/30 hover:bg-white/10 transition-all text-left group/card"
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <div className={cn(
                                                                 "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden",
                                                                 group.is_urgent
-                                                                    ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                                                    : "bg-gradient-to-br from-green-500 to-teal-500"
+                                                                    ? "bg-linear-to-br from-red-500 to-orange-500"
+                                                                    : "bg-linear-to-br from-green-500 to-teal-500"
                                                             )}>
                                                                 {group.avatar_url ? (
                                                                     <img src={group.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -2440,14 +2361,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     <button
                                                         key={group.id}
                                                         onClick={() => openGroup(group)}
-                                                        className="w-full p-3 rounded-xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-indigo-500/30 hover:bg-white/10 transition-all text-left"
+                                                        className="w-full p-3 rounded-xl bg-linear-to-br from-white/5 to-white/2 border border-white/10 hover:border-indigo-500/30 hover:bg-white/10 transition-all text-left"
                                                     >
                                                         <div className="flex items-center gap-3">
                                                             <div className={cn(
                                                                 "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden",
                                                                 group.is_urgent
-                                                                    ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                                                    : "bg-gradient-to-br from-indigo-500 to-blue-500"
+                                                                    ? "bg-linear-to-br from-red-500 to-orange-500"
+                                                                    : "bg-linear-to-br from-indigo-500 to-blue-500"
                                                             )}>
                                                                 {group.avatar_url ? (
                                                                     <img src={group.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -2495,14 +2416,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                             <button
                                                 key={group.id}
                                                 onClick={() => openGroup(group)}
-                                                className="w-full p-3 rounded-xl bg-gradient-to-br from-purple-500/10 to-indigo-500/5 border border-purple-500/20 hover:border-purple-400/40 hover:bg-purple-500/10 transition-all text-left"
+                                                className="w-full p-3 rounded-xl bg-linear-to-br from-purple-500/10 to-indigo-500/5 border border-purple-500/20 hover:border-purple-400/40 hover:bg-purple-500/10 transition-all text-left"
                                             >
                                                 <div className="flex items-center gap-3">
                                                     <div className={cn(
                                                         "w-12 h-12 rounded-xl flex items-center justify-center shrink-0 overflow-hidden",
                                                         group.is_urgent
-                                                            ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                                            : "bg-gradient-to-br from-purple-500 to-indigo-500"
+                                                            ? "bg-linear-to-br from-red-500 to-orange-500"
+                                                            : "bg-linear-to-br from-purple-500 to-indigo-500"
                                                     )}>
                                                         {group.avatar_url ? (
                                                             <img src={group.avatar_url} alt="" className="w-full h-full object-cover" />
@@ -2576,7 +2497,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 <div className="relative">
                                                     <Avatar className="h-10 w-10">
                                                         <AvatarImage src={targetUser.avatar_url || undefined} />
-                                                        <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-sm">
+                                                        <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white text-sm">
                                                             {getInitials(targetUser.full_name)}
                                                         </AvatarFallback>
                                                     </Avatar>
@@ -2609,7 +2530,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const currentGroup = view === 'group' ? selectedGroup : null;
 
     return (
-        <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-gradient-to-b from-slate-900 to-slate-950">
+        <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-linear-to-b from-slate-900 to-slate-950">
             {/* Chat Header — fixed, never scrolls */}
             <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0 z-20">
                 <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
@@ -2621,7 +2542,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         <div className="relative">
                             <Avatar className="h-10 w-10">
                                 <AvatarImage src={currentRecipient.avatar_url || undefined} />
-                                <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                                <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white">
                                     {getInitials(currentRecipient.full_name)}
                                 </AvatarFallback>
                             </Avatar>
@@ -2667,8 +2588,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         <div className={cn(
                             "w-8 h-8 sm:w-10 sm:h-10 shrink-0 rounded-full flex items-center justify-center overflow-hidden",
                             currentGroup.is_urgent
-                                ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                : "bg-gradient-to-br from-indigo-500 to-purple-500"
+                                ? "bg-linear-to-br from-red-500 to-orange-500"
+                                : "bg-linear-to-br from-indigo-500 to-purple-500"
                         )}>
                             {currentGroup.avatar_url ? (
                                 <img src={currentGroup.avatar_url} alt={currentGroup.name} className="w-full h-full object-cover" />
@@ -2841,7 +2762,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             {/* Pinned Prayer Subject Banner */}
             {/* Feature 3: Unpin button added */}
             {currentGroup && (pinnedPrayer || currentGroup.description?.startsWith('📌')) && (
-                <div className="mx-2 sm:mx-4 mt-2 p-2.5 rounded-xl bg-gradient-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/20 flex items-center gap-2">
+                <div className="mx-2 sm:mx-4 mt-2 p-2.5 rounded-xl bg-linear-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/20 flex items-center gap-2">
                     <Pin className="h-4 w-4 text-amber-400 shrink-0" />
                     <p className="text-xs text-amber-200 flex-1 truncate">
                         <span className="font-semibold">Sujet de prière :</span>{' '}
@@ -3223,7 +3144,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             {/* Group Photo & Info */}
                             <div className="flex items-center gap-4">
                                 <div
-                                    className="relative w-14 h-14 rounded-full overflow-hidden cursor-pointer group bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0"
+                                    className="relative w-14 h-14 rounded-full overflow-hidden cursor-pointer group bg-linear-to-br from-indigo-500 to-purple-500 flex items-center justify-center shrink-0"
                                     onClick={() => groupPhotoInputRef.current?.click()}
                                 >
                                     {currentGroup.avatar_url ? (
@@ -3496,481 +3417,64 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 </DialogContent>
             </Dialog>
 
-            {/* Bible Sharing Tool Dialog */}
-            <Dialog open={showBibleTool} onOpenChange={setShowBibleTool}>
-                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <BookOpen className="h-5 w-5 text-emerald-400" />
-                            Partager un passage biblique
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        {/* Version */}
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Version</label>
-                            <div className="flex gap-2">
-                                {['LSG', 'NIV', 'KJV', 'ESV'].map(v => (
-                                    <Button
-                                        key={v}
-                                        size="sm"
-                                        variant={bibleVersion === v ? 'default' : 'outline'}
-                                        className={bibleVersion === v
-                                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                                            : 'border-white/10 text-slate-400 hover:bg-white/5'}
-                                        onClick={() => setBibleVersion(v)}
-                                    >
-                                        {v}
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Reference Input */}
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Référence</label>
-                            <div className="flex gap-2">
-                                <Input
-                                    placeholder="Ex: Jean 3:16 ou Psaume 23"
-                                    value={bibleReference}
-                                    onChange={e => setBibleReference(e.target.value)}
-                                    className="bg-white/5 border-white/10 text-white"
-                                    onKeyPress={e => e.key === 'Enter' && fetchBiblePassage()}
-                                />
-                                <Button
-                                    onClick={fetchBiblePassage}
-                                    disabled={isFetchingBible}
-                                    className="bg-emerald-600 hover:bg-emerald-700 shrink-0"
-                                >
-                                    {isFetchingBible ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Preview */}
-                        {bibleContent && (
-                            <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/5 border border-emerald-500/20">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <BookOpen className="h-4 w-4 text-emerald-400" />
-                                    <span className="text-emerald-400 font-semibold text-sm">{bibleReference} ({bibleVersion})</span>
-                                </div>
-                                <p className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{bibleContent}</p>
-                            </div>
-                        )}
-
-                        {/* Share */}
-                        {bibleContent && (
-                            <Button
-                                onClick={shareBiblePassage}
-                                className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white"
-                            >
-                                <Send className="h-4 w-4 mr-2" />
-                                Partager dans le groupe
-                            </Button>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* Fasting Program Tool Dialog (personnalisable) */}
-            <Dialog open={showFastingTool} onOpenChange={setShowFastingTool}>
-                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <CalendarDays className="h-5 w-5 text-purple-400" />
-                            Programme de jeûne et prière
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        {/* Theme */}
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Thème du jeûne</label>
-                            <Input
-                                placeholder="Ex: Renouvellement spirituel, Percée, etc."
-                                value={fastingTheme}
-                                onChange={e => setFastingTheme(e.target.value)}
-                                className="bg-white/5 border-white/10 text-white"
-                            />
-                        </div>
-
-                        {/* Duration */}
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Durée (jours)</label>
-                            <div className="flex gap-2">
-                                {[3, 5, 7, 10, 14, 21, 40].map(d => (
-                                    <Button
-                                        key={d}
-                                        size="sm"
-                                        variant={fastingDuration === d ? 'default' : 'outline'}
-                                        className={fastingDuration === d
-                                            ? 'bg-purple-600 hover:bg-purple-700 text-white'
-                                            : 'border-white/10 text-slate-400 hover:bg-white/5'}
-                                        onClick={() => { setFastingDuration(d); initFastingDays(d); }}
-                                    >
-                                        {d}j
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Daily Content */}
-                        <div className="space-y-3">
-                            <p className="text-xs text-slate-400 font-medium">Contenu journalier</p>
-                            <ScrollArea className="max-h-[40vh]">
-                                <div className="space-y-3 pr-2">
-                                    {fastingDays.map((day, i) => (
-                                        <div key={i} className="p-3 rounded-xl bg-white/5 border border-white/10 space-y-2">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-sm font-bold text-purple-400">📅 {day.title}</span>
-                                            </div>
-                                            <Input
-                                                placeholder="Thème du jour"
-                                                value={day.theme}
-                                                onChange={e => {
-                                                    const updated = [...fastingDays];
-                                                    updated[i] = { ...updated[i], theme: e.target.value };
-                                                    setFastingDays(updated);
-                                                }}
-                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
-                                            />
-                                            <Input
-                                                placeholder="Référence biblique (ex: Matthieu 6:16-18)"
-                                                value={day.reference}
-                                                onChange={e => {
-                                                    const updated = [...fastingDays];
-                                                    updated[i] = { ...updated[i], reference: e.target.value };
-                                                    setFastingDays(updated);
-                                                }}
-                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
-                                            />
-                                            <Textarea
-                                                placeholder="Méditation / réflexion"
-                                                value={day.meditation}
-                                                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => {
-                                                    const updated = [...fastingDays];
-                                                    updated[i] = { ...updated[i], meditation: e.target.value };
-                                                    setFastingDays(updated);
-                                                }}
-                                                className="bg-white/5 border-white/10 text-sm min-h-[60px] text-white"
-                                            />
-                                            <Input
-                                                placeholder="Action pratique"
-                                                value={day.action}
-                                                onChange={e => {
-                                                    const updated = [...fastingDays];
-                                                    updated[i] = { ...updated[i], action: e.target.value };
-                                                    setFastingDays(updated);
-                                                }}
-                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
-                                            />
-                                            <Input
-                                                placeholder="Sujets de prière"
-                                                value={day.prayers}
-                                                onChange={e => {
-                                                    const updated = [...fastingDays];
-                                                    updated[i] = { ...updated[i], prayers: e.target.value };
-                                                    setFastingDays(updated);
-                                                }}
-                                                className="bg-white/5 border-white/10 text-sm h-8 text-white"
-                                            />
-                                        </div>
-                                    ))}
-                                </div>
-                            </ScrollArea>
-                        </div>
-
-                        {/* Share */}
-                        <Button
-                            onClick={shareFastingProgram}
-                            disabled={!fastingTheme.trim()}
-                            className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                        >
-                            <Send className="h-4 w-4 mr-2" />
-                            Partager le programme dans le groupe
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* Announcement Dialog */}
-            <Dialog open={showAnnouncementTool} onOpenChange={setShowAnnouncementTool}>
-                <DialogContent className="max-w-md bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <Megaphone className="h-5 w-5 text-red-400" />
-                            Faire une annonce
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <p className="text-xs text-slate-400">Envoyez une annonce importante à tous les membres du groupe.</p>
-                        <Textarea
-                            placeholder="Votre annonce..."
-                            value={announcementText}
-                            onChange={e => setAnnouncementText(e.target.value)}
-                            className="bg-white/5 border-white/10 text-white min-h-[100px]"
-                        />
-                        <Button
-                            onClick={sendAnnouncement}
-                            disabled={!announcementText.trim()}
-                            className="w-full bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700 text-white"
-                        >
-                            <Megaphone className="h-4 w-4 mr-2" />
-                            Envoyer l'annonce
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* Pin Prayer Subject Dialog */}
-            <Dialog open={showPinTool} onOpenChange={setShowPinTool}>
-                <DialogContent className="max-w-md bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <Pin className="h-5 w-5 text-amber-400" />
-                            Épingler un sujet de prière
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <p className="text-xs text-slate-400">Ce sujet sera visible en haut du chat pour tous les membres.</p>
-                        <Textarea
-                            placeholder="Sujet de prière à épingler..."
-                            value={pinText}
-                            onChange={e => setPinText(e.target.value)}
-                            className="bg-white/5 border-white/10 text-white min-h-[80px]"
-                        />
-                        <Button
-                            onClick={setPinnedPrayerSubject}
-                            disabled={!pinText.trim()}
-                            className="w-full bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-700 hover:to-orange-700 text-white"
-                        >
-                            <Pin className="h-4 w-4 mr-2" />
-                            Épingler le sujet
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* Event Planning Dialog */}
-            <Dialog open={showEventTool} onOpenChange={setShowEventTool}>
-                <DialogContent className="max-w-md bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <Calendar className="h-5 w-5 text-blue-400" />
-                            Planifier un événement
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Titre de l'événement</label>
-                            <Input
-                                placeholder="Ex: Réunion de prière, Soirée louange..."
-                                value={eventTitle}
-                                onChange={e => setEventTitle(e.target.value)}
-                                className="bg-white/5 border-white/10 text-white"
-                            />
-                        </div>
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <label className="text-xs text-slate-400 mb-1 block">Date</label>
-                                <Input
-                                    type="date"
-                                    value={eventDate}
-                                    onChange={e => setEventDate(e.target.value)}
-                                    className="bg-white/5 border-white/10 text-white"
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs text-slate-400 mb-1 block">Heure (optionnel)</label>
-                                <Input
-                                    type="time"
-                                    value={eventTime}
-                                    onChange={e => setEventTime(e.target.value)}
-                                    className="bg-white/5 border-white/10 text-white"
-                                />
-                            </div>
-                        </div>
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Description (optionnel)</label>
-                            <Textarea
-                                placeholder="Détails de l'événement..."
-                                value={eventDescription}
-                                onChange={e => setEventDescription(e.target.value)}
-                                className="bg-white/5 border-white/10 text-white min-h-[60px]"
-                            />
-                        </div>
-                        <Button
-                            onClick={sendEventToGroup}
-                            disabled={!eventTitle.trim() || !eventDate}
-                            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white"
-                        >
-                            <Calendar className="h-4 w-4 mr-2" />
-                            Partager l'événement
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* Migrate Members Dialog */}
-            <Dialog open={showMigrateTool} onOpenChange={setShowMigrateTool}>
-                <DialogContent className="max-w-md bg-slate-900 border-white/10">
-                    <DialogHeader>
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <ArrowRightLeft className="h-5 w-5 text-cyan-400" />
-                            Migrer les membres
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="space-y-4">
-                        <p className="text-xs text-slate-400">
-                            Transférer tous les membres de ce groupe vers un autre groupe.
-                            Les membres déjà présents dans le groupe cible seront ignorés.
-                        </p>
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">Nom du groupe cible</label>
-                            <Input
-                                placeholder="Tapez le nom du groupe cible..."
-                                value={migrateTargetName}
-                                onChange={e => setMigrateTargetName(e.target.value)}
-                                className="bg-white/5 border-white/10 text-white"
-                            />
-                        </div>
-                        <div className="p-3 rounded-xl bg-cyan-500/5 border border-cyan-500/20">
-                            <p className="text-[10px] text-cyan-300">
-                                <strong>Groupe actuel :</strong> {currentGroup?.name}<br />
-                                <strong>Membres :</strong> {groupMembers.length}
-                            </p>
-                        </div>
-                        <Button
-                            onClick={migrateGroupMembers}
-                            disabled={!migrateTargetName.trim() || isMigratingMembers}
-                            className="w-full bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white"
-                        >
-                            {isMigratingMembers ? (
-                                <><Loader2 className="h-4 w-4 animate-spin mr-2" /> Migration en cours...</>
-                            ) : (
-                                <><ArrowRightLeft className="h-4 w-4 mr-2" /> Migrer tous les membres</>
-                            )}
-                        </Button>
-                    </div>
-                </DialogContent>
-            </Dialog>
-
-            {/* WebRTC Call Overlay */}
-            {activeCall && (
-                <WebRTCCall
-                    user={{ id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar }}
-                    callType={activeCall.type}
-                    mode={activeCall.mode}
-                    remoteUser={activeCall.mode === 'private' && currentRecipient ? {
-                        id: currentRecipient.id,
-                        name: currentRecipient.full_name,
-                        avatar: currentRecipient.avatar_url
-                    } : undefined}
-                    conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
-                    groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
-                    groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
-                    groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
-                    isIncoming={activeCall.isIncoming}
-                    onEnd={() => setActiveCall(null)}
-                />
-            )}
-
-            {/* Incoming Call Notification */}
-            {incomingCall && !activeCall && (
-                <IncomingCallOverlay
-                    callerName={incomingCall.callerName}
-                    callerAvatar={incomingCall.callerAvatar}
-                    callType={incomingCall.callType}
-                    onAccept={() => {
-                        setActiveCall({
-                            type: incomingCall.callType,
-                            mode: 'private',
-                            isIncoming: true
-                        });
-                        setIncomingCall(null);
-                    }}
-                    onReject={() => setIncomingCall(null)}
-                />
-            )}
-
-            {/* Thread/Comment Dialog — private comments on a message */}
-            <Dialog open={!!threadMessage} onOpenChange={(open) => { if (!open) { setThreadMessage(null); setThreadComments([]); setThreadInput(''); } }}>
-                <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
-                    <DialogHeader className="p-4 pb-2">
-                        <DialogTitle className="flex items-center gap-2 text-white text-sm">
-                            💬 Fil de commentaire privé
-                        </DialogTitle>
-                    </DialogHeader>
-                    {threadMessage && (
-                        <div className="space-y-3 p-4 pt-0">
-                            {/* Original message */}
-                            <div className="p-3 rounded-xl bg-white/5 border border-white/10">
-                                <p className="text-[10px] text-indigo-400 font-semibold mb-1">{threadMessage.sender?.full_name || 'Message'}</p>
-                                <p className="text-sm text-white whitespace-pre-wrap">{threadMessage.content}</p>
-                                <p className="text-[10px] text-slate-500 mt-1">{formatTime(threadMessage.created_at)}</p>
-                            </div>
-
-                            {/* Info banner */}
-                            <div className="text-[10px] text-slate-500 bg-slate-800/50 rounded-lg px-3 py-2 text-center">
-                                🔒 Ces commentaires sont <strong className="text-slate-400">privés</strong> — ils n'apparaissent pas dans le groupe
-                            </div>
-
-                            {/* Thread comments */}
-                            <div className="space-y-2 max-h-48 overflow-y-auto">
-                                {threadComments.map((c, i) => (
-                                    <div key={i} className="flex gap-2 items-start">
-                                        <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
-                                            {user.name?.charAt(0) || '?'}
-                                        </div>
-                                        <div className="bg-white/5 rounded-xl px-3 py-1.5 flex-1">
-                                            <p className="text-xs text-white">{c.text}</p>
-                                            <p className="text-[9px] text-slate-500 mt-0.5">{c.time}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                {threadComments.length === 0 && (
-                                    <p className="text-xs text-slate-500 text-center py-4">Aucun commentaire. Ajoutez une note privée sur ce message.</p>
-                                )}
-                            </div>
-
-                            {/* Input */}
-                            <div className="flex items-center gap-2">
-                                <Input
-                                    placeholder="Votre commentaire privé..."
-                                    value={threadInput}
-                                    onChange={(e) => setThreadInput(e.target.value)}
-                                    onKeyPress={(e) => {
-                                        if (e.key === 'Enter' && threadInput.trim()) {
-                                            setThreadComments(prev => [...prev, {
-                                                text: threadInput.trim(),
-                                                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                                                userId: user.id,
-                                            }]);
-                                            setThreadInput('');
-                                        }
-                                    }}
-                                    className="flex-1 bg-white/5 border-white/10 rounded-full text-sm"
-                                />
-                                <Button
-                                    size="icon"
-                                    onClick={() => {
-                                        if (threadInput.trim()) {
-                                            setThreadComments(prev => [...prev, {
-                                                text: threadInput.trim(),
-                                                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                                                userId: user.id,
-                                            }]);
-                                            setThreadInput('');
-                                        }
-                                    }}
-                                    className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0"
-                                >
-                                    <Send className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-                </DialogContent>
-            </Dialog>
+            {/* Admin Dialogs — extracted component */}
+            <GroupAdminDialogs
+                user={user}
+                currentGroup={currentGroup}
+                groupMembers={groupMembers}
+                showBibleTool={showBibleTool}
+                setShowBibleTool={setShowBibleTool}
+                bibleVersion={bibleVersion}
+                setBibleVersion={setBibleVersion}
+                bibleReference={bibleReference}
+                setBibleReference={setBibleReference}
+                bibleContent={bibleContent}
+                isFetchingBible={isFetchingBible}
+                fetchBiblePassage={fetchBiblePassage}
+                shareBiblePassage={shareBiblePassage}
+                showFastingTool={showFastingTool}
+                setShowFastingTool={setShowFastingTool}
+                fastingTheme={fastingTheme}
+                setFastingTheme={setFastingTheme}
+                fastingDuration={fastingDuration}
+                setFastingDuration={setFastingDuration}
+                fastingDays={fastingDays}
+                setFastingDays={setFastingDays}
+                initFastingDays={initFastingDays}
+                shareFastingProgram={shareFastingProgram}
+                showAnnouncementTool={showAnnouncementTool}
+                setShowAnnouncementTool={setShowAnnouncementTool}
+                announcementText={announcementText}
+                setAnnouncementText={setAnnouncementText}
+                sendAnnouncement={sendAnnouncement}
+                showPinTool={showPinTool}
+                setShowPinTool={setShowPinTool}
+                pinText={pinText}
+                setPinText={setPinText}
+                setPinnedPrayerSubject={setPinnedPrayerSubject}
+                showEventTool={showEventTool}
+                setShowEventTool={setShowEventTool}
+                eventTitle={eventTitle}
+                setEventTitle={setEventTitle}
+                eventDate={eventDate}
+                setEventDate={setEventDate}
+                eventTime={eventTime}
+                setEventTime={setEventTime}
+                eventDescription={eventDescription}
+                setEventDescription={setEventDescription}
+                sendEventToGroup={sendEventToGroup}
+                showMigrateTool={showMigrateTool}
+                setShowMigrateTool={setShowMigrateTool}
+                migrateTargetName={migrateTargetName}
+                setMigrateTargetName={setMigrateTargetName}
+                isMigratingMembers={isMigratingMembers}
+                migrateGroupMembers={migrateGroupMembers}
+                threadMessage={threadMessage}
+                setThreadMessage={setThreadMessage}
+                threadComments={threadComments}
+                setThreadComments={setThreadComments}
+                formatTime={formatTime}
+            />
 
             {/* VoiceSalon — Discord-style group audio room */}
             {showVoiceSalon && currentGroup && (
@@ -3995,18 +3499,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     <div className="p-4 pt-0 space-y-4">
                         {activeGameSession ? (
                             <>
-                                {/* Game info */}
                                 <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
                                     <p className="text-xs text-yellow-400 font-semibold">🎮 Session en cours</p>
                                     <p className="text-sm text-white mt-1">Lancé par <strong>{activeGameSession.startedByName}</strong></p>
                                     <p className="text-[10px] text-slate-400 mt-1">{activeGameSession.players.length} joueur(s) actif(s)</p>
                                 </div>
-
-                                {/* Game area placeholder — quiz questions */}
                                 <div className="bg-white/5 rounded-xl p-6 text-center">
                                     <p className="text-4xl mb-4">📖</p>
                                     <p className="text-lg font-bold text-white mb-2">Quiz Biblique</p>
-                                    <p className="text-sm text-slate-400 mb-4">Qui a construit l'arche ?</p>
+                                    <p className="text-sm text-slate-400 mb-4">Qui a construit l&apos;arche ?</p>
                                     <div className="grid grid-cols-2 gap-2">
                                         {['Noé', 'Abraham', 'Moïse', 'David'].map((answer, i) => (
                                             <button
@@ -4025,14 +3526,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                         ))}
                                     </div>
                                 </div>
-
-                                {/* Action buttons: Sortir & Quitter */}
                                 <div className="flex gap-3">
                                     <Button
                                         variant="outline"
                                         className="flex-1 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
                                         onClick={() => {
-                                            // Sortir = return to group, can rejoin
                                             setShowGroupGame(false);
                                             toast.info('Vous êtes sorti du jeu. Vous pouvez y retourner via le bouton 🎮');
                                         }}
@@ -4043,13 +3541,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                         variant="outline"
                                         className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
                                         onClick={() => {
-                                            // Quitter = permanently leave, button disappears
                                             setShowGroupGame(false);
                                             setHasQuitGame(true);
                                             setActiveGameSession(prev => {
                                                 if (!prev) return null;
                                                 const remaining = prev.players.filter(p => p !== user.id);
-                                                if (remaining.length === 0) return null; // Session ends
+                                                if (remaining.length === 0) return null;
                                                 return { ...prev, players: remaining };
                                             });
                                             toast.info('Vous avez quitté définitivement le jeu.');
@@ -4060,13 +3557,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 </div>
                             </>
                         ) : (
-                            /* No active session */
                             <div className="text-center py-8">
                                 <p className="text-5xl mb-4">🎮</p>
                                 <p className="text-lg font-bold text-white mb-2">Aucun jeu en cours</p>
                                 <p className="text-sm text-slate-400 mb-6">Lancez un jeu biblique pour tous les membres du groupe !</p>
                                 <Button
-                                    className="bg-gradient-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white"
+                                    className="bg-linear-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white"
                                     onClick={() => {
                                         if (currentGroup && user) {
                                             setActiveGameSession({

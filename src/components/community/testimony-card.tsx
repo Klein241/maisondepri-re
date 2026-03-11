@@ -49,7 +49,7 @@ export function TestimonyCard({
     };
 
     return (
-        <Card className="bg-gradient-to-br from-amber-600/10 to-orange-600/5 border-amber-500/10 rounded-3xl overflow-hidden">
+        <Card className="bg-linear-to-br from-amber-600/10 to-orange-600/5 border-amber-500/10 rounded-3xl overflow-hidden">
             <CardContent className="p-5">
                 {/* Header */}
                 <div className="flex items-center gap-3 mb-4">

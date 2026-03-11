@@ -182,7 +182,7 @@ function LiveRegistrationFlow({
                 initial={{ scale: 0.9, y: 20 }}
                 animate={{ scale: 1, y: 0 }}
                 exit={{ scale: 0.9, y: 20 }}
-                className="bg-gradient-to-b from-[#0F1219] to-[#1a1f2e] border border-white/10 rounded-3xl p-6 max-w-sm w-full shadow-2xl"
+                className="bg-linear-to-b from-[#0F1219] to-[#1a1f2e] border border-white/10 rounded-3xl p-6 max-w-sm w-full shadow-2xl"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Progress dots */}
@@ -233,7 +233,7 @@ function LiveRegistrationFlow({
                                 onKeyDown={(e) => e.key === 'Enter' && name.trim() && setStep(2)}
                             />
                             <Button
-                                className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 to-pink-600 font-bold"
+                                className="w-full h-12 rounded-xl bg-linear-to-r from-red-600 to-pink-600 font-bold"
                                 onClick={() => name.trim() && setStep(2)}
                                 disabled={!name.trim()}
                             >
@@ -265,7 +265,7 @@ function LiveRegistrationFlow({
                                 onKeyDown={(e) => e.key === 'Enter' && country.trim() && setStep(3)}
                             />
                             <Button
-                                className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 to-pink-600 font-bold"
+                                className="w-full h-12 rounded-xl bg-linear-to-r from-red-600 to-pink-600 font-bold"
                                 onClick={() => country.trim() && setStep(3)}
                                 disabled={!country.trim()}
                             >
@@ -298,7 +298,7 @@ function LiveRegistrationFlow({
                                 onKeyDown={(e) => e.key === 'Enter' && phone.trim() && setStep(4)}
                             />
                             <Button
-                                className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 to-pink-600 font-bold"
+                                className="w-full h-12 rounded-xl bg-linear-to-r from-red-600 to-pink-600 font-bold"
                                 onClick={() => phone.trim() && setStep(4)}
                                 disabled={!phone.trim()}
                             >
@@ -332,7 +332,7 @@ function LiveRegistrationFlow({
                             />
                             <p className="text-[10px] text-slate-500 text-center">Minimum 6 caractères</p>
                             <Button
-                                className="w-full h-12 rounded-xl bg-gradient-to-r from-red-600 to-pink-600 font-bold"
+                                className="w-full h-12 rounded-xl bg-linear-to-r from-red-600 to-pink-600 font-bold"
                                 onClick={handleSubmit}
                                 disabled={isSubmitting || password.trim().length < 6}
                             >
@@ -555,7 +555,7 @@ function LiveSalon({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+            className="fixed inset-0 z-100 flex flex-col bg-linear-to-b from-[#050709] to-[#0a0d14]"
         >
             {/* Header */}
             <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">
@@ -734,7 +734,7 @@ function LiveSalon({
                                                     {comment.profile?.full_name || 'Utilisateur'}
                                                 </span>
                                                 {comment.is_pinned && <Pin className="h-2.5 w-2.5 text-amber-400 inline ml-1" />}
-                                                <p className="text-sm text-slate-200 break-words">{comment.content}</p>
+                                                <p className="text-sm text-slate-200 wrap-break-word">{comment.content}</p>
                                             </div>
                                             <div className="flex items-center gap-3 mt-1 px-1">
                                                 <span className="text-[10px] text-slate-600">
@@ -773,7 +773,7 @@ function LiveSalon({
                                                             <span className="font-bold text-[11px] text-white">
                                                                 {reply.profile?.full_name || 'Utilisateur'}
                                                             </span>
-                                                            <p className="text-xs text-slate-300 break-words">{reply.content}</p>
+                                                            <p className="text-xs text-slate-300 wrap-break-word">{reply.content}</p>
                                                         </div>
                                                         <div className="flex items-center gap-2 mt-0.5 px-1">
                                                             <span className="text-[9px] text-slate-600">
@@ -834,7 +834,7 @@ function LiveSalon({
                     <motion.div whileTap={{ scale: 0.9 }}>
                         <Button
                             size="icon"
-                            className="h-10 w-10 rounded-full bg-gradient-to-r from-red-600 to-pink-600 shrink-0"
+                            className="h-10 w-10 rounded-full bg-linear-to-r from-red-600 to-pink-600 shrink-0"
                             onClick={handleSendComment}
                             disabled={!newComment.trim()}
                         >
@@ -934,7 +934,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
     if (!todayData) return null;
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-28 overflow-x-hidden">
+        <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-28 overflow-x-hidden">
             {/* Ambient Background */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-pink-600/5 blur-[150px] rounded-full" />
@@ -946,7 +946,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                 <header className="relative z-10 px-6 pt-12 pb-6 flex items-center justify-between">
                     <div>
                         <p className="text-slate-400 text-sm font-medium mb-1">Que la paix soit avec vous,</p>
-                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-white to-slate-400">
+                        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-linear-to-r from-white to-slate-400">
                             {user ? user.name.split(' ')[0] : 'Visiteur'}
                         </h1>
                     </div>
@@ -970,8 +970,8 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             className="cursor-pointer"
                             onClick={handleLiveClick}
                         >
-                            <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-900/80 to-red-700/80 p-4 border border-red-500/30">
-                                <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-transparent animate-pulse" />
+                            <div className="relative overflow-hidden rounded-2xl bg-linear-to-r from-red-900/80 to-red-700/80 p-4 border border-red-500/30">
+                                <div className="absolute inset-0 bg-linear-to-r from-red-600/20 to-transparent animate-pulse" />
                                 <div className="relative flex items-center justify-between">
                                     <div className="flex items-center gap-3">
                                         <div className="relative">
@@ -1001,7 +1001,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.1 }}
                             onClick={() => setShowReplaysDialog(true)}
-                            className="w-full flex items-center gap-3 p-3 rounded-2xl bg-gradient-to-r from-purple-900/40 to-indigo-900/40 border border-purple-500/20 hover:border-purple-400/40 transition-all"
+                            className="w-full flex items-center gap-3 p-3 rounded-2xl bg-linear-to-r from-purple-900/40 to-indigo-900/40 border border-purple-500/20 hover:border-purple-400/40 transition-all"
                         >
                             <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center border border-purple-500/10">
                                 <Play className="w-5 h-5 text-purple-300 fill-purple-300" />
@@ -1025,10 +1025,10 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             className="relative group cursor-pointer"
                             onClick={() => onNavigateToDay(currentDay)}
                         >
-                            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-3xl blur opacity-30 group-hover:opacity-60 transition duration-500" />
+                            <div className="absolute -inset-0.5 bg-linear-to-r from-purple-600 to-blue-600 rounded-3xl blur opacity-30 group-hover:opacity-60 transition duration-500" />
 
                             <div className="relative glass-card p-6 h-[280px] flex flex-col justify-between overflow-hidden bg-slate-900/80">
-                                <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-purple-500/10 to-transparent blur-3xl rounded-full translate-x-12 -translate-y-12 pointer-events-none" />
+                                <div className="absolute top-0 right-0 w-64 h-64 bg-linear-to-br from-purple-500/10 to-transparent blur-3xl rounded-full translate-x-12 -translate-y-12 pointer-events-none" />
 
                                 <div className="flex justify-between items-start">
                                     <div className="bg-white/10 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-xs font-bold tracking-wider text-white">
@@ -1111,7 +1111,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                     animate={{ opacity: 1, y: 0 }}
                                     transition={{ delay: 0.65 + i * 0.05 }}
                                     className={cn(
-                                        "flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-gradient-to-br text-white border border-white/10 hover:scale-105 transition-transform",
+                                        "flex flex-col items-center gap-1.5 p-3 rounded-2xl bg-linear-to-br text-white border border-white/10 hover:scale-105 transition-transform",
                                         item.color
                                     )}
                                     onClick={() => {
@@ -1273,7 +1273,7 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                                         }}
                                         className="w-full flex items-center gap-3 p-3 rounded-xl bg-slate-800/60 border border-slate-700/50 hover:border-purple-500/30 transition-all text-left"
                                     >
-                                        <div className="w-14 h-10 bg-gradient-to-br from-purple-600/30 to-pink-600/30 rounded-lg flex items-center justify-center shrink-0 border border-purple-500/20">
+                                        <div className="w-14 h-10 bg-linear-to-br from-purple-600/30 to-pink-600/30 rounded-lg flex items-center justify-center shrink-0 border border-purple-500/20">
                                             <Play className="h-5 w-5 text-purple-300 fill-purple-300" />
                                         </div>
                                         <div className="flex-1 min-w-0">

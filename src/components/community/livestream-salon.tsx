@@ -173,7 +173,7 @@ export function CreateStreamDialog({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[92vw] sm:max-w-lg rounded-2xl sm:rounded-[2rem] max-h-[90vh] overflow-y-auto p-4 sm:p-6">
+            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[92vw] sm:max-w-lg rounded-2xl sm:rounded-4xl max-h-[90vh] overflow-y-auto p-4 sm:p-6">
                 <DialogHeader>
                     <DialogTitle className="text-xl font-black flex items-center gap-2">
                         <Radio className="h-5 w-5 text-red-500 animate-pulse" />
@@ -215,7 +215,7 @@ export function CreateStreamDialog({
                                         className={cn(
                                             "flex flex-col items-center gap-1.5 p-3 rounded-xl border transition-all",
                                             selectedPlatform === p.id
-                                                ? `bg-gradient-to-br ${p.gradient} border-white/20 shadow-lg`
+                                                ? `bg-linear-to-br ${p.gradient} border-white/20 shadow-lg`
                                                 : "bg-white/5 border-white/10 hover:bg-white/10"
                                         )}
                                     >
@@ -257,7 +257,7 @@ export function CreateStreamDialog({
 
                     {/* Submit Button */}
                     <Button
-                        className="w-full h-12 rounded-2xl bg-gradient-to-r from-red-600 to-pink-600 font-bold text-base shadow-lg shadow-red-600/30"
+                        className="w-full h-12 rounded-2xl bg-linear-to-r from-red-600 to-pink-600 font-bold text-base shadow-lg shadow-red-600/30"
                         onClick={handleCreate}
                         disabled={isCreating || !selectedPlatform || !streamInput.trim()}
                     >
@@ -559,7 +559,7 @@ export function LiveStreamSalon({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+            className="fixed inset-0 z-50 flex flex-col bg-linear-to-b from-[#050709] to-[#0a0d14]"
         >
             {/* Header */}
             <header className="flex items-center gap-3 px-3 sm:px-4 pt-10 pb-3 border-b border-white/5">
@@ -744,7 +744,7 @@ export function LiveStreamSalon({
                         <motion.div whileTap={{ scale: 0.9 }}>
                             <Button
                                 size="icon"
-                                className="h-10 w-10 rounded-full bg-gradient-to-r from-indigo-600 to-purple-600 shrink-0"
+                                className="h-10 w-10 rounded-full bg-linear-to-r from-indigo-600 to-purple-600 shrink-0"
                                 onClick={handleSendComment}
                                 disabled={!newComment.trim()}
                             >
@@ -803,7 +803,7 @@ function CommentItem({
                                 <Pin className="h-2.5 w-2.5 text-amber-400" />
                             )}
                         </div>
-                        <p className="text-sm text-slate-200 break-words whitespace-pre-wrap">{comment.content}</p>
+                        <p className="text-sm text-slate-200 wrap-break-word whitespace-pre-wrap">{comment.content}</p>
                     </div>
                     <div className="flex items-center gap-3 mt-1 px-1">
                         <span className="text-[10px] text-slate-600">
@@ -856,7 +856,7 @@ function CommentItem({
                                     <span className="font-bold text-[11px] text-white">
                                         {reply.profile?.full_name || 'Utilisateur'}
                                     </span>
-                                    <p className="text-xs text-slate-300 break-words">{reply.content}</p>
+                                    <p className="text-xs text-slate-300 wrap-break-word">{reply.content}</p>
                                 </div>
                                 <div className="flex items-center gap-2 mt-0.5 px-1">
                                     <span className="text-[9px] text-slate-600">
@@ -960,7 +960,7 @@ export function LiveStreamButton({
         return (
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                 <Button
-                    className="rounded-2xl bg-gradient-to-r from-red-600 to-pink-600 shadow-lg shadow-red-600/30 border-0 gap-2 px-4 h-10 relative overflow-hidden"
+                    className="rounded-2xl bg-linear-to-r from-red-600 to-pink-600 shadow-lg shadow-red-600/30 border-0 gap-2 px-4 h-10 relative overflow-hidden"
                     onClick={() => onOpenStream(activeStream)}
                 >
                     {/* Pulsing glow effect */}
@@ -987,7 +987,7 @@ export function LiveStreamButton({
             <>
                 <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                     <Button
-                        className="rounded-2xl bg-gradient-to-r from-red-600/80 to-pink-600/80 hover:from-red-600 hover:to-pink-600 border-0 gap-2 px-4 h-10"
+                        className="rounded-2xl bg-linear-to-r from-red-600/80 to-pink-600/80 hover:from-red-600 hover:to-pink-600 border-0 gap-2 px-4 h-10"
                         onClick={() => setShowCreateDialog(true)}
                     >
                         <Radio className="h-4 w-4" />

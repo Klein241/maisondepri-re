@@ -234,7 +234,7 @@ export function MultiplayerManager({ onBack, initialView }: MultiplayerManagerPr
                 {gameComponent}
                 {/* Host Request Overlay */}
                 {pendingRequests.length > 0 && isHost && (
-                    <div className="fixed bottom-20 left-4 right-4 z-[100] md:left-auto md:right-4 md:w-80">
+                    <div className="fixed bottom-20 left-4 right-4 z-100 md:left-auto md:right-4 md:w-80">
                         <div className="bg-indigo-600 border border-white/20 p-4 rounded-xl shadow-2xl space-y-3">
                             <div className="flex items-center justify-between">
                                 <h4 className="text-xs font-black uppercase text-white flex items-center gap-2">

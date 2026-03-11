@@ -20,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Switch } from "@/components/ui/switch";
 import { useAppStore } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 import { PRAYER_CATEGORIES, PrayerCategory, PrayerRequest, Testimonial, PrayerGroup, PrayerGroupJoinRequest } from "@/lib/types";
@@ -115,7 +116,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
         groupMembers, groupJoinRequests, pendingRequestCounts,
         showMembersPanel, setShowMembersPanel,
         showCreateGroupDialog, setShowCreateGroupDialog,
-        newGroupName, setNewGroupName, newGroupDescription, setNewGroupDescription, creatingGroup,
+        newGroupName, setNewGroupName, newGroupDescription, setNewGroupDescription,
+        isGroupPublic, setIsGroupPublic, creatingGroup,
         loadGroups, loadUserGroups, loadPendingJoinRequests,
         joinGroup, leaveGroup, requestJoinGroup, approveJoinRequest, rejectJoinRequest,
         loadGroupMembers, removeGroupMember, createGroup, generateSlug,
@@ -535,7 +537,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     }, [incomingCall, acceptCall, user]);
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-0">
+        <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-0">
             {/* Active WebRTC Call Overlay */}
             <AnimatePresence>
                 {activeGlobalCall && user && (
@@ -587,10 +589,10 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                     >
                         <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex flex-col min-h-screen">
                             {/* Header - Sticky on scroll for PC & mobile */}
-                            <header className="px-4 pt-10 pb-3 sticky top-0 z-30 bg-gradient-to-b from-[#0B0E14] via-[#0B0E14] to-[#0B0E14]/95 backdrop-blur-xl">
+                            <header className="px-4 pt-10 pb-3 sticky top-0 z-30 bg-linear-to-b from-[#0B0E14] via-[#0B0E14] to-[#0B0E14]/95 backdrop-blur-xl">
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="shrink-0">
-                                        <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
+                                        <h1 className="text-2xl font-black tracking-tight bg-linear-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
                                             Communauté
                                         </h1>
                                         <p className="text-slate-500 text-xs font-medium mt-0.5">Prions ensemble</p>
@@ -599,7 +601,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         {!user && (
                                             <Button
                                                 size="sm"
-                                                className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-4 h-9 text-xs font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all"
+                                                className="rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 border-0 gap-1.5 px-4 h-9 text-xs font-bold shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40 transition-all"
                                                 onClick={() => setGlobalActiveTab('profile')}
                                             >
                                                 <LogIn className="h-3.5 w-3.5" />
@@ -613,7 +615,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 <div className="flex gap-2 pb-1.5 -mx-1 px-1">
                                     <Button
                                         size="sm"
-                                        className="flex-1 rounded-xl bg-gradient-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative"
+                                        className="flex-1 rounded-xl bg-linear-to-r from-pink-600 to-rose-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative"
                                         onClick={() => requireAuth(() => setViewState('friends'))}
                                     >
                                         <UserPlus className="h-3.5 w-3.5" />
@@ -626,7 +628,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </Button>
                                     <Button
                                         size="sm"
-                                        className="flex-1 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative"
+                                        className="flex-1 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative"
                                         onClick={() => requireAuth(() => { loadGroups(); setViewState('groups'); })}
                                     >
                                         <Users className="h-3.5 w-3.5" />
@@ -643,7 +645,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     <EventCalendarButton />
                                     <Button
                                         size="sm"
-                                        className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative overflow-hidden animate-pulse shadow-lg shadow-amber-500/30"
+                                        className="flex-1 rounded-xl bg-linear-to-r from-amber-500 to-orange-600 border-0 gap-1.5 px-3 h-9 text-xs font-bold relative overflow-hidden animate-pulse shadow-lg shadow-amber-500/30"
                                         onClick={() => setGlobalActiveTab('games' as any)}
                                     >
                                         <Gamepad2 className="h-3.5 w-3.5" />
@@ -664,8 +666,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             }
                                         }}
                                     >
-                                        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-red-900/80 to-red-700/80 p-3 border border-red-500/30">
-                                            <div className="absolute inset-0 bg-gradient-to-r from-red-600/20 to-transparent animate-pulse" />
+                                        <div className="relative overflow-hidden rounded-2xl bg-linear-to-r from-red-900/80 to-red-700/80 p-3 border border-red-500/30">
+                                            <div className="absolute inset-0 bg-linear-to-r from-red-600/20 to-transparent animate-pulse" />
                                             <div className="relative flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
                                                     <div className="relative">
@@ -809,7 +811,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
                                 <TabsContent value="chat" className="mt-0 flex flex-col -mx-4 h-full">
-                                    <div className="relative flex-1 h-full" style={{ height: 'calc(100dvh - 210px)', minHeight: '400px' }}>
+                                    <div className="relative flex-1 h-full" style={{ height: 'calc(100dvh - 280px)', minHeight: '300px' }}>
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,
@@ -832,7 +834,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button
-                                            className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                            className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-linear-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
                                             onClick={() => {
                                                 if (!user) { setShowAuthPrompt(true); }
                                             }}
@@ -868,7 +870,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 /* Other tabs: direct dialog trigger */
                                 <DialogTrigger asChild>
                                     <Button
-                                        className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                        className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-linear-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
                                         onClick={() => {
                                             if (!user) { setShowAuthPrompt(true); return; }
                                             setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer');
@@ -880,7 +882,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </DialogTrigger>
                             )}
 
-                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem] max-h-[85vh] overflow-y-auto">
+                            <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-4xl max-h-[85vh] overflow-y-auto">
                                 <DialogHeader>
                                     <DialogTitle className="text-xl font-bold">
                                         {dialogType === 'prayer' ? 'Nouvelle demande de prière' : 'Nouveau témoignage'}
@@ -1001,7 +1003,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             onClick={() => setCreateGroupWithPrayer(!createGroupWithPrayer)}
                                         >
                                             <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600/30 to-teal-600/30 flex items-center justify-center">
+                                                <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-600/30 to-teal-600/30 flex items-center justify-center">
                                                     <Users className="h-5 w-5 text-emerald-400" />
                                                 </div>
                                                 <div>
@@ -1020,7 +1022,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                                     {/* Submit Button */}
                                     <Button
-                                        className="w-full h-14 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold text-lg"
+                                        className="w-full h-14 rounded-2xl bg-linear-to-r from-indigo-600 to-purple-600 font-bold text-lg"
                                         onClick={handlePublish}
                                         disabled={!newContent.trim() || isSubmitting}
                                     >
@@ -1046,7 +1048,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="relative z-10 flex flex-col h-[100dvh] pb-0 max-w-4xl mx-auto w-full overflow-x-hidden"
+                        className="relative z-10 flex flex-col h-dvh pb-0 max-w-4xl mx-auto w-full overflow-x-hidden"
                     >
                         <header className="px-4 sm:px-6 pt-12 pb-4">
                             <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
@@ -1068,7 +1070,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </div>
                                 <Button
                                     size="sm"
-                                    className="rounded-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold px-4 h-9 shadow-lg shadow-emerald-600/30 transition-all border-2 border-emerald-400/30 text-xs sm:text-sm w-full sm:w-auto"
+                                    className="rounded-full bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 font-bold px-4 h-9 shadow-lg shadow-emerald-600/30 transition-all border-2 border-emerald-400/30 text-xs sm:text-sm w-full sm:w-auto"
                                     onClick={() => setShowCreateGroupDialog(true)}
                                 >
                                     <Plus className="h-4 w-4 mr-1.5" />
@@ -1163,7 +1165,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                 setViewState('group-detail');
                                                             }}
                                                         >
-                                                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-indigo-600/30 to-purple-600/30 shrink-0">
+                                                            <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center bg-linear-to-br from-indigo-600/30 to-purple-600/30 shrink-0">
                                                                 <Users className="h-5 w-5 sm:h-7 sm:w-7 text-indigo-400" />
                                                             </div>
                                                             <div className="flex-1 min-w-0">
@@ -1182,10 +1184,10 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                         <Users className="h-3 w-3" />
                                                                         {group.memberCount || 0} membres
                                                                     </span>
-                                                                    {!group.isOpen && (
+                                                                    {!(group.isOpen ?? group.is_open ?? true) && (
                                                                         <span className="text-xs text-amber-400 flex items-center gap-1">
                                                                             <Lock className="h-3 w-3" />
-                                                                            Fermé
+                                                                            Privé
                                                                         </span>
                                                                     )}
                                                                 </div>
@@ -1214,8 +1216,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                                 className={cn(
                                                                     "w-full h-9 sm:h-10 rounded-xl font-bold text-sm",
                                                                     group.isOpen
-                                                                        ? "bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
-                                                                        : "bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
+                                                                        ? "bg-linear-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500"
+                                                                        : "bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
                                                                 )}
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
@@ -1273,9 +1275,9 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         exit={{ opacity: 0, x: -20 }}
-                        className="fixed inset-0 z-10 flex flex-col bg-gradient-to-b from-[#0a0d14] to-[#0F1219]"
+                        className="fixed inset-0 z-10 flex flex-col bg-linear-to-b from-[#0a0d14] to-[#0F1219]"
                     >
-                        <header className="px-3 sm:px-6 pt-12 pb-4 border-b border-white/5">
+                        <header className="px-3 sm:px-6 pt-12 pb-4 border-b border-white/5 shrink-0 max-h-[45vh] overflow-y-auto">
                             <div className="flex items-center gap-2 sm:gap-4 mb-4">
                                 <Button
                                     variant="ghost"
@@ -1300,7 +1302,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     </div>
                                     <p className="text-xs text-slate-500">
                                         {selectedGroup.memberCount || 0} membres
-                                        {!selectedGroup.isOpen && ' • Groupe fermé'}
+                                        {!(selectedGroup.isOpen ?? selectedGroup.is_open ?? true) && ' • Groupe privé'}
                                     </p>
                                 </div>
                                 <div className="flex gap-2">
@@ -1326,7 +1328,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     {/* Video Call Button */}
                                     <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                                         <Button
-                                            className="rounded-2xl bg-gradient-to-r from-green-600 to-emerald-600 shadow-lg shadow-green-600/30 border-0 gap-2 px-4 h-10"
+                                            className="rounded-2xl bg-linear-to-r from-green-600 to-emerald-600 shadow-lg shadow-green-600/30 border-0 gap-2 px-4 h-10"
                                             onClick={() => setViewState('group-call')}
                                         >
                                             <Video className="h-4 w-4" />
@@ -1384,15 +1386,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </div>
                             )}
 
-                            {/* Group Tools Panel */}
-                            <GroupToolsPanel
-                                groupId={selectedGroup.id}
-                                userId={user?.id || ''}
-                                userName={user?.name || 'Utilisateur'}
-                                isCreator={selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id}
-                                isOpen={showGroupTools}
-                                onClose={() => setShowGroupTools(false)}
-                            />
+                            {/* Group Tools Panel - rendered outside header below */}
 
                             {/* Members Panel (for creator) */}
                             <AnimatePresence>
@@ -1477,6 +1471,27 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 )}
                             </AnimatePresence>
                         </header>
+
+                        {/* Group Tools (outside header to prevent header overflow) */}
+                        <AnimatePresence>
+                            {showGroupTools && (
+                                <motion.div
+                                    initial={{ height: 0, opacity: 0 }}
+                                    animate={{ height: 'auto', opacity: 1 }}
+                                    exit={{ height: 0, opacity: 0 }}
+                                    className="overflow-hidden border-b border-white/5 max-h-[30vh] overflow-y-auto shrink-0"
+                                >
+                                    <GroupToolsPanel
+                                        groupId={selectedGroup.id}
+                                        userId={user?.id || ''}
+                                        userName={user?.name || 'Utilisateur'}
+                                        isCreator={selectedGroup.created_by === user?.id || selectedGroup.createdBy === user?.id}
+                                        isOpen={true}
+                                        onClose={() => setShowGroupTools(false)}
+                                    />
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
 
                         {/* Group Messages */}
                         <div
@@ -1758,7 +1773,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         <DialogDescription>Connectez-vous ou créez un compte pour interagir avec la communauté.</DialogDescription>
                     </DialogHeader>
                     <div className="p-8 text-center">
-                        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
+                        <div className="w-20 h-20 mx-auto mb-6 rounded-full bg-linear-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
                             <Lock className="w-10 h-10 text-white" />
                         </div>
                         <h3 className="text-xl font-black mb-2" aria-hidden="true">Connexion requise</h3>
@@ -1767,7 +1782,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         </p>
                         <div className="space-y-3">
                             <Button
-                                className="w-full h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 font-bold text-sm"
+                                className="w-full h-12 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 border-0 font-bold text-sm"
                                 onClick={() => { setShowAuthPrompt(false); setGlobalActiveTab('profile'); }}
                             >
                                 Se connecter / S&apos;inscrire
@@ -1786,7 +1801,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
             {/* ===== Create Group Dialog (global, always rendered) ===== */}
             <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
-                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[92vw] sm:max-w-md rounded-2xl sm:rounded-[2rem] max-h-[85vh] overflow-y-auto">
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[92vw] sm:max-w-md rounded-2xl sm:rounded-4xl max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
                         <DialogTitle className="text-xl font-bold">Créer un groupe de prière</DialogTitle>
                         <DialogDescription className="text-slate-400">
@@ -1816,8 +1831,46 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 className="min-h-[100px] bg-white/5 border-white/10 rounded-2xl resize-none"
                             />
                         </div>
+
+                        {/* Public / Private Toggle */}
+                        <div className="space-y-2">
+                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                                Visibilité du groupe
+                            </label>
+                            <div className="grid grid-cols-2 gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsGroupPublic(true)}
+                                    className={`flex items-center gap-2 p-3 rounded-xl border transition-all ${isGroupPublic
+                                        ? 'bg-green-500/15 border-green-500/50 ring-2 ring-green-500/30'
+                                        : 'bg-white/5 border-white/10 hover:bg-white/10'
+                                        }`}
+                                >
+                                    <Globe className={`h-5 w-5 ${isGroupPublic ? 'text-green-400' : 'text-slate-500'}`} />
+                                    <div className="text-left">
+                                        <p className={`text-sm font-bold ${isGroupPublic ? 'text-green-400' : 'text-slate-300'}`}>Public</p>
+                                        <p className="text-[10px] text-slate-500">Tout le monde peut rejoindre</p>
+                                    </div>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsGroupPublic(false)}
+                                    className={`flex items-center gap-2 p-3 rounded-xl border transition-all ${!isGroupPublic
+                                        ? 'bg-amber-500/15 border-amber-500/50 ring-2 ring-amber-500/30'
+                                        : 'bg-white/5 border-white/10 hover:bg-white/10'
+                                        }`}
+                                >
+                                    <Lock className={`h-5 w-5 ${!isGroupPublic ? 'text-amber-400' : 'text-slate-500'}`} />
+                                    <div className="text-left">
+                                        <p className={`text-sm font-bold ${!isGroupPublic ? 'text-amber-400' : 'text-slate-300'}`}>Privé</p>
+                                        <p className="text-[10px] text-slate-500">Approbation requise</p>
+                                    </div>
+                                </button>
+                            </div>
+                        </div>
+
                         <Button
-                            className="w-full h-12 rounded-2xl bg-gradient-to-r from-indigo-600 to-purple-600 font-bold"
+                            className="w-full h-12 rounded-2xl bg-linear-to-r from-indigo-600 to-purple-600 font-bold"
                             onClick={createGroup}
                             disabled={!newGroupName.trim() || creatingGroup}
                         >

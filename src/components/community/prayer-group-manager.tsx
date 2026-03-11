@@ -1038,14 +1038,14 @@ export function PrayerGroupManager({
                                 <div className={cn(
                                     "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0",
                                     existingGroup.is_urgent
-                                        ? "bg-gradient-to-br from-red-500 to-orange-500"
-                                        : "bg-gradient-to-br from-indigo-500 to-purple-500"
+                                        ? "bg-linear-to-br from-red-500 to-orange-500"
+                                        : "bg-linear-to-br from-indigo-500 to-purple-500"
                                 )}>
                                     <Users className="h-6 w-6 text-white" />
                                 </div>
                                 <div className="flex-1 min-w-0 w-full">
                                     <div className="flex items-center gap-1.5 flex-wrap">
-                                        <h4 className="font-semibold text-sm sm:text-base break-words">{existingGroup.name}</h4>
+                                        <h4 className="font-semibold text-sm sm:text-base wrap-break-word">{existingGroup.name}</h4>
                                         {existingGroup.is_urgent && (
                                             <Badge className="bg-red-500/20 text-red-400 text-[10px]">
                                                 URGENT
@@ -1059,7 +1059,7 @@ export function PrayerGroupManager({
                                         )}
                                     </div>
                                     {existingGroup.description && (
-                                        <p className="text-xs sm:text-sm text-slate-400 mt-1 line-clamp-2 break-words">{existingGroup.description}</p>
+                                        <p className="text-xs sm:text-sm text-slate-400 mt-1 line-clamp-2 wrap-break-word">{existingGroup.description}</p>
                                     )}
                                     <div className="flex items-center gap-2 sm:gap-3 mt-2 flex-wrap">
                                         <p className="text-[10px] sm:text-xs text-slate-500">
@@ -1219,7 +1219,7 @@ export function JoinPrayerGroupButton({
             </Button>
 
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogContent className="max-w-[92vw] sm:max-w-md bg-[#0F1219] border-white/10 text-white rounded-2xl sm:rounded-[2rem] max-h-[85vh] overflow-y-auto p-4 sm:p-6">
+                <DialogContent className="max-w-[92vw] sm:max-w-md bg-[#0F1219] border-white/10 text-white rounded-2xl sm:rounded-4xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
                     <DialogHeader>
                         <DialogTitle className="sr-only">Groupe de prière</DialogTitle>
                     </DialogHeader>

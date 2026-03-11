@@ -504,7 +504,7 @@ export default function SocialPage() {
             {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h2 className="text-2xl md:text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                    <h2 className="text-2xl md:text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                         Live & Réseaux Sociaux
                     </h2>
                     <p className="text-muted-foreground mt-1 text-sm">
@@ -563,7 +563,20 @@ export default function SocialPage() {
                         </div>
                         <Switch
                             checked={isLiveActive}
-                            onCheckedChange={setIsLiveActive}
+                            onCheckedChange={async (checked) => {
+                                setIsLiveActive(checked);
+                                // Immediately persist to Supabase
+                                try {
+                                    await supabase.from('app_settings').upsert(
+                                        { key: 'live_stream_active', value: checked.toString() },
+                                        { onConflict: 'key' }
+                                    );
+                                    toast.success(checked ? '🔴 Live activé!' : '⚫ Live désactivé!');
+                                } catch (e) {
+                                    toast.error('Erreur lors de la mise à jour du live');
+                                    setIsLiveActive(!checked); // revert
+                                }
+                            }}
                         />
                     </div>
 
@@ -759,7 +772,7 @@ export default function SocialPage() {
                                                             {formatDistanceToNow(new Date(comment.created_at), { addSuffix: true, locale: fr })}
                                                         </span>
                                                     </div>
-                                                    <p className="text-sm break-words">{comment.content}</p>
+                                                    <p className="text-sm wrap-break-word">{comment.content}</p>
                                                 </div>
                                                 <Button
                                                     variant="ghost"

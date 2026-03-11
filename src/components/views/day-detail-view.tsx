@@ -166,7 +166,7 @@ export function DayDetailView({ dayNumber: initialDay, onBack }: DayDetailViewPr
     if (!dayData) return null;
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-12 overflow-x-hidden">
+        <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-12 overflow-x-hidden">
             {/* Dynamic Background Glows */}
             <div className="fixed inset-0 overflow-hidden pointer-events-none">
                 <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] bg-purple-600/20 blur-[120px] rounded-full" />
@@ -283,7 +283,7 @@ export function DayDetailView({ dayNumber: initialDay, onBack }: DayDetailViewPr
                                 </div>
 
                                 {/* Practical Action */}
-                                <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
+                                <div className="p-4 rounded-xl bg-linear-to-br from-emerald-500/10 to-teal-500/10 border border-emerald-500/20">
                                     <h4 className="text-sm font-semibold text-emerald-400 uppercase tracking-wider mb-2 flex items-center gap-2">
                                         <CheckCircle2 className="w-4 h-4" />
                                         Action Pratique

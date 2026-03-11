@@ -169,7 +169,10 @@ export function VoiceSalon({ groupId, groupName, user, onClose }: VoiceSalonProp
                 analyserRef.current.getByteTimeDomainData(buf);
                 const rms = Math.sqrt(buf.reduce((sum, v) => sum + (v - 128) ** 2, 0) / buf.length);
                 const speaking = rms > 10;
-                if (speaking !== isSpeaking) setIsSpeaking(speaking);
+                setIsSpeaking(prev => {
+                    if (prev !== speaking) return speaking;
+                    return prev;
+                });
             }, 100);
         } catch { /* ignore */ }
     };
@@ -481,7 +484,7 @@ export function VoiceSalon({ groupId, groupName, user, onClose }: VoiceSalonProp
     const speakingMembers = members.filter((m) => m.is_speaking);
 
     return (
-        <div className="flex flex-col h-full bg-gradient-to-b from-slate-900 to-slate-950 rounded-2xl overflow-hidden border border-white/10">
+        <div className="flex flex-col h-full bg-linear-to-b from-slate-900 to-slate-950 rounded-2xl overflow-hidden border border-white/10">
 
             {/* ── Header ── */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-white/10 bg-slate-900/80 backdrop-blur-sm">
@@ -624,7 +627,7 @@ export function VoiceSalon({ groupId, groupName, user, onClose }: VoiceSalonProp
                     <Button
                         onClick={joinSalon}
                         disabled={isJoining}
-                        className="w-full h-12 rounded-xl bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold text-sm gap-2 shadow-lg shadow-green-500/20"
+                        className="w-full h-12 rounded-xl bg-linear-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold text-sm gap-2 shadow-lg shadow-green-500/20"
                     >
                         {isJoining ? (
                             <Loader2 className="h-5 w-5 animate-spin" />

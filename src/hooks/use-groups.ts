@@ -36,6 +36,7 @@ export function useGroups(user: UserInfo | null) {
     const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
     const [newGroupDescription, setNewGroupDescription] = useState('');
+    const [isGroupPublic, setIsGroupPublic] = useState(true);
     const [creatingGroup, setCreatingGroup] = useState(false);
 
     // Members panel
@@ -169,7 +170,7 @@ export function useGroups(user: UserInfo | null) {
         if (!user) return;
 
         const targetGroup = groups.find(g => g.id === groupId);
-        if (targetGroup?.isOpen) {
+        if (targetGroup?.isOpen ?? (targetGroup as any)?.is_open) {
             await joinGroup(groupId);
             return;
         }
@@ -344,7 +345,7 @@ export function useGroups(user: UserInfo | null) {
             const { data: rpcData, error: rpcError } = await supabase.rpc('create_prayer_group', {
                 group_name: trimmedName,
                 group_description: newGroupDescription.trim() || null,
-                is_public_group: true
+                is_public_group: isGroupPublic
             });
 
             if (rpcError) {
@@ -355,7 +356,7 @@ export function useGroups(user: UserInfo | null) {
                         name: trimmedName,
                         description: newGroupDescription.trim() || null,
                         created_by: user.id,
-                        is_open: true,
+                        is_open: isGroupPublic,
                         slug,
                         avatar_url: avatarUrl
                     })
@@ -384,6 +385,7 @@ export function useGroups(user: UserInfo | null) {
             toast.success('🙏 Groupe de prière créé avec succès!');
             setNewGroupName('');
             setNewGroupDescription('');
+            setIsGroupPublic(true);
             setShowCreateGroupDialog(false);
             if (groupId) {
                 setUserGroups(prev => [...prev, groupId!]);
@@ -394,7 +396,7 @@ export function useGroups(user: UserInfo | null) {
             toast.error("Erreur lors de la création du groupe");
         }
         setCreatingGroup(false);
-    }, [user, newGroupName, newGroupDescription, loadGroups]);
+    }, [user, newGroupName, newGroupDescription, isGroupPublic, loadGroups]);
 
     return {
         // State
@@ -416,6 +418,8 @@ export function useGroups(user: UserInfo | null) {
         setNewGroupName,
         newGroupDescription,
         setNewGroupDescription,
+        isGroupPublic,
+        setIsGroupPublic,
         creatingGroup,
 
         // Actions

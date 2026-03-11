@@ -264,17 +264,17 @@ export default function ContentPage() {
         <div className="space-y-6">
             {/* Header */}
             <div>
-                <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                <h2 className="text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                     Gestion du Contenu
                 </h2>
                 <p className="text-muted-foreground mt-1">
-                    Administrez le Programme 40 Jours et les Jeux Bibliques.
+                    Administrez le Programme spirituel et les Jeux Bibliques.
                 </p>
             </div>
 
             <Tabs defaultValue="program" className="space-y-4">
                 <TabsList className="bg-muted">
-                    <TabsTrigger value="program" className="data-[state=active]:bg-background">Programme 40 Jours</TabsTrigger>
+                    <TabsTrigger value="program" className="data-[state=active]:bg-background">Programme</TabsTrigger>
                     <TabsTrigger value="games" className="data-[state=active]:bg-background">Jeux & Quiz</TabsTrigger>
                 </TabsList>
 
@@ -303,7 +303,7 @@ export default function ContentPage() {
                                 <Button onClick={handleSeed} disabled={isSeeding} variant="outline">
                                     {isSeeding && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                                     <Settings className="mr-2 h-4 w-4" />
-                                    Initialiser (40 jours)
+                                    Initialiser le programme
                                 </Button>
                             )}
 
@@ -369,7 +369,7 @@ export default function ContentPage() {
                                                     <Calendar className="h-12 w-12 text-muted-foreground/50" />
                                                     <p className="text-muted-foreground">Aucun jour configuré</p>
                                                     <Button onClick={handleSeed} variant="outline">
-                                                        Initialiser avec 40 jours
+                                                        Initialiser le programme
                                                     </Button>
                                                 </div>
                                             </TableCell>

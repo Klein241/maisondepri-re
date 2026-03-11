@@ -1,7 +1,7 @@
 {
-  "name": "MAISON DE PRIERE - 40 Jours",
+  "name": "Maison de Prière",
   "short_name": "MaisonPriere",
-  "description": "MAISON DE PRIERE - Marathon spirituel de 40 jours de jeûne et prière",
+  "description": "Maison de Prière — Communauté de prière, Bible et partage spirituel",
   "start_url": "/",
   "id": "/",
   "display": "standalone",

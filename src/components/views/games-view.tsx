@@ -15,26 +15,16 @@ const MultiplayerManager = dynamic(() => import('@/components/games/multiplayer-
 const WordSearchGame = dynamic(() => import('@/components/games/word-search-game').then(m => ({ default: m.WordSearchGame })), { ssr: false });
 const ChronoGame = dynamic(() => import('@/components/games/chrono-game').then(m => ({ default: m.ChronoGame })), { ssr: false });
 const WhoAmIGame = dynamic(() => import('@/components/games/who-am-i-game').then(m => ({ default: m.WhoAmIGame })), { ssr: false });
-const LabyrinthGame = dynamic(() => import('@/components/games/labyrinth-game'), { ssr: false });
+
 
 interface GamesViewProps {
     onBack?: () => void;
 }
 
-type GameId = 'quiz' | 'memory' | 'word_search' | 'chrono' | 'who_am_i' | 'multiplayer' | 'multiplayer_groups' | 'labyrinth' | null;
+type GameId = 'quiz' | 'memory' | 'word_search' | 'chrono' | 'who_am_i' | 'multiplayer' | 'multiplayer_groups' | null;
 
 const GAME_CARDS = [
-    {
-        id: 'labyrinth' as GameId,
-        title: '🏰 Labyrinthes de la Foi',
-        subtitle: '10 aventures 3D • Offline',
-        description: 'Explorez des labyrinthes en 3D, répondez aux questions bibliques, collectez des gadgets !',
-        gradient: 'from-amber-600 via-orange-600 to-red-600',
-        glow: 'shadow-amber-500/40',
-        featured: true,
-        badge: '🆕 NOUVEAU',
-        badgeColor: 'bg-red-500',
-    },
+
     {
         id: 'quiz' as GameId,
         title: '📖 Quiz Biblique',
@@ -99,8 +89,7 @@ export function GamesView({ onBack }: GamesViewProps) {
     // ── Active game rendering ──
     if (activeGame) {
         switch (activeGame) {
-            case 'labyrinth':
-                return <LabyrinthGame onBack={() => setActiveGame(null)} />;
+
             case 'quiz':
                 return <BibleQuiz onBack={() => setActiveGame(null)} />;
             case 'memory':
@@ -123,7 +112,7 @@ export function GamesView({ onBack }: GamesViewProps) {
     const history = getGameHistory().slice(0, 5);
 
     return (
-        <div className="flex flex-col min-h-screen bg-gradient-to-b from-slate-900 via-slate-950 to-black text-white">
+        <div className="flex flex-col min-h-screen bg-linear-to-b from-slate-900 via-slate-950 to-black text-white">
             {/* Header */}
             <header className="px-4 pt-10 pb-4 shrink-0">
                 <div className="flex items-center gap-3 mb-4">
@@ -154,17 +143,17 @@ export function GamesView({ onBack }: GamesViewProps) {
                             <p className="text-lg font-black text-white">{stats.totalGamesPlayed}</p>
                             <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Parties</p>
                         </div>
-                        <div className="w-[1px] h-6 bg-white/10" />
+                        <div className="w-px h-6 bg-white/10" />
                         <div className="text-center">
                             <p className="text-lg font-black text-amber-400">{stats.bestScore}</p>
                             <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Record</p>
                         </div>
-                        <div className="w-[1px] h-6 bg-white/10" />
+                        <div className="w-px h-6 bg-white/10" />
                         <div className="text-center">
                             <p className="text-lg font-black text-indigo-400">{Math.floor(stats.totalTimeSeconds / 60)}m</p>
                             <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Temps</p>
                         </div>
-                        <div className="w-[1px] h-6 bg-white/10" />
+                        <div className="w-px h-6 bg-white/10" />
                         <div className="text-center">
                             <p className="text-lg font-black text-emerald-400">{stats.totalStars}⭐</p>
                             <p className="text-[9px] text-slate-500 uppercase tracking-wider font-bold">Étoiles</p>
@@ -185,7 +174,7 @@ export function GamesView({ onBack }: GamesViewProps) {
                         onClick={() => setActiveGame(game.id)}
                         className={`w-full text-left rounded-2xl overflow-hidden relative shadow-xl ${game.glow}`}
                     >
-                        <div className={`bg-gradient-to-r ${game.gradient} p-4 ${game.featured ? 'py-5' : ''}`}>
+                        <div className={`bg-linear-to-r ${game.gradient} p-4 ${game.featured ? 'py-5' : ''}`}>
                             {game.badge && (
                                 <span className={`absolute top-2 right-2 text-[9px] font-black px-2 py-0.5 rounded-full ${game.badgeColor} text-white animate-pulse`}>
                                     {game.badge}

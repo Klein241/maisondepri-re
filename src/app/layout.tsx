@@ -25,9 +25,15 @@ const crimsonPro = Crimson_Pro({
 });
 
 export const metadata: Metadata = {
-  title: "MAISON DE PRIERE - 40 Jours",
-  description: "MAISON DE PRIERE - Marathon spirituel de 40 jours de jeûne et prière.",
+  title: "Maison de Prière",
+  description: "Maison de Prière — Communauté de prière, Bible et partage spirituel.",
   manifest: "/manifest.json",
+  openGraph: {
+    title: "Maison de Prière",
+    description: "Communauté de prière, Bible et partage spirituel.",
+    images: ["/icon-512.png"],
+    type: "website",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -53,7 +59,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="fr" suppressHydrationWarning className="dark">
+    <html lang="fr" suppressHydrationWarning>
       <head>
         {/* Apple PWA support */}
         <link rel="apple-touch-icon" href="/icon-192.png" />
@@ -69,8 +75,8 @@ export default function RootLayout({
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark" // Force dark theme by default as per design
-          enableSystem={false}
+          defaultTheme="dark"
+          enableSystem={true}
           disableTransitionOnChange
         >
           <AuthListener />

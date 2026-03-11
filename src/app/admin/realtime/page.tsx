@@ -410,7 +410,7 @@ export default function RealtimeViewsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white">
+        <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white">
             {/* Header */}
             <header className="border-b border-white/5 bg-black/20 backdrop-blur-xl sticky top-0 z-40">
                 <div className="max-w-6xl mx-auto px-6 py-4">
@@ -468,7 +468,7 @@ export default function RealtimeViewsPage() {
             <main className="max-w-6xl mx-auto px-6 py-8">
                 {/* Stats Cards - Enhanced */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <Card className="bg-gradient-to-br from-green-600/20 to-green-600/5 border-green-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-green-600/20 to-green-600/5 border-green-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
@@ -483,7 +483,7 @@ export default function RealtimeViewsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-blue-600/20 to-blue-600/5 border-blue-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-blue-600/20 to-blue-600/5 border-blue-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-blue-500/20 flex items-center justify-center">
@@ -495,7 +495,7 @@ export default function RealtimeViewsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-pink-600/20 to-pink-600/5 border-pink-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-pink-600/20 to-pink-600/5 border-pink-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-pink-500/20 flex items-center justify-center">
@@ -507,7 +507,7 @@ export default function RealtimeViewsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-indigo-600/20 to-indigo-600/5 border-indigo-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-indigo-600/20 to-indigo-600/5 border-indigo-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-indigo-500/20 flex items-center justify-center">
@@ -522,7 +522,7 @@ export default function RealtimeViewsPage() {
 
                 {/* Secondary Stats Row */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-                    <Card className="bg-gradient-to-br from-emerald-600/20 to-emerald-600/5 border-emerald-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-emerald-600/20 to-emerald-600/5 border-emerald-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-emerald-500/20 flex items-center justify-center">
@@ -534,7 +534,7 @@ export default function RealtimeViewsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-purple-600/20 to-purple-600/5 border-purple-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-purple-600/20 to-purple-600/5 border-purple-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-purple-500/20 flex items-center justify-center">
@@ -546,7 +546,7 @@ export default function RealtimeViewsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-amber-600/20 to-amber-600/5 border-amber-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-amber-600/20 to-amber-600/5 border-amber-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
@@ -558,7 +558,7 @@ export default function RealtimeViewsPage() {
                         </CardContent>
                     </Card>
 
-                    <Card className="bg-gradient-to-br from-teal-600/20 to-teal-600/5 border-teal-500/10 rounded-2xl">
+                    <Card className="bg-linear-to-br from-teal-600/20 to-teal-600/5 border-teal-500/10 rounded-2xl">
                         <CardContent className="p-5">
                             <div className="flex items-center gap-3 mb-3">
                                 <div className="w-10 h-10 rounded-xl bg-teal-500/20 flex items-center justify-center">
@@ -638,7 +638,7 @@ export default function RealtimeViewsPage() {
                                                     >
                                                         {/* Icon */}
                                                         <div className={cn(
-                                                            "w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br",
+                                                            "w-10 h-10 rounded-xl flex items-center justify-center bg-linear-to-br",
                                                             getActivityColor(event.type)
                                                         )}>
                                                             {getActivityIcon(event.type)}

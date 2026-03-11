@@ -106,7 +106,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
                     <div className="bg-primary/10 p-2 rounded-lg">
                         <ShieldCheck className="h-5 w-5 md:h-6 md:w-6 text-primary" />
                     </div>
-                    <span className="bg-gradient-to-r from-white to-white/60 bg-clip-text text-transparent">Admin</span>
+                    <span className="bg-linear-to-r from-white to-white/60 bg-clip-text text-transparent">Admin</span>
                 </div>
             </div>
 
@@ -195,7 +195,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
             </div>
 
             <div className="mt-auto p-3 md:p-4 border-t bg-card/30">
-                <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-lg p-3 md:p-4 mb-3 md:mb-4 border border-white/5">
+                <div className="bg-linear-to-br from-indigo-500/10 to-purple-500/10 rounded-lg p-3 md:p-4 mb-3 md:mb-4 border border-white/5">
                     <div className="flex items-center gap-2 mb-2">
                         <Sparkles className="h-4 w-4 text-purple-400" />
                         <span className="text-xs font-semibold text-purple-200">Pro Tips</span>

@@ -213,12 +213,12 @@ export function NotificationListener() {
                     initial={{ opacity: 0, y: -100, scale: 0.9 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: -50, scale: 0.9 }}
-                    className="fixed z-[100] left-1/2 -translate-x-1/2 cursor-pointer"
+                    className="fixed z-100 left-1/2 -translate-x-1/2 cursor-pointer"
                     style={{ top: `${100 + index * 100}px` }}
                     onClick={() => navigateToContent(popup)}
                 >
                     <div className={`
-                        bg-gradient-to-br ${getGradient(popup.type)}
+                        bg-linear-to-br ${getGradient(popup.type)}
                         backdrop-blur-xl border rounded-2xl shadow-2xl
                         p-5 min-w-[320px] max-w-[420px]
                         hover:scale-105 transition-transform duration-200

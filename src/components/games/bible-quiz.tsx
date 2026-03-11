@@ -635,7 +635,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white overflow-hidden">
+        <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white overflow-hidden">
             {/* Background Effects */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden">
                 <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-indigo-600/10 blur-[150px] rounded-full" />
@@ -658,7 +658,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 <ArrowLeft className="h-6 w-6" />
                             </Button>
                             <div className="text-center">
-                                <div className="w-20 h-20 mx-auto mb-4 bg-gradient-to-br from-indigo-600 to-purple-600 rounded-3xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
+                                <div className="w-20 h-20 mx-auto mb-4 bg-linear-to-br from-indigo-600 to-purple-600 rounded-3xl flex items-center justify-center shadow-lg shadow-indigo-600/20">
                                     <span className="text-4xl">🧠</span>
                                 </div>
                                 <h1 className="text-3xl font-black mb-2">Quiz Biblique</h1>
@@ -674,7 +674,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 {/* Easy */}
                                 <Button
                                     variant="ghost"
-                                    className="w-full h-24 rounded-3xl bg-gradient-to-r from-emerald-600/20 to-emerald-600/10 border border-emerald-500/20 hover:border-emerald-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
+                                    className="w-full h-24 rounded-3xl bg-linear-to-r from-emerald-600/20 to-emerald-600/10 border border-emerald-500/20 hover:border-emerald-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
                                     onClick={() => selectDifficulty('easy')}
                                 >
                                     <div className="flex items-center gap-4 w-full">
@@ -692,7 +692,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 {/* Medium */}
                                 <Button
                                     variant="ghost"
-                                    className="w-full h-24 rounded-3xl bg-gradient-to-r from-amber-600/20 to-amber-600/10 border border-amber-500/20 hover:border-amber-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
+                                    className="w-full h-24 rounded-3xl bg-linear-to-r from-amber-600/20 to-amber-600/10 border border-amber-500/20 hover:border-amber-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
                                     onClick={() => selectDifficulty('medium')}
                                 >
                                     <div className="flex items-center gap-4 w-full">
@@ -710,7 +710,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 {/* Hard */}
                                 <Button
                                     variant="ghost"
-                                    className="w-full h-24 rounded-3xl bg-gradient-to-r from-red-600/20 to-red-600/10 border border-red-500/20 hover:border-red-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
+                                    className="w-full h-24 rounded-3xl bg-linear-to-r from-red-600/20 to-red-600/10 border border-red-500/20 hover:border-red-500/40 justify-start p-6 group transition-all hover:scale-[1.02]"
                                     onClick={() => selectDifficulty('hard')}
                                 >
                                     <div className="flex items-center gap-4 w-full">
@@ -734,12 +734,12 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                     <p className="text-2xl font-black text-white">6000</p>
                                     <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Questions</p>
                                 </div>
-                                <div className="w-[1px] h-8 bg-white/10" />
+                                <div className="w-px h-8 bg-white/10" />
                                 <div className="text-center">
                                     <p className="text-2xl font-black text-white">30</p>
                                     <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Niveaux</p>
                                 </div>
-                                <div className="w-[1px] h-8 bg-white/10" />
+                                <div className="w-px h-8 bg-white/10" />
                                 <div className="text-center">
                                     <p className="text-2xl font-black text-indigo-400">⭐</p>
                                     <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Étoiles</p>
@@ -793,7 +793,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                                 className={cn(
                                                     "rounded-2xl overflow-hidden cursor-pointer transition-all border",
                                                     isUnlocked
-                                                        ? `bg-gradient-to-br from-${colorClass}-600/20 to-${colorClass}-600/5 border-${colorClass}-500/20 hover:border-${colorClass}-500/40 hover:scale-[1.03]`
+                                                        ? `bg-linear-to-br from-${colorClass}-600/20 to-${colorClass}-600/5 border-${colorClass}-500/20 hover:border-${colorClass}-500/40 hover:scale-[1.03]`
                                                         : "bg-white/5 border-white/5 opacity-50",
                                                     prog?.completed && "ring-2 ring-amber-500/30"
                                                 )}
@@ -940,7 +940,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
 
                         {/* Question Card */}
                         <div className="flex-1 px-6 py-6">
-                            <Card className="bg-gradient-to-br from-white/5 to-white/[0.02] border-white/10 rounded-3xl overflow-hidden">
+                            <Card className="bg-linear-to-br from-white/5 to-white/2 border-white/10 rounded-3xl overflow-hidden">
                                 <CardContent className="p-6">
                                     <Badge variant="outline" className="mb-4 border-indigo-500/30 text-indigo-400">
                                         {config.label}
@@ -1042,7 +1042,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                                 initial={{ scale: 0, rotate: -180 }}
                                 animate={{ scale: 1, rotate: 0 }}
                                 transition={{ type: 'spring', stiffness: 200, damping: 15, delay: 0.2 }}
-                                className="w-28 h-28 mx-auto mb-6 bg-gradient-to-br from-amber-500 to-orange-600 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/30"
+                                className="w-28 h-28 mx-auto mb-6 bg-linear-to-br from-amber-500 to-orange-600 rounded-full flex items-center justify-center shadow-2xl shadow-amber-500/30"
                             >
                                 <span className="text-5xl">{getGrade().emoji}</span>
                             </motion.div>
@@ -1067,7 +1067,7 @@ export function BibleQuiz({ onBack, onSaveScore }: BibleQuizProps) {
                             <Card className="bg-white/5 border-white/10 rounded-3xl overflow-hidden mb-6">
                                 <CardContent className="p-6">
                                     <div className="text-center">
-                                        <p className="text-6xl font-black bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent mb-2">
+                                        <p className="text-6xl font-black bg-linear-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent mb-2">
                                             {score}
                                         </p>
                                         <p className="text-slate-500 font-medium">points</p>

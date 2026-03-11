@@ -133,7 +133,7 @@ export function GlobalLiveComments({ userId, userName }: {
                                 <div className="flex-1 min-w-0">
                                     <div className={cn("inline-block rounded-2xl px-3 py-2 max-w-full", c.is_pinned ? "bg-amber-500/10 border border-amber-500/20" : "bg-white/5")}>
                                         <span className="font-bold text-xs text-white">{c.profile?.full_name || 'Utilisateur'}</span>
-                                        <p className="text-sm text-slate-200 break-words">{c.content}</p>
+                                        <p className="text-sm text-slate-200 wrap-break-word">{c.content}</p>
                                     </div>
                                     <div className="flex items-center gap-3 mt-0.5 px-1">
                                         <span className="text-[10px] text-slate-600">
@@ -154,7 +154,7 @@ export function GlobalLiveComments({ userId, userName }: {
                                             <div className="flex-1 min-w-0">
                                                 <div className="inline-block rounded-2xl px-3 py-1.5 bg-white/3">
                                                     <span className="font-bold text-[11px] text-white">{r.profile?.full_name || 'Utilisateur'}</span>
-                                                    <p className="text-xs text-slate-300 break-words">{r.content}</p>
+                                                    <p className="text-xs text-slate-300 wrap-break-word">{r.content}</p>
                                                 </div>
                                                 {(r.user_id === userId || isAdmin) && (
                                                     <button onClick={() => handleDelete(r.id)} className="text-[9px] text-red-500/60 hover:text-red-400 opacity-0 group-hover/r:opacity-100 ml-2">Supprimer</button>
@@ -188,7 +188,7 @@ export function GlobalLiveComments({ userId, userName }: {
                 />
                 <Button
                     size="icon"
-                    className="h-10 w-10 rounded-full bg-gradient-to-r from-red-600 to-pink-600 shrink-0"
+                    className="h-10 w-10 rounded-full bg-linear-to-r from-red-600 to-pink-600 shrink-0"
                     onClick={handleSend}
                     disabled={!newComment.trim()}
                 >
@@ -309,7 +309,7 @@ export function GlobalLiveSalon({ platform, isPortrait, primaryUrl, backupUrl, u
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[100] flex flex-col bg-gradient-to-b from-[#050709] to-[#0a0d14]"
+            className="fixed inset-0 z-100 flex flex-col bg-linear-to-b from-[#050709] to-[#0a0d14]"
         >
             {/* Header */}
             <header className="flex items-center gap-2 px-3 pt-10 pb-2 border-b border-white/5 shrink-0">

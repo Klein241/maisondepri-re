@@ -75,7 +75,7 @@ export function JournalView() {
     }, {} as Record<string, typeof journalEntries>);
 
     return (
-        <div className="relative min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24">
+        <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24">
             {/* Ambient Background */}
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
                 <div className="absolute top-[-20%] right-[-20%] w-[60%] h-[60%] bg-pink-600/5 blur-[150px] rounded-full" />
@@ -89,7 +89,7 @@ export function JournalView() {
                     animate={{ opacity: 1, y: 0 }}
                     className="px-4 pt-10 pb-3"
                 >
-                    <h1 className="text-2xl font-black tracking-tight bg-gradient-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">Journal Spirituel</h1>
+                    <h1 className="text-2xl font-black tracking-tight bg-linear-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">Journal Spirituel</h1>
                     <p className="text-slate-500 text-xs font-medium mt-0.5">Vos réflexions et prières personnelles</p>
                 </motion.div>
 
@@ -145,7 +145,7 @@ export function JournalView() {
                     <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
                         <DialogTrigger asChild>
                             <Button
-                                className="rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 border-0 text-white shrink-0">
+                                className="rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 border-0 text-white shrink-0">
                                 <Plus className="w-4 h-4" />
                             </Button>
                         </DialogTrigger>

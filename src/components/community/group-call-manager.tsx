@@ -389,7 +389,7 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -20 }}
-                className="flex flex-col h-full bg-gradient-to-b from-slate-900 to-slate-950"
+                className="flex flex-col h-full bg-linear-to-b from-slate-900 to-slate-950"
             >
                 <div className="p-4 border-b border-white/10 flex items-center gap-3">
                     <Button variant="ghost" size="icon" onClick={() => setView('main')}>
@@ -513,7 +513,7 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
 
                         {/* Submit button */}
                         <Button
-                            className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl h-12"
+                            className="w-full bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl h-12"
                             onClick={scheduleCall}
                             disabled={isCreating || !scheduleTitle || !scheduleDate || !scheduleTime}
                         >
@@ -554,7 +554,7 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
                 <div className="grid grid-cols-2 gap-3">
                     {/* Instant Call Button */}
                     <Button
-                        className="h-20 rounded-2xl bg-gradient-to-br from-green-600/20 to-emerald-600/10 border border-green-500/20 hover:border-green-500/40 flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02]"
+                        className="h-20 rounded-2xl bg-linear-to-br from-green-600/20 to-emerald-600/10 border border-green-500/20 hover:border-green-500/40 flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02]"
                         variant="ghost"
                         onClick={createInstantMeeting}
                         disabled={isCreating}
@@ -569,7 +569,7 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
 
                     {/* Schedule Call Button */}
                     <Button
-                        className="h-20 rounded-2xl bg-gradient-to-br from-indigo-600/20 to-purple-600/10 border border-indigo-500/20 hover:border-indigo-500/40 flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02]"
+                        className="h-20 rounded-2xl bg-linear-to-br from-indigo-600/20 to-purple-600/10 border border-indigo-500/20 hover:border-indigo-500/40 flex flex-col items-center justify-center gap-2 transition-all hover:scale-[1.02]"
                         variant="ghost"
                         onClick={() => setView('schedule')}
                     >

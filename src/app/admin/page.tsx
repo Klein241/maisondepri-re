@@ -42,8 +42,8 @@ export default function AdminDashboardPage() {
         <div className="space-y-8 animate-in fade-in duration-500">
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">Tableau de Bord</h2>
-                    <p className="text-muted-foreground mt-1">Vue d'ensemble de l'activité du Marathon de Prière.</p>
+                    <h2 className="text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">Tableau de Bord</h2>
+                    <p className="text-muted-foreground mt-1">Vue d'ensemble de l'activité de Maison de Prière.</p>
                 </div>
                 <div className="flex items-center gap-2 text-sm bg-muted/50 px-3 py-1 rounded-full border">
                     <span className="relative flex h-2 w-2">
@@ -152,7 +152,7 @@ export default function AdminDashboardPage() {
             {/* Quick Actions */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <a href="/admin/moderation">
-                    <Card className="bg-gradient-to-br from-indigo-500/5 to-purple-500/5 border-indigo-500/20 hover:border-indigo-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
+                    <Card className="bg-linear-to-br from-indigo-500/5 to-purple-500/5 border-indigo-500/20 hover:border-indigo-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
                         <CardContent className="p-6 flex items-center gap-4">
                             <div className="bg-indigo-500/10 p-3 rounded-full group-hover:bg-indigo-500/20 transition-colors">
                                 <MessageSquare className="h-6 w-6 text-indigo-500" />
@@ -165,7 +165,7 @@ export default function AdminDashboardPage() {
                     </Card>
                 </a>
                 <a href="/admin/resources">
-                    <Card className="bg-gradient-to-br from-emerald-500/5 to-teal-500/5 border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
+                    <Card className="bg-linear-to-br from-emerald-500/5 to-teal-500/5 border-emerald-500/20 hover:border-emerald-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
                         <CardContent className="p-6 flex items-center gap-4">
                             <div className="bg-emerald-500/10 p-3 rounded-full group-hover:bg-emerald-500/20 transition-colors">
                                 <BookOpen className="h-6 w-6 text-emerald-500" />
@@ -178,7 +178,7 @@ export default function AdminDashboardPage() {
                     </Card>
                 </a>
                 <a href="/admin/realtime">
-                    <Card className="bg-gradient-to-br from-pink-500/5 to-rose-500/5 border-pink-500/20 hover:border-pink-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
+                    <Card className="bg-linear-to-br from-pink-500/5 to-rose-500/5 border-pink-500/20 hover:border-pink-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
                         <CardContent className="p-6 flex items-center gap-4">
                             <div className="bg-pink-500/10 p-3 rounded-full group-hover:bg-pink-500/20 transition-colors">
                                 <Activity className="h-6 w-6 text-pink-500" />
@@ -191,7 +191,7 @@ export default function AdminDashboardPage() {
                     </Card>
                 </a>
                 <a href="/admin/prayers">
-                    <Card className="bg-gradient-to-br from-amber-500/5 to-orange-500/5 border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
+                    <Card className="bg-linear-to-br from-amber-500/5 to-orange-500/5 border-amber-500/20 hover:border-amber-500/40 transition-all cursor-pointer group hover:scale-[1.02]">
                         <CardContent className="p-6 flex items-center gap-4">
                             <div className="bg-amber-500/10 p-3 rounded-full group-hover:bg-amber-500/20 transition-colors">
                                 <Heart className="h-6 w-6 text-amber-500" />

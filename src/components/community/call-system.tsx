@@ -116,7 +116,7 @@ export function IncomingCallOverlay({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[9999] bg-gradient-to-b from-slate-900/98 via-indigo-950/95 to-slate-900/98 backdrop-blur-xl flex flex-col items-center justify-center"
+            className="fixed inset-0 z-9999 bg-linear-to-b from-slate-900/98 via-indigo-950/95 to-slate-900/98 backdrop-blur-xl flex flex-col items-center justify-center"
         >
             {/* Animated background rings */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -163,7 +163,7 @@ export function IncomingCallOverlay({
                 >
                     <Avatar className="h-28 w-28 border-4 border-green-500/30 shadow-2xl shadow-green-500/20">
                         <AvatarImage src={call.callerAvatar} />
-                        <AvatarFallback className="bg-gradient-to-br from-indigo-600 to-purple-600 text-4xl font-bold text-white">
+                        <AvatarFallback className="bg-linear-to-br from-indigo-600 to-purple-600 text-4xl font-bold text-white">
                             {call.callerName?.[0] || 'U'}
                         </AvatarFallback>
                     </Avatar>

@@ -143,7 +143,7 @@ export function AddTestimonialDialog({ onSuccess, trigger }: AddTestimonialDialo
         <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
                 {trigger || (
-                    <Button className="bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl">
+                    <Button className="bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-xl">
                         <Plus className="h-4 w-4 mr-2" />
                         Nouveau témoignage
                     </Button>
@@ -227,7 +227,7 @@ export function AddTestimonialDialog({ onSuccess, trigger }: AddTestimonialDialo
 
                     {/* Submit Button */}
                     <Button
-                        className="w-full h-12 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
+                        className="w-full h-12 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500"
                         onClick={handleSubmit}
                         disabled={saving || uploading || !content.trim()}
                     >

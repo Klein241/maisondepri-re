@@ -299,7 +299,7 @@ export default function UsersPage() {
             {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                    <h2 className="text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                         Utilisateurs
                     </h2>
                     <p className="text-muted-foreground mt-1">
@@ -573,7 +573,7 @@ export default function UsersPage() {
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-9 w-9">
                                                     <AvatarImage src={user.avatar_url || undefined} />
-                                                    <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white text-xs">
+                                                    <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white text-xs">
                                                         {getInitials(user.full_name)}
                                                     </AvatarFallback>
                                                 </Avatar>

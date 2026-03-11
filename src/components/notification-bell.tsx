@@ -440,7 +440,7 @@ export function NotificationBell() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-9998"
                             onClick={() => setIsOpen(false)}
                         />
                         {/* Panel */}
@@ -449,7 +449,7 @@ export function NotificationBell() {
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -20, scale: 0.95 }}
                             transition={{ duration: 0.25 }}
-                            className="fixed top-16 left-3 right-3 sm:left-auto sm:right-4 sm:w-96 max-h-[75vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-[9999]"
+                            className="fixed top-16 left-3 right-3 sm:left-auto sm:right-4 sm:w-96 max-h-[75vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-9999"
                         >
                             {/* Header */}
                             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
@@ -521,7 +521,7 @@ export function NotificationBell() {
                                                 initial={{ opacity: 0, x: -10 }}
                                                 animate={{ opacity: 1, x: 0 }}
                                                 className={cn(
-                                                    "px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors border-b border-white/[0.03]",
+                                                    "px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors border-b border-white/3",
                                                     !notif.read
                                                         ? "bg-indigo-500/5 hover:bg-indigo-500/10"
                                                         : "hover:bg-white/5"

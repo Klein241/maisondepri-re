@@ -552,7 +552,7 @@ export function PrayerCard({
 
             {/* Testimony Dialog */}
             <Dialog open={showTestimonyDialog} onOpenChange={setShowTestimonyDialog}>
-                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-[2rem]">
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-md rounded-4xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
                             <Sparkles className="h-5 w-5 text-amber-500" />
@@ -599,7 +599,7 @@ export function PrayerCard({
 
             {/* Group Dialog */}
             <Dialog open={showGroupDialog} onOpenChange={setShowGroupDialog}>
-                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-2xl sm:rounded-[2rem] max-h-[85vh] overflow-y-auto">
+                <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-2xl sm:rounded-4xl max-h-[85vh] overflow-y-auto">
                     <PrayerGroupManager
                         prayerId={prayerId}
                         prayerContent={prayer.content}

@@ -165,7 +165,7 @@ export function EventCalendarButton({ groupId, groupName, className }: EventCale
                 <Button
                     onClick={() => setIsOpen(true)}
                     className={cn(
-                        "rounded-2xl bg-gradient-to-r from-orange-600 to-amber-600 shadow-lg shadow-orange-600/30 border-0 gap-2 px-3",
+                        "rounded-2xl bg-linear-to-r from-orange-600 to-amber-600 shadow-lg shadow-orange-600/30 border-0 gap-2 px-3",
                         className
                     )}
                 >
@@ -178,7 +178,7 @@ export function EventCalendarButton({ groupId, groupName, className }: EventCale
                 <DialogContent className="max-w-md max-h-[85vh] overflow-y-auto bg-[#0F1219] border-white/10 text-white">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2 text-lg">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500 to-amber-500 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-xl bg-linear-to-br from-orange-500 to-amber-500 flex items-center justify-center">
                                 <Calendar className="h-5 w-5 text-white" />
                             </div>
                             Créer un événement de prière
@@ -304,7 +304,7 @@ export function EventCalendarButton({ groupId, groupName, className }: EventCale
                         <Button
                             onClick={createGoogleCalendarEvent}
                             disabled={creating || !event.title.trim()}
-                            className="bg-gradient-to-r from-orange-600 to-amber-600 gap-2"
+                            className="bg-linear-to-r from-orange-600 to-amber-600 gap-2"
                         >
                             {creating ? (
                                 <Loader2 className="h-4 w-4 animate-spin" />

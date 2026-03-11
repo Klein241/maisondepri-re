@@ -390,7 +390,7 @@ export default function AdminGroupsPage() {
             {/* Header */}
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
-                    <h2 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                    <h2 className="text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                         Groupes de Prière
                     </h2>
                     <p className="text-muted-foreground mt-1">
@@ -584,7 +584,7 @@ export default function AdminGroupsPage() {
                                             <div className="flex items-center gap-3">
                                                 <div className={cn(
                                                     "w-10 h-10 rounded-full flex items-center justify-center text-white font-bold",
-                                                    group.is_urgent ? "bg-gradient-to-br from-red-500 to-orange-500" : "bg-gradient-to-br from-indigo-500 to-purple-500"
+                                                    group.is_urgent ? "bg-linear-to-br from-red-500 to-orange-500" : "bg-linear-to-br from-indigo-500 to-purple-500"
                                                 )}>
                                                     <Users className="h-5 w-5" />
                                                 </div>

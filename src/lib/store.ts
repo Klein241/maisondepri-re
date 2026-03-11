@@ -183,7 +183,7 @@ const defaultAchievements: Achievement[] = [
     {
         id: 'finisher',
         name: 'Finisseur',
-        description: 'Complétez les 40 jours du marathon',
+        description: 'Complétez le programme spirituel',
         icon: '🏆',
         requirement: { type: 'days_completed', count: 40 },
     },
@@ -635,6 +635,8 @@ export const useAppStore = create<AppState>()(
                             prayerContent: prayerReq?.content || '',
                             prayerUserName: user.name,
                             prayerId: requestId,
+                            actorId: user.id,
+                            actorAvatar: user.avatar,
                         }).catch(console.error);
                     }
 
@@ -644,6 +646,7 @@ export const useAppStore = create<AppState>()(
                         userName: user.name,
                         prayerContent: prayerReq?.content || '',
                         prayerId: requestId,
+                        actorAvatar: user.avatar,
                     }).catch(console.error);
                 } catch (e) {
                     console.error('Error in prayForRequest:', e);

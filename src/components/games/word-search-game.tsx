@@ -356,7 +356,7 @@ export function WordSearchGame({
         const allLevels = Array.from({ length: 30 }, (_, i) => i + 1);
 
         return (
-            <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#1a1f2e] text-white overflow-auto">
+            <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#1a1f2e] text-white overflow-auto">
                 {/* Header */}
                 <div className="sticky top-0 z-10 bg-[#0B0E14]/90 backdrop-blur-xl border-b border-white/10 p-4">
                     <div className="flex items-center justify-between max-w-lg mx-auto">
@@ -370,7 +370,7 @@ export function WordSearchGame({
 
                 <div className="max-w-lg mx-auto p-4 space-y-6">
                     {/* Progress overview */}
-                    <Card className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 p-4">
+                    <Card className="bg-linear-to-br from-indigo-500/10 to-purple-500/10 border-indigo-500/20 p-4">
                         <div className="flex items-center justify-between mb-2">
                             <h3 className="font-bold text-sm text-indigo-300">Progression globale</h3>
                             <Badge className="bg-indigo-500/20 text-indigo-400 text-xs">
@@ -379,7 +379,7 @@ export function WordSearchGame({
                         </div>
                         <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
                             <div
-                                className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                                className="h-full bg-linear-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
                                 style={{ width: `${(Object.values(prog.boards).filter(b => b.completed).length / 160) * 100}%` }}
                             />
                         </div>
@@ -419,7 +419,7 @@ export function WordSearchGame({
                                                 "p-3 border transition-all",
                                                 unlocked
                                                     ? "bg-white/5 border-white/10 hover:border-white/20 cursor-pointer"
-                                                    : "bg-white/[0.02] border-white/5 opacity-50"
+                                                    : "bg-white/2 border-white/5 opacity-50"
                                             )}
                                                 onClick={() => {
                                                     if (!unlocked) return;
@@ -507,7 +507,7 @@ export function WordSearchGame({
 
                     <div className="relative z-10 space-y-4">
                         {/* Trophy */}
-                        <div className="w-20 h-20 bg-gradient-to-br from-amber-300 to-orange-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-amber-500/30">
+                        <div className="w-20 h-20 bg-linear-to-br from-amber-300 to-orange-500 rounded-full flex items-center justify-center mx-auto shadow-lg shadow-amber-500/30">
                             <Trophy className="w-10 h-10 text-white" />
                         </div>
 
@@ -637,7 +637,7 @@ export function WordSearchGame({
     const timePercent = (timeRemaining / currentLevelConfig.timeLimitSeconds) * 100;
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#1a1f2e] text-white p-3 sm:p-4 flex flex-col items-center select-none">
+        <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#1a1f2e] text-white p-3 sm:p-4 flex flex-col items-center select-none">
             {/* Header */}
             <div className="w-full max-w-lg flex items-center justify-between mb-3">
                 <Button variant="ghost" size="sm" onClick={() => setViewMode('level_map')} className="text-slate-400 hover:text-white">

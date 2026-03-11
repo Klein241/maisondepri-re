@@ -205,26 +205,33 @@ export async function ensureUserProfile(userData: {
 }
 
 /**
- * Fetch Bible passage (replaces GET /api/bible)
- * Direct call to bible-api.com — no CORS issue since it allows all origins
+ * Fetch Bible passage — LOCAL ONLY (LSG)
+ * All data comes from /public/bible/ .txt files via unified-bible-api
  */
-export async function fetchBiblePassage(reference: string, translation: string = 'lsg'): Promise<any> {
+export async function fetchBiblePassage(reference: string, _translation: string = 'lsg'): Promise<any> {
     try {
-        const apiUrl = `https://bible-api.com/${encodeURIComponent(reference)}?translation=${translation}`;
-        const response = await fetch(apiUrl, {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-            },
-        });
+        // Use the local Bible service exclusively
+        const { bibleApi } = await import('./unified-bible-api');
+        const parsed = bibleApi.parseReference(reference);
+        if (!parsed) return null;
 
-        if (!response.ok) {
-            throw new Error(`Bible API returned ${response.status}`);
+        if (parsed.verseStart && parsed.verseEnd) {
+            const chapter = await bibleApi.getChapter(parsed.bookId, parsed.chapter);
+            if (!chapter) return null;
+            const selectedVerses = chapter.verses.filter(
+                v => v.verse! >= parsed.verseStart! && v.verse! <= parsed.verseEnd!
+            );
+            return {
+                reference: chapter.reference,
+                text: selectedVerses.map(v => `${v.verse}. ${v.text}`).join('\n'),
+                verses: selectedVerses
+            };
+        } else {
+            const chapter = await bibleApi.getChapter(parsed.bookId, parsed.chapter);
+            return chapter;
         }
-
-        return await response.json();
     } catch (e) {
-        console.error('[bible] Fetch error:', e);
+        console.error('[bible] Local fetch error:', e);
         return null;
     }
 }

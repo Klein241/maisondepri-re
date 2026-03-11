@@ -205,7 +205,7 @@ export function GroupPollWidget({ groupId, userId, userName, isCreator, onNotify
             {isCreator && (
                 <Button
                     size="sm"
-                    className="w-full rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 gap-2 h-9"
+                    className="w-full rounded-xl bg-linear-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 gap-2 h-9"
                     onClick={() => setShowCreatePoll(true)}
                 >
                     <BarChart3 className="h-4 w-4" />
@@ -304,7 +304,7 @@ export function GroupPollWidget({ groupId, userId, userName, isCreator, onNotify
                 <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center">
+                            <div className="w-9 h-9 rounded-xl bg-linear-to-br from-violet-500 to-purple-500 flex items-center justify-center">
                                 <BarChart3 className="h-4 w-4" />
                             </div>
                             Nouveau sondage
@@ -386,7 +386,7 @@ export function GroupPollWidget({ groupId, userId, userName, isCreator, onNotify
                         </div>
 
                         <Button
-                            className="w-full h-11 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 font-bold"
+                            className="w-full h-11 rounded-xl bg-linear-to-r from-violet-600 to-purple-600 font-bold"
                             onClick={createPoll}
                             disabled={creating || !newQuestion.trim() || newOptions.filter(o => o.trim()).length < 2}
                         >
@@ -498,10 +498,10 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
     const progress = Math.min((prayerCount / prayerGoal) * 100, 100);
 
     return (
-        <motion.div className="bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-3 sm:p-4 space-y-3">
+        <motion.div className="bg-linear-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-2xl p-3 sm:p-4 space-y-3">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                    <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center">
+                    <div className="w-8 h-8 rounded-xl bg-linear-to-br from-amber-500 to-orange-500 flex items-center justify-center">
                         <Heart className="h-4 w-4 text-white" />
                     </div>
                     <div>
@@ -520,7 +520,7 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
                     initial={{ width: 0 }}
                     animate={{ width: `${progress}%` }}
                     transition={{ duration: 1, ease: 'easeOut' }}
-                    className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full"
+                    className="h-full bg-linear-to-r from-amber-500 to-orange-500 rounded-full"
                 />
             </div>
 
@@ -530,7 +530,7 @@ export function CollectivePrayerCounter({ groupId, userId, userName }: PrayerCou
                         "w-full h-11 rounded-xl font-bold relative overflow-hidden",
                         userHasPrayed
                             ? "bg-emerald-600/20 text-emerald-400 border border-emerald-500/30"
-                            : "bg-gradient-to-r from-amber-500 to-orange-600 shadow-lg shadow-amber-500/20"
+                            : "bg-linear-to-r from-amber-500 to-orange-600 shadow-lg shadow-amber-500/20"
                     )}
                     onClick={addPrayer}
                     disabled={userHasPrayed}
@@ -707,7 +707,7 @@ export function GroupEventsWidget({ groupId, userId, userName, isCreator, onNoti
             {isCreator && (
                 <Button
                     size="sm"
-                    className="w-full rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 gap-2 h-9"
+                    className="w-full rounded-xl bg-linear-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 gap-2 h-9"
                     onClick={() => setShowCreate(true)}
                 >
                     <Calendar className="h-4 w-4" />
@@ -725,7 +725,7 @@ export function GroupEventsWidget({ groupId, userId, userName, isCreator, onNoti
                         className="bg-teal-500/5 border border-teal-500/20 rounded-2xl p-3 sm:p-4"
                     >
                         <div className="flex items-start gap-3">
-                            <div className="w-11 h-13 rounded-xl bg-gradient-to-br from-teal-500/20 to-cyan-500/20 flex flex-col items-center justify-center shrink-0 p-1">
+                            <div className="w-11 h-13 rounded-xl bg-linear-to-br from-teal-500/20 to-cyan-500/20 flex flex-col items-center justify-center shrink-0 p-1">
                                 <span className="text-[9px] text-teal-300 font-bold uppercase">
                                     {new Date(event.event_date + 'T00:00:00').toLocaleDateString('fr-FR', { month: 'short' })}
                                 </span>
@@ -783,7 +783,7 @@ export function GroupEventsWidget({ groupId, userId, userName, isCreator, onNoti
                 <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[95vw] sm:max-w-md rounded-2xl">
                     <DialogHeader>
                         <DialogTitle className="flex items-center gap-2">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
+                            <div className="w-9 h-9 rounded-xl bg-linear-to-br from-teal-500 to-cyan-500 flex items-center justify-center">
                                 <Calendar className="h-4 w-4" />
                             </div>
                             Nouvel événement
@@ -834,7 +834,7 @@ export function GroupEventsWidget({ groupId, userId, userName, isCreator, onNoti
                             </div>
                         </div>
                         <Button
-                            className="w-full h-11 rounded-xl bg-gradient-to-r from-teal-600 to-cyan-600 font-bold"
+                            className="w-full h-11 rounded-xl bg-linear-to-r from-teal-600 to-cyan-600 font-bold"
                             onClick={createEvent}
                             disabled={creating || !newTitle.trim() || !newDate}
                         >
@@ -1014,7 +1014,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
                 >
-                    <div className="bg-white/[0.02] border border-white/5 rounded-2xl p-3 sm:p-4 space-y-3 mt-3">
+                    <div className="bg-white/2 border border-white/5 rounded-2xl p-3 sm:p-4 space-y-3 mt-3">
                         {/* Tool grid */}
                         {activeSection === null ? (
                             <>
@@ -1048,7 +1048,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                             className="p-2.5 sm:p-3 rounded-xl bg-white/5 border border-white/10 hover:border-white/20 transition-all text-center space-y-1"
                                         >
                                             <div className={cn(
-                                                "w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-gradient-to-br mx-auto flex items-center justify-center",
+                                                "w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-linear-to-br mx-auto flex items-center justify-center",
                                                 tool.gradient
                                             )}>
                                                 <tool.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-white" />
@@ -1114,7 +1114,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                                     className="bg-white/5 border-white/10 rounded-xl min-h-[80px] resize-none text-sm"
                                                 />
                                                 <Button
-                                                    className="w-full h-9 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 font-bold text-xs"
+                                                    className="w-full h-9 rounded-xl bg-linear-to-r from-sky-500 to-blue-600 font-bold text-xs"
                                                     onClick={saveVerse}
                                                     disabled={!dailyVerse.trim()}
                                                 >
@@ -1159,7 +1159,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                                     className="bg-white/5 border-white/10 rounded-xl min-h-[80px] resize-none text-sm"
                                                 />
                                                 <Button
-                                                    className="w-full h-9 rounded-xl bg-gradient-to-r from-rose-500 to-pink-600 font-bold text-xs"
+                                                    className="w-full h-9 rounded-xl bg-linear-to-r from-rose-500 to-pink-600 font-bold text-xs"
                                                     onClick={saveAnnouncement}
                                                     disabled={!announcement.trim()}
                                                 >
@@ -1256,8 +1256,8 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                                                     <span className={cn(
                                                                         "text-xs font-bold shrink-0 w-8 h-8 rounded-lg flex items-center justify-center",
                                                                         day.day > programData.length
-                                                                            ? "bg-gradient-to-br from-orange-500 to-red-600 text-white"
-                                                                            : "bg-gradient-to-br from-lime-500 to-green-600 text-white"
+                                                                            ? "bg-linear-to-br from-orange-500 to-red-600 text-white"
+                                                                            : "bg-linear-to-br from-lime-500 to-green-600 text-white"
                                                                     )}>
                                                                         J{day.day}
                                                                     </span>
@@ -1279,7 +1279,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                                 {/* Add custom day button */}
                                                 {!showAddDay ? (
                                                     <Button
-                                                        className="w-full h-9 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 font-bold text-xs"
+                                                        className="w-full h-9 rounded-xl bg-linear-to-r from-orange-500 to-red-600 font-bold text-xs"
                                                         onClick={() => setShowAddDay(true)}
                                                     >
                                                         <PlusCircle className="h-3.5 w-3.5 mr-1.5" />
@@ -1341,7 +1341,7 @@ export function GroupToolsPanel({ groupId, userId, userName, isCreator, onClose,
                                                             className="bg-white/5 border-white/10 rounded-lg h-8 text-xs"
                                                         />
                                                         <Button
-                                                            className="w-full h-9 rounded-xl bg-gradient-to-r from-orange-500 to-red-600 font-bold text-xs"
+                                                            className="w-full h-9 rounded-xl bg-linear-to-r from-orange-500 to-red-600 font-bold text-xs"
                                                             onClick={addCustomDay}
                                                             disabled={!newDayTitle.trim() || !newDayTheme.trim()}
                                                         >

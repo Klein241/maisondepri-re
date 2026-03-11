@@ -196,7 +196,7 @@ export default function DayResourcesPage() {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#0F1219] text-white">
+        <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white">
             {/* Header */}
             <header className="border-b border-white/5 bg-black/20 backdrop-blur-xl sticky top-0 z-40">
                 <div className="max-w-6xl mx-auto px-6 py-4">

@@ -136,7 +136,7 @@ export function WhoAmIGame({
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-b from-[#0B0E14] to-[#1a1f2e] text-white p-6 flex flex-col items-center">
+        <div className="min-h-screen bg-linear-to-b from-[#0B0E14] to-[#1a1f2e] text-white p-6 flex flex-col items-center">
             <div className="w-full max-w-2xl flex items-center justify-between mb-8">
                 <Button variant="ghost" onClick={onBack}>
                     <ArrowLeft className="mr-2 h-4 w-4" /> Quitter

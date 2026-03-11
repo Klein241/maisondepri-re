@@ -1,0 +1,15 @@
+{
+    "name": "maisondepriere-notifications",
+    "version": "2.0.0",
+    "private": true,
+    "scripts": {
+        "dev": "npx wrangler dev",
+        "deploy": "npx wrangler deploy",
+        "tail": "npx wrangler tail"
+    },
+    "devDependencies": {
+        "@cloudflare/workers-types": "^4.20250301.0",
+        "wrangler": "^3.0.0",
+        "typescript": "^5.7.0"
+    }
+}

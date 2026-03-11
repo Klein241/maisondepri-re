@@ -256,7 +256,7 @@ export function EnhancedPrayerCard({
                                 {!prayer.is_anonymous && prayer.profiles?.avatar_url ? (
                                     <AvatarImage src={prayer.profiles.avatar_url} />
                                 ) : null}
-                                <AvatarFallback className="bg-gradient-to-br from-indigo-500 to-purple-500 text-white">
+                                <AvatarFallback className="bg-linear-to-br from-indigo-500 to-purple-500 text-white">
                                     {prayer.is_anonymous ? '?' : getInitials(prayer.profiles?.full_name ?? null)}
                                 </AvatarFallback>
                             </Avatar>

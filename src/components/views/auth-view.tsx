@@ -131,7 +131,7 @@ export function AuthView() {
     };
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-spiritual via-primary to-spiritual/80">
+        <div className="min-h-screen flex items-center justify-center p-4 bg-linear-to-br from-spiritual via-primary to-spiritual/80">
             <motion.div
                 initial={{ opacity: 0, scale: 0.9 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -148,8 +148,8 @@ export function AuthView() {
                         >
                             🙏
                         </motion.div>
-                        <CardTitle className="text-2xl font-bold bg-gradient-to-r from-primary to-spiritual bg-clip-text text-transparent">
-                            Marathon de Prière
+                        <CardTitle className="text-2xl font-bold bg-linear-to-r from-primary to-spiritual bg-clip-text text-transparent">
+                            Maison de Prière
                         </CardTitle>
                         <CardDescription>
                             Connectez-vous simplement avec votre numéro WhatsApp
