@@ -26,6 +26,7 @@ import {
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { GamesManager } from '@/components/admin/games-manager';
+import { LibraryManager } from '@/components/admin/library-manager';
 
 interface DayData {
     id?: string;
@@ -268,13 +269,14 @@ export default function ContentPage() {
                     Gestion du Contenu
                 </h2>
                 <p className="text-muted-foreground mt-1">
-                    Administrez le Programme spirituel et les Jeux Bibliques.
+                    Administrez le Programme spirituel, les Jeux Bibliques et la Bibliothèque.
                 </p>
             </div>
 
             <Tabs defaultValue="program" className="space-y-4">
                 <TabsList className="bg-muted">
                     <TabsTrigger value="program" className="data-[state=active]:bg-background">Programme</TabsTrigger>
+                    <TabsTrigger value="library" className="data-[state=active]:bg-background">📚 Bibliothèque</TabsTrigger>
                     <TabsTrigger value="games" className="data-[state=active]:bg-background">Jeux & Quiz</TabsTrigger>
                 </TabsList>
 
@@ -667,6 +669,10 @@ export default function ContentPage() {
                             </DialogFooter>
                         </DialogContent>
                     </Dialog>
+                </TabsContent>
+
+                <TabsContent value="library">
+                    <LibraryManager />
                 </TabsContent>
 
                 <TabsContent value="games">
