@@ -1,14 +1,14 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import { BottomNav } from '@/components/bottom-nav';
 import { useAppStore } from '@/lib/store';
 import { TabType } from '@/lib/types';
+import { AppTutorial, useTutorial } from '@/components/app-tutorial';
 
 // Dynamic imports to prevent TDZ errors in production bundles
-// Each view loads in its own chunk, preventing circular dependency issues
 const HomeView = dynamic(() => import('@/components/views/home-view').then(m => ({ default: m.HomeView })), { ssr: false });
 const ProgramView = dynamic(() => import('@/components/views/program-view').then(m => ({ default: m.ProgramView })), { ssr: false });
 const DayDetailView = dynamic(() => import('@/components/views/day-detail-view').then(m => ({ default: m.DayDetailView })), { ssr: false });
@@ -16,7 +16,7 @@ const BibleView = dynamic(() => import('@/components/views/bible-view').then(m =
 const JournalView = dynamic(() => import('@/components/views/journal-view').then(m => ({ default: m.JournalView })), { ssr: false });
 const CommunityView = dynamic(() => import('@/components/views/community-view').then(m => ({ default: m.CommunityView })), { ssr: false });
 const ProfileView = dynamic(() => import('@/components/views/profile-view').then(m => ({ default: m.ProfileView })), { ssr: false });
-const GamesView = dynamic(() => import('@/components/views/games-view').then(m => ({ default: m.GamesView })), { ssr: false });
+const LibraryView = dynamic(() => import('@/components/views/library-view').then(m => ({ default: m.LibraryView })), { ssr: false });
 const AuthView = dynamic(() => import('@/components/views/auth-view').then(m => ({ default: m.AuthView })), { ssr: false });
 
 // Splash screen component
@@ -71,6 +71,7 @@ export default function Home() {
   const { user, isHydrated, activeTab, setActiveTab, selectedDay, setSelectedDay } = useAppStore();
   const [showSplash, setShowSplash] = useState(true);
   const [hideNav, setHideNav] = useState(false);
+  const { showTutorial, setShowTutorial } = useTutorial();
 
   const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
 
@@ -172,8 +173,8 @@ export default function Home() {
         return <JournalView />;
       case 'community':
         return <CommunityView onHideNav={handleHideNav} />;
-      case 'games':
-        return <GamesView />;
+      case 'library':
+        return <LibraryView />;
       case 'profile':
         return <ProfileView />;
       default:
@@ -199,6 +200,13 @@ export default function Home() {
           onTabChange={setActiveTab}
         />
       )}
+
+      {/* App tutorial - shown on first visit */}
+      <AnimatePresence>
+        {showTutorial && (
+          <AppTutorial onComplete={() => setShowTutorial(false)} />
+        )}
+      </AnimatePresence>
     </main>
   );
 }

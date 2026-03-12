@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, BookOpen, User, MessageSquare, Gamepad2 } from 'lucide-react';
+import { Home, BookOpen, User, MessageSquare, BookMarked } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
 
@@ -13,7 +13,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     const navItems: { id: TabType; icon: any; label: string; color?: string }[] = [
         { id: 'home', icon: Home, label: 'Accueil' },
         { id: 'community', icon: MessageSquare, label: 'Messages', color: 'indigo' },
-        { id: 'games', icon: Gamepad2, label: 'Jeux', color: 'emerald' },
+        { id: 'library', icon: BookMarked, label: 'Livres', color: 'emerald' },
         { id: 'bible', icon: BookOpen, label: 'Bible' },
         { id: 'profile', icon: User, label: 'Profil' },
     ];

@@ -146,10 +146,13 @@ ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen TIMESTAMPTZ;
 -- 6. GRANT realtime access for new columns
 -- ==========================================
 
--- Ensure realtime is enabled for the tables with new columns
-ALTER PUBLICATION supabase_realtime ADD TABLE direct_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE prayer_group_messages;
-ALTER PUBLICATION supabase_realtime ADD TABLE group_prayer_counter;
+-- Safely add tables to realtime (ignore if already added)
+DO $$
+BEGIN
+    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE direct_messages; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE prayer_group_messages; EXCEPTION WHEN OTHERS THEN NULL; END;
+    BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE group_prayer_counter; EXCEPTION WHEN OTHERS THEN NULL; END;
+END $$;
 
 -- ==========================================
 -- DONE! All errors should now be fixed:
