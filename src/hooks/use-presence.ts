@@ -107,9 +107,11 @@ export function usePresence(userId: string | undefined) {
         const handleVisibilityChange = () => {
             if (document.visibilityState === 'visible') {
                 setOnline();
+                fetchOnlineUsers(); // Re-fetch when tab becomes visible
             } else {
+                // Set OFFLINE when tab is hidden (not just updating last_seen)
                 supabase.from('profiles')
-                    .update({ last_seen: new Date().toISOString() })
+                    .update({ is_online: false, last_seen: new Date().toISOString() })
                     .eq('id', userId)
                     .then(() => { });
             }
@@ -118,31 +120,39 @@ export function usePresence(userId: string | undefined) {
 
         // Handle browser/tab close - set offline immediately
         const handleBeforeUnload = () => {
-            if (navigator.sendBeacon) {
-                const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-                const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-                if (supabaseUrl && supabaseKey) {
-                    const payload = JSON.stringify({
-                        is_online: false,
-                        last_seen: new Date().toISOString()
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+            if (supabaseUrl && supabaseKey) {
+                // Use fetch with keepalive — sendBeacon can't set auth headers
+                try {
+                    fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}`, {
+                        method: 'PATCH',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'apikey': supabaseKey,
+                            'Authorization': `Bearer ${supabaseKey}`,
+                            'Prefer': 'return=minimal'
+                        },
+                        body: JSON.stringify({
+                            is_online: false,
+                            last_seen: new Date().toISOString()
+                        }),
+                        keepalive: true
                     });
-                    const url = `${supabaseUrl}/rest/v1/profiles?id=eq.${userId}`;
-                    const blob = new Blob([payload], { type: 'application/json' });
-                    navigator.sendBeacon(url, blob);
+                } catch (e) {
+                    // Ignore — browser is closing
                 }
-            }
-
-            try {
-                setOffline();
-            } catch (e) {
-                // Ignore
             }
         };
         window.addEventListener('beforeunload', handleBeforeUnload);
 
+        // Periodic re-fetch to catch stale users (every 60s)
+        const onlineRefreshInterval = setInterval(fetchOnlineUsers, 60000);
+
         // Cleanup on unmount
         return () => {
             clearInterval(heartbeatInterval);
+            clearInterval(onlineRefreshInterval);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             window.removeEventListener('beforeunload', handleBeforeUnload);
             setOffline();

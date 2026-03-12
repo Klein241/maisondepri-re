@@ -677,26 +677,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     // Load group members with online status
     const loadGroupMembers = async (groupId: string) => {
         try {
-            // Try embedded join first
-            const { data, error } = await supabase
-                .from('prayer_group_members')
-                .select('user_id, role, profiles:user_id(id, full_name, avatar_url, is_online)')
-                .eq('group_id', groupId);
-
-            if (!error && data && data.length > 0 && data[0]?.profiles) {
-                const members: GroupMember[] = data.map((m: any) => ({
-                    id: m.profiles?.id || m.user_id,
-                    full_name: m.profiles?.full_name || 'Utilisateur',
-                    avatar_url: m.profiles?.avatar_url || null,
-                    is_online: m.profiles?.is_online || onlineUsers[m.user_id] || false,
-                    role: m.role || 'member',
-                }));
-                setGroupMembers(members);
-                return;
-            }
-
-            // Fallback: separate queries when embedded joins fail (RLS issues)
-            console.log('[loadGroupMembers] Embedded join failed or returned empty profiles, using fallback');
+            // Direct separate queries (embedded join fails — no FK between tables)
             const { data: memberRows, error: memberError } = await supabase
                 .from('prayer_group_members')
                 .select('user_id, role')

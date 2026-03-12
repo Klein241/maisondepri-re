@@ -41,6 +41,9 @@ import {
     CheckCircle2,
     UserCheck,
     Heart,
+    MessageCircle,
+    Trash2,
+    ExternalLink,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { motion } from "framer-motion"
@@ -617,45 +620,63 @@ export function ProfileView() {
                                     ) : myGroups.length === 0 ? (
                                         <p className="text-center text-xs text-slate-500 py-4">Aucun groupe trouvé</p>
                                     ) : (
-                                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                                        <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
                                             {myGroups.map((group: any) => (
                                                 <div
                                                     key={group.id}
-                                                    className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/30 transition-all"
+                                                    className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-indigo-500/30 transition-all flex flex-col items-center text-center gap-2"
                                                 >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${group.is_urgent
-                                                            ? 'bg-linear-to-br from-red-500 to-orange-500'
-                                                            : 'bg-linear-to-br from-indigo-500 to-purple-500'
-                                                            }`}>
-                                                            {group.avatar_url ? (
-                                                                <img src={group.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
-                                                            ) : (
-                                                                <Users className="h-4 w-4 text-white" />
-                                                            )}
-                                                        </div>
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="flex items-center gap-1.5">
-                                                                <p className="text-sm font-medium text-white truncate">{group.name}</p>
-                                                                {group.role === 'admin' && (
-                                                                    <Crown className="h-3 w-3 text-amber-400 shrink-0" />
-                                                                )}
-                                                            </div>
-                                                            <p className="text-[10px] text-slate-400">
-                                                                {group.member_count} membre{group.member_count !== 1 ? 's' : ''}
-                                                                {group.role === 'admin' ? ' • Admin' : ' • Membre'}
-                                                            </p>
-                                                        </div>
-                                                        {/* Prayer answered button for prayer request groups */}
-                                                        {group.role === 'admin' && group.prayer_request_id && (
+                                                    <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${group.is_urgent
+                                                        ? 'bg-linear-to-br from-red-500 to-orange-500'
+                                                        : 'bg-linear-to-br from-indigo-500 to-purple-500'
+                                                        }`}>
+                                                        {group.avatar_url ? (
+                                                            <img src={group.avatar_url} alt="" className="w-full h-full rounded-full object-cover" />
+                                                        ) : (
+                                                            <Users className="h-5 w-5 text-white" />
+                                                        )}
+                                                    </div>
+                                                    <div className="min-w-0 w-full">
+                                                        <p className="text-xs font-medium text-white truncate">{group.name}</p>
+                                                        <p className="text-[10px] text-slate-400">
+                                                            {group.member_count} membre{group.member_count !== 1 ? 's' : ''}
+                                                            {group.role === 'admin' && <Crown className="inline h-2.5 w-2.5 text-amber-400 ml-1" />}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex gap-1.5 w-full">
+                                                        <Button
+                                                            size="sm"
+                                                            variant="ghost"
+                                                            className="flex-1 h-7 text-[10px] text-indigo-400 hover:bg-indigo-500/10 px-1"
+                                                            onClick={() => {
+                                                                // Navigate to chat with this group
+                                                                const { setActiveTab } = useAppStore.getState();
+                                                                setActiveTab('chat');
+                                                            }}
+                                                        >
+                                                            <ExternalLink className="h-3 w-3 mr-0.5" />
+                                                            Accéder
+                                                        </Button>
+                                                        {group.role === 'admin' && (
                                                             <Button
                                                                 size="sm"
                                                                 variant="ghost"
-                                                                className="h-7 text-[10px] text-green-400 hover:bg-green-500/10 hover:text-green-300 px-2"
-                                                                onClick={() => handlePrayerAnswered(group.id, group.name)}
+                                                                className="flex-1 h-7 text-[10px] text-red-400 hover:bg-red-500/10 px-1"
+                                                                onClick={async () => {
+                                                                    if (!window.confirm(`Supprimer le groupe "${group.name}" ? Cette action est irréversible.`)) return;
+                                                                    try {
+                                                                        await supabase.from('prayer_group_members').delete().eq('group_id', group.id);
+                                                                        await supabase.from('prayer_group_messages').delete().eq('group_id', group.id);
+                                                                        await supabase.from('prayer_groups').delete().eq('id', group.id);
+                                                                        setMyGroups(prev => prev.filter(g => g.id !== group.id));
+                                                                        toast.success('Groupe supprimé');
+                                                                    } catch (e) {
+                                                                        toast.error('Erreur lors de la suppression');
+                                                                    }
+                                                                }}
                                                             >
-                                                                <CheckCircle2 className="h-3 w-3 mr-1" />
-                                                                Exaucée
+                                                                <Trash2 className="h-3 w-3 mr-0.5" />
+                                                                Supprimer
                                                             </Button>
                                                         )}
                                                     </div>
@@ -710,31 +731,82 @@ export function ProfileView() {
                                     ) : myFriends.length === 0 ? (
                                         <p className="text-center text-xs text-slate-500 py-4">Aucun ami pour le moment</p>
                                     ) : (
-                                        myFriends.map((friend: any) => (
-                                            <div
-                                                key={friend.id}
-                                                className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-pink-500/30 transition-all flex items-center gap-3"
-                                            >
-                                                <div className="relative">
-                                                    <Avatar className="h-10 w-10 border border-white/10">
-                                                        <AvatarImage src={friend.avatar_url} />
-                                                        <AvatarFallback className="bg-pink-500/20 text-pink-300 text-xs">
-                                                            {(friend.full_name || '?').substring(0, 2).toUpperCase()}
-                                                        </AvatarFallback>
-                                                    </Avatar>
-                                                    {friend.is_online && (
-                                                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0F1219]" />
-                                                    )}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm font-medium text-white truncate">{friend.full_name || 'Utilisateur'}</p>
-                                                    <p className="text-[10px] text-slate-400">
-                                                        {friend.is_online ? '🟢 En ligne' : friend.last_seen ? `Vu ${formatDistanceToNow(new Date(friend.last_seen), { addSuffix: true, locale: fr })}` : 'Hors ligne'}
-                                                    </p>
-                                                </div>
-                                                <UserCheck className="h-4 w-4 text-pink-400 shrink-0" />
-                                            </div>
-                                        ))
+                                        <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto pr-1">
+                                            {myFriends.map((friend: any) => {
+                                                // Double-check online: must have last_seen within 2 minutes
+                                                const lastSeenTime = friend.last_seen ? new Date(friend.last_seen).getTime() : 0;
+                                                const isReallyOnline = friend.is_online === true && lastSeenTime > (Date.now() - 2 * 60 * 1000);
+                                                return (
+                                                    <div
+                                                        key={friend.id}
+                                                        className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-pink-500/30 transition-all flex flex-col items-center text-center gap-2"
+                                                    >
+                                                        <div className="relative">
+                                                            <Avatar className="h-12 w-12 border border-white/10">
+                                                                <AvatarImage src={friend.avatar_url} />
+                                                                <AvatarFallback className="bg-pink-500/20 text-pink-300 text-xs">
+                                                                    {(friend.full_name || '?').substring(0, 2).toUpperCase()}
+                                                                </AvatarFallback>
+                                                            </Avatar>
+                                                            {isReallyOnline && (
+                                                                <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0F1219]" />
+                                                            )}
+                                                        </div>
+                                                        <div className="min-w-0 w-full">
+                                                            <p className="text-xs font-medium text-white truncate">{friend.full_name || 'Utilisateur'}</p>
+                                                            <p className="text-[9px] text-slate-400">
+                                                                {isReallyOnline ? '🟢 En ligne' : friend.last_seen ? `Vu ${formatDistanceToNow(new Date(friend.last_seen), { addSuffix: true, locale: fr })}` : 'Hors ligne'}
+                                                            </p>
+                                                        </div>
+                                                        <div className="flex gap-1.5 w-full">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="flex-1 h-7 text-[10px] text-pink-400 hover:bg-pink-500/10 px-1"
+                                                                onClick={() => {
+                                                                    const { setActiveTab } = useAppStore.getState();
+                                                                    setActiveTab('chat');
+                                                                }}
+                                                            >
+                                                                <MessageCircle className="h-3 w-3 mr-0.5" />
+                                                                Discuter
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="ghost"
+                                                                className="flex-1 h-7 text-[10px] text-indigo-400 hover:bg-indigo-500/10 px-1"
+                                                                onClick={async () => {
+                                                                    try {
+                                                                        const groupName = `${user?.name || 'Moi'} & ${friend.full_name}`;
+                                                                        const { data, error } = await supabase
+                                                                            .from('prayer_groups')
+                                                                            .insert({
+                                                                                name: groupName,
+                                                                                created_by: user?.id,
+                                                                                description: `Groupe privé`,
+                                                                            })
+                                                                            .select()
+                                                                            .single();
+                                                                        if (error) throw error;
+                                                                        // Add both members
+                                                                        await supabase.from('prayer_group_members').insert([
+                                                                            { group_id: data.id, user_id: user?.id, role: 'admin' },
+                                                                            { group_id: data.id, user_id: friend.id, role: 'member' },
+                                                                        ]);
+                                                                        toast.success(`Groupe "${groupName}" créé !`);
+                                                                    } catch (e) {
+                                                                        toast.error('Erreur lors de la création du groupe');
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <Users className="h-3 w-3 mr-0.5" />
+                                                                Groupe
+                                                            </Button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     )}
                                 </motion.div>
                             )}
