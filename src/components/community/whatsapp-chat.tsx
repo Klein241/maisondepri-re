@@ -34,6 +34,7 @@ import { useAppStore } from '@/lib/store';
 import { cacheMessages, getCachedGroupMessages, getCachedConversationMessages, evictOldMedia, CachedMessage } from '@/lib/local-storage-service';
 import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUser, WhatsAppChatProps, GameSession } from './chat-types';
 import { VoiceMessagePlayer } from './voice-message-player';
+import { BibleShareDialog } from './bible-share-dialog';
 
 export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
     // View State
@@ -105,6 +106,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const [bibleContent, setBibleContent] = useState('');
     const [bibleVersion, setBibleVersion] = useState('LSG');
     const [isFetchingBible, setIsFetchingBible] = useState(false);
+    const [showBibleShareDialog, setShowBibleShareDialog] = useState(false);
 
     // Fasting program tool state
     const [showFastingTool, setShowFastingTool] = useState(false);
@@ -176,6 +178,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         players: string[];
     } | null>(null);
     const [hasQuitGame, setHasQuitGame] = useState(false);
+
+    // Create group dialog state (replaces window.prompt)
+    const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [isCreatingGroup, setIsCreatingGroup] = useState(false);
+
+    // Pagination state for loading older messages
+    const [hasMoreMessages, setHasMoreMessages] = useState(false);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
 
     // Group message polling fallback ref
     const groupPollRef = useRef<NodeJS.Timeout | null>(null);
@@ -417,9 +428,35 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             is_read: true
                         }];
                     });
+
+                    // Messenger-style: increment badge for admin tool messages
+                    const isAdminTool = msg.content?.includes('📢') || msg.content?.includes('📌')
+                        || msg.content?.includes('📅') || msg.content?.includes('🕐')
+                        || msg.content?.includes('**ANNONCE') || msg.content?.includes('**ÉVÉNEMENT')
+                        || msg.content?.includes('**SUJET DE PRIÈRE');
+                    if (isAdminTool) {
+                        setGroupToolUnread(prev => prev + 1);
+                    }
                 } else if (!currentGroup) {
-                    // User is on the list view — reload groups to update last message
+                    // User is on the list view — update groups + show toast
                     loadGroups();
+                    // Messenger-style toast for messages in other groups
+                    const { data: senderProfile } = await supabase
+                        .from('profiles')
+                        .select('full_name')
+                        .eq('id', msg.user_id)
+                        .single();
+                    const { data: groupInfo } = await supabase
+                        .from('prayer_groups')
+                        .select('name')
+                        .eq('id', msg.group_id)
+                        .single();
+                    if (senderProfile && groupInfo) {
+                        toast.info(`💬 ${senderProfile.full_name} dans ${groupInfo.name}`, {
+                            description: msg.content?.substring(0, 60) + (msg.content?.length > 60 ? '...' : ''),
+                            duration: 4000,
+                        });
+                    }
                 }
             })
             .subscribe();
@@ -589,23 +626,28 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
                 if (groupError) throw groupError;
 
+                // PERF: Batch all member counts in parallel instead of sequential
+                const countPromises = (groupData || []).map(g =>
+                    supabase
+                        .from('prayer_group_members')
+                        .select('*', { count: 'exact', head: true })
+                        .eq('group_id', g.id)
+                        .then(res => ({ id: g.id, count: res.count || g.member_count || 0 }))
+                );
+                const counts = await Promise.all(countPromises);
+                const countMap = Object.fromEntries(counts.map(c => [c.id, c.count]));
+
                 // Separate admin-created from prayer-request groups
                 const userGroups: ChatGroup[] = [];
                 const adminGroupsList: ChatGroup[] = [];
 
                 for (const g of (groupData || [])) {
-                    // Get member count
-                    const { count } = await supabase
-                        .from('prayer_group_members')
-                        .select('*', { count: 'exact', head: true })
-                        .eq('group_id', g.id);
-
                     const group: ChatGroup = {
                         id: g.id,
                         name: g.name,
                         description: g.description,
                         is_urgent: g.is_urgent || false,
-                        member_count: count || 0,
+                        member_count: countMap[g.id] || 0,
                         unreadCount: 0,
                         is_admin_created: !g.prayer_request_id,
                         prayer_request_id: g.prayer_request_id,
@@ -782,6 +824,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     .neq('sender_id', user?.id)
                     .eq('is_read', false);
             } else {
+                // PERF: Only load last 50 messages for fast initial render
                 const { data, error } = await supabase
                     .from('prayer_group_messages')
                     .select(`
@@ -789,9 +832,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         sender:user_id (id, full_name, avatar_url)
                     `)
                     .eq('group_id', id)
-                    .order('created_at', { ascending: true });
+                    .order('created_at', { ascending: false })
+                    .limit(50);
 
+                // Reverse so messages display oldest first
                 if (error) throw error;
+                if (data) data.reverse();
+                // Track if there are more messages to load
+                setHasMoreMessages((data || []).length >= 50);
                 const mapped = (data || []).map((m: any) => ({
                     ...m,
                     sender_id: m.user_id,
@@ -822,6 +870,35 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             console.error('Error loading messages:', e);
         }
         setIsLoading(false);
+    };
+
+    // Load older messages when user scrolls/clicks "Load more"
+    const loadOlderMessages = async () => {
+        if (!selectedGroup || messages.length === 0 || isLoadingMore) return;
+        setIsLoadingMore(true);
+        try {
+            const oldestMsg = messages[0];
+            const { data, error } = await supabase
+                .from('prayer_group_messages')
+                .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                .eq('group_id', selectedGroup.id)
+                .lt('created_at', oldestMsg.created_at)
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (error) throw error;
+            if (data) data.reverse();
+            setHasMoreMessages((data || []).length >= 50);
+            const mapped = (data || []).map((m: any) => ({
+                ...m,
+                sender_id: m.user_id,
+                is_read: true
+            }));
+            setMessages(prev => [...mapped, ...prev]);
+        } catch (e) {
+            console.error('Error loading older messages:', e);
+        }
+        setIsLoadingMore(false);
     };
 
     // Send message — Feature 4: reply support
@@ -1806,6 +1883,75 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         } catch { toast.error('Erreur lors du partage'); }
     };
 
+    // Bible share dialog: send verse to conversation or group
+    const handleBibleShareVerse = async (text: string) => {
+        if (!user) return;
+        try {
+            if (view === 'conversation' && selectedConversation) {
+                const { data, error } = await supabase
+                    .from('direct_messages')
+                    .insert({
+                        conversation_id: selectedConversation.id,
+                        sender_id: user.id,
+                        content: text,
+                        type: 'text',
+                        is_read: false
+                    })
+                    .select('*')
+                    .single();
+                if (error) throw error;
+                if (data) {
+                    setMessages(prev => {
+                        if (prev.find(m => m.id === data.id)) return prev;
+                        return [...prev, {
+                            ...data,
+                            sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null }
+                        }];
+                    });
+                }
+                await supabase.from('conversations')
+                    .update({ last_message: text.substring(0, 100), last_message_at: new Date().toISOString() })
+                    .eq('id', selectedConversation.id);
+                notifyDirectMessage({
+                    recipientId: selectedConversation.participantId,
+                    senderId: user.id,
+                    senderName: user.name || 'Utilisateur',
+                    messagePreview: '📖 Verset biblique partagé',
+                    conversationId: selectedConversation.id,
+                });
+                toast.success('Verset partagé !');
+            } else if (view === 'group' && selectedGroup) {
+                const { data, error } = await supabase
+                    .from('prayer_group_messages')
+                    .insert({
+                        group_id: selectedGroup.id,
+                        user_id: user.id,
+                        content: text,
+                        type: 'text'
+                    })
+                    .select('*')
+                    .single();
+                if (error) throw error;
+                if (data) {
+                    setMessages(prev => {
+                        if (prev.find(m => m.id === data.id)) return prev;
+                        return [...prev, {
+                            ...data,
+                            sender_id: data.user_id,
+                            sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
+                            is_read: true
+                        }];
+                    });
+                }
+                toast.success('Verset partagé dans le groupe !');
+            }
+            setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+        } catch (e) {
+            console.error('Error sharing Bible verse:', e);
+            toast.error('Erreur lors du partage');
+        }
+    };
+
     // Initialize fasting days
     const initFastingDays = (count: number) => {
         const days = Array.from({ length: count }, (_, i) => ({
@@ -1931,6 +2077,42 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             setShowPinTool(false);
             toast.success('Sujet de prière épinglé !');
         } catch { toast.error("Erreur lors de l'épinglage"); }
+    };
+
+    // Create a new prayer group (replaces window.prompt)
+    const handleCreateGroup = async () => {
+        if (!newGroupName.trim() || !user) return;
+        setIsCreatingGroup(true);
+        try {
+            const { data, error } = await supabase
+                .from('prayer_groups')
+                .insert({
+                    name: newGroupName.trim(),
+                    created_by: user.id,
+                    is_open: true,
+                    member_count: 1,
+                })
+                .select('*')
+                .single();
+            if (error) throw error;
+            if (data) {
+                // Add creator as admin member
+                await supabase.from('prayer_group_members').insert({
+                    group_id: data.id,
+                    user_id: user.id,
+                    role: 'admin',
+                });
+                setGroups(prev => [data, ...prev]);
+                toast.success('Groupe créé ! 🎉');
+            }
+            setShowCreateGroupDialog(false);
+            setNewGroupName('');
+        } catch (e: any) {
+            console.error('Error creating group:', e);
+            toast.error('Erreur: ' + (e?.message || 'Impossible de créer le groupe'));
+        } finally {
+            setIsCreatingGroup(false);
+        }
     };
 
     // Send event to group
@@ -2260,26 +2442,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             {/* Create group button */}
                             <button
                                 onClick={() => {
-                                    const name = window.prompt('Nom du nouveau groupe :');
-                                    if (!name?.trim()) return;
-                                    supabase.from('prayer_groups').insert({
-                                        name: name.trim(),
-                                        created_by: user.id,
-                                        is_open: true,
-                                        member_count: 1,
-                                    }).select('*').single().then(({ data, error }) => {
-                                        if (error) { toast.error('Erreur: ' + error.message); return; }
-                                        if (data) {
-                                            // Add creator as member
-                                            supabase.from('prayer_group_members').insert({
-                                                group_id: data.id,
-                                                user_id: user.id,
-                                                role: 'admin',
-                                            });
-                                            setGroups(prev => [data, ...prev]);
-                                            toast.success('Groupe créé ! 🎉');
-                                        }
-                                    });
+                                    setNewGroupName('');
+                                    setShowCreateGroupDialog(true);
                                 }}
                                 className="w-full p-4 flex items-center gap-3 hover:bg-white/5 transition-colors rounded-xl"
                             >
@@ -2615,21 +2779,21 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 )}
                             </p>
                         </div>
-                        {/* Feature 2: Bigger buttons */}
-                        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
+                        {/* Feature 2: Bigger buttons — more visible on mobile */}
+                        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                             <div className="relative">
                                 <Button
                                     variant="ghost"
                                     size="icon"
-                                    className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-9 w-9 sm:h-11 sm:w-11"
+                                    className="rounded-full text-amber-400 hover:text-amber-300 hover:bg-amber-500/10 h-10 w-10 sm:h-11 sm:w-11"
                                     onClick={() => { setShowGroupTools(true); setGroupToolUnread(0); loadAllUsers(); loadGroupMembers(currentGroup!.id); }}
                                     title="Outils de groupe"
                                 >
-                                    <Settings className="h-4 w-4 sm:h-5 sm:w-5" />
+                                    <Settings className="h-5 w-5 sm:h-5 sm:w-5" />
                                 </Button>
                                 {/* Feature 5: Group tool unread badge */}
                                 {groupToolUnread > 0 && (
-                                    <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 rounded-full text-[9px] font-bold flex items-center justify-center text-white animate-pulse">
+                                    <span className="absolute -top-0.5 -right-0.5 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold flex items-center justify-center text-white animate-pulse">
                                         {groupToolUnread}
                                     </span>
                                 )}
@@ -2637,26 +2801,26 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-9 w-9 sm:h-11 sm:w-11"
+                                className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10 h-10 w-10 sm:h-11 sm:w-11"
                                 onClick={() => setShowGroupMembers(!showGroupMembers)}
                                 title="Voir les membres"
                             >
-                                <Users className="h-4 w-4 sm:h-5 sm:w-5" />
+                                <Users className="h-5 w-5 sm:h-5 sm:w-5" />
                             </Button>
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-9 w-9 sm:h-11 sm:w-11"
+                                className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10 h-10 w-10 sm:h-11 sm:w-11"
                                 onClick={() => setShowVoiceSalon(true)}
-                                title="Salon vocal (Discord)"
+                                title="Salon vocal"
                             >
-                                <Phone className="h-4 w-4 sm:h-5 sm:w-5" />
+                                <Phone className="h-5 w-5 sm:h-5 sm:w-5" />
                             </Button>
                             {/* Feature 9: Google Meet video button */}
                             <Button
                                 variant="ghost"
                                 size="icon"
-                                className="rounded-full text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 h-9 w-9 sm:h-11 sm:w-11"
+                                className="rounded-full text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 h-10 w-10 sm:h-11 sm:w-11"
                                 onClick={() => {
                                     const meetUrl = `https://meet.google.com/new`;
                                     window.open(meetUrl, '_blank', 'noopener,noreferrer');
@@ -2759,13 +2923,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 )}
             </AnimatePresence>
 
-            {/* Pinned Prayer Subject Banner */}
-            {/* Feature 3: Unpin button added */}
+            {/* Pinned Prayer Subject Banner — compact with clear unpin button */}
             {currentGroup && (pinnedPrayer || currentGroup.description?.startsWith('📌')) && (
-                <div className="mx-2 sm:mx-4 mt-2 p-2.5 rounded-xl bg-linear-to-r from-amber-500/10 to-orange-500/5 border border-amber-500/20 flex items-center gap-2">
-                    <Pin className="h-4 w-4 text-amber-400 shrink-0" />
-                    <p className="text-xs text-amber-200 flex-1 truncate">
-                        <span className="font-semibold">Sujet de prière :</span>{' '}
+                <div className="mx-2 sm:mx-4 mt-1 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-center gap-2 shrink-0">
+                    <Pin className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    <p className="text-[11px] text-amber-200 flex-1 line-clamp-1">
+                        <span className="font-semibold">Prière :</span>{' '}
                         {pinnedPrayer || currentGroup.description?.replace('📌 ', '')}
                     </p>
                     {isGroupAdmin && (
@@ -2777,10 +2940,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                     toast.success('Sujet dé-épinglé');
                                 } catch { toast.error('Erreur'); }
                             }}
-                            className="text-amber-400/60 hover:text-amber-300 shrink-0 p-1"
+                            className="text-amber-400 hover:text-red-400 shrink-0 bg-amber-500/20 hover:bg-red-500/20 rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors flex items-center gap-1"
                             title="Dé-épingler"
                         >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-3 w-3" />
+                            Retirer
                         </button>
                     )}
                 </div>
@@ -2801,6 +2965,22 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         </div>
                     ) : (
                         <div className="space-y-3">
+                            {/* Load older messages button */}
+                            {hasMoreMessages && view === 'group' && (
+                                <div className="flex justify-center py-2">
+                                    <button
+                                        onClick={loadOlderMessages}
+                                        disabled={isLoadingMore}
+                                        className="px-4 py-1.5 text-xs text-indigo-400 hover:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/20 rounded-full transition-colors flex items-center gap-1.5"
+                                    >
+                                        {isLoadingMore ? (
+                                            <><Loader2 className="h-3 w-3 animate-spin" /> Chargement...</>
+                                        ) : (
+                                            <>↑ Charger les messages précédents</>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
                             {messages.map((msg, idx) => {
                                 const isOwn = msg.sender_id === user.id;
                                 const showAvatar = !isOwn && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
@@ -2877,56 +3057,39 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     )}
                                                 </div>
                                             </div>
-                                            {/* Emoji reactions bar + Reply + Comment */}
-                                            <div className="absolute -bottom-3 right-1 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 bg-slate-800/95 border border-white/10 rounded-full px-1 py-0.5 shadow-lg z-10 transition-all">
+                                            {/* Emoji reactions bar (hover) */}
+                                            <div className="absolute -top-2 right-1 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 bg-slate-800/95 border border-white/10 rounded-full px-1 py-0.5 shadow-lg z-10 transition-all">
                                                 {['👍', '❤️', '😂', '🙏', '🔥'].map(emoji => (
                                                     <button
                                                         key={emoji}
                                                         onClick={() => {
-                                                            // Add emoji reaction to the message
                                                             const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
                                                             const currentReactions = (msg as any).reactions || '';
                                                             const newReactions = currentReactions.includes(emoji) ? currentReactions : currentReactions + emoji;
                                                             supabase.from(table).update({ content: msg.content }).eq('id', msg.id).then(() => {
                                                                 setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: newReactions } : m));
                                                             });
-                                                            toast.success(`${emoji} réaction ajoutée`);
+                                                            toast.success(`${emoji}`);
                                                         }}
                                                         className="text-sm hover:scale-125 transition-transform px-0.5"
                                                     >{emoji}</button>
                                                 ))}
-                                                <span className="w-px h-4 bg-white/10 mx-0.5" />
-                                                <button
-                                                    onClick={() => setReplyingTo(msg)}
-                                                    className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5"
-                                                >
-                                                    ↩
-                                                </button>
-                                                <button
-                                                    onClick={() => setThreadMessage(msg)}
-                                                    className="text-[10px] text-slate-400 hover:text-white px-1.5 py-0.5"
-                                                    title="Commenter (fil privé)"
-                                                >
-                                                    💬
-                                                </button>
-                                                <span className="w-px h-4 bg-white/10 mx-0.5" />
-                                                {/* Delete button */}
-                                                <button
-                                                    onClick={() => {
-                                                        const choice = isOwn
-                                                            ? window.confirm('Supprimer pour tout le monde ?\n\nOK = Pour tout le monde\nAnnuler = Seulement chez moi')
-                                                            : false;
-                                                        if (isOwn && choice) {
-                                                            deleteMessage(msg, true);
-                                                        } else {
-                                                            deleteMessage(msg, false);
-                                                        }
-                                                    }}
-                                                    className="text-[10px] text-slate-400 hover:text-red-400 px-1.5 py-0.5"
-                                                    title="Supprimer"
-                                                >
-                                                    🗑️
-                                                </button>
+                                                {isOwn && (
+                                                    <>
+                                                        <span className="w-px h-4 bg-white/10 mx-0.5" />
+                                                        <button
+                                                            onClick={() => {
+                                                                if (window.confirm('Supprimer ce message ?')) {
+                                                                    deleteMessage(msg, true);
+                                                                }
+                                                            }}
+                                                            className="text-[10px] text-slate-400 hover:text-red-400 px-1"
+                                                            title="Supprimer"
+                                                        >
+                                                            🗑️
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                             {/* Show reactions below message */}
                                             {(msg as any).reactions && (
@@ -2936,6 +3099,24 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     ))}
                                                 </div>
                                             )}
+                                            {/* VISIBLE Reply button under every message */}
+                                            <div className={cn("flex items-center gap-2 mt-1", isOwn ? "justify-end" : "justify-start")}>
+                                                <button
+                                                    onClick={() => setReplyingTo(msg)}
+                                                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-indigo-400 transition-colors"
+                                                >
+                                                    <span>↩</span>
+                                                    <span>Répondre</span>
+                                                </button>
+                                                <button
+                                                    onClick={() => setThreadMessage(msg)}
+                                                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
+                                                    title="Commenter en privé"
+                                                >
+                                                    <span>💬</span>
+                                                    <span>Commenter</span>
+                                                </button>
+                                            </div>
                                         </div>
                                     </motion.div>
                                 );
@@ -3051,6 +3232,17 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <AtSign className="h-4 w-4" />
                         </Button>
                     )}
+
+                    {/* Bible share button — works for both private and group */}
+                    <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setShowBibleShareDialog(true)}
+                        className="text-slate-400 hover:text-amber-400 h-8 w-8 shrink-0"
+                        title="Partager un verset biblique"
+                    >
+                        <BookOpen className="h-4 w-4" />
+                    </Button>
 
                     {isRecording ? (
                         <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-red-500/20 rounded-full px-3 sm:px-4 py-2">
@@ -3585,6 +3777,64 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 </Button>
                             </div>
                         )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            {/* Bible Share Dialog — for sharing verses in private & group chats */}
+            <BibleShareDialog
+                open={showBibleShareDialog}
+                onOpenChange={setShowBibleShareDialog}
+                onShareVerse={handleBibleShareVerse}
+            />
+
+            {/* Create Group Dialog (replaces window.prompt) */}
+            <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
+                <DialogContent className="max-w-sm bg-[#0F1219] border-white/10 text-white">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2 text-white">
+                            <div className="w-9 h-9 rounded-xl bg-green-600 flex items-center justify-center">
+                                <Users className="h-4 w-4 text-white" />
+                            </div>
+                            Créer un groupe de prière
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1.5 block">Nom du groupe *</label>
+                            <Input
+                                value={newGroupName}
+                                onChange={(e) => setNewGroupName(e.target.value)}
+                                placeholder="Ex: Prière du matin"
+                                className="bg-white/5 border-white/10 text-white"
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter' && newGroupName.trim()) {
+                                        handleCreateGroup();
+                                    }
+                                }}
+                                autoFocus
+                            />
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                            <Button
+                                variant="ghost"
+                                className="text-slate-400"
+                                onClick={() => setShowCreateGroupDialog(false)}
+                            >
+                                Annuler
+                            </Button>
+                            <Button
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                disabled={!newGroupName.trim() || isCreatingGroup}
+                                onClick={handleCreateGroup}
+                            >
+                                {isCreatingGroup ? (
+                                    <><Loader2 className="h-4 w-4 animate-spin mr-1" /> Création...</>
+                                ) : (
+                                    <><Plus className="h-4 w-4 mr-1" /> Créer</>
+                                )}
+                            </Button>
+                        </div>
                     </div>
                 </DialogContent>
             </Dialog>

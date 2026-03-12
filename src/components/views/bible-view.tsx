@@ -822,8 +822,8 @@ export function BibleView() {
                                                 >
                                                     <div className="flex items-center gap-3">
                                                         <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm ${bookResult.testament === 'AT'
-                                                                ? 'bg-amber-500/20 text-amber-400'
-                                                                : 'bg-indigo-500/20 text-indigo-400'
+                                                            ? 'bg-amber-500/20 text-amber-400'
+                                                            : 'bg-indigo-500/20 text-indigo-400'
                                                             }`}>
                                                             {bookResult.occurrences}
                                                         </div>
@@ -1202,7 +1202,233 @@ export function BibleView() {
                         </motion.div>
                     )}
 
-                    {/* ========== STUDY/SETTINGS VIEW ========== */}
+                    {/* ========== FAVORITES VIEW ========== */}
+                    {viewState === 'favorites' && (
+                        <motion.div
+                            key="favorites"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 20 }}
+                            className="flex-1 flex flex-col"
+                        >
+                            <header className="px-6 pt-12 pb-4">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <Button variant="ghost" size="icon" onClick={() => setViewState('home')}>
+                                        <ArrowLeft className="h-5 w-5" />
+                                    </Button>
+                                    <div>
+                                        <h2 className="text-2xl font-black">Mes Favoris & Notes</h2>
+                                        <p className="text-slate-500 text-xs">{favorites.length} verset{favorites.length !== 1 ? 's' : ''} sauvegardé{favorites.length !== 1 ? 's' : ''} • {highlights.length} surlignage{highlights.length !== 1 ? 's' : ''}</p>
+                                    </div>
+                                </div>
+
+                                {/* Sub-tabs */}
+                                <div className="flex gap-2 bg-white/5 rounded-2xl p-1">
+                                    <button
+                                        className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold transition-all", !expandedSearchBook ? "bg-indigo-600 text-white" : "text-slate-400")}
+                                        onClick={() => setExpandedSearchBook(null)}
+                                    >
+                                        <Star className="h-3 w-3 inline mr-1" /> Favoris ({favorites.length})
+                                    </button>
+                                    <button
+                                        className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold transition-all", expandedSearchBook === 'highlights' ? "bg-indigo-600 text-white" : "text-slate-400")}
+                                        onClick={() => setExpandedSearchBook('highlights')}
+                                    >
+                                        <PenLine className="h-3 w-3 inline mr-1" /> Surlignages ({highlights.length})
+                                    </button>
+                                    <button
+                                        className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold transition-all", expandedSearchBook === 'history' ? "bg-indigo-600 text-white" : "text-slate-400")}
+                                        onClick={() => setExpandedSearchBook('history')}
+                                    >
+                                        <BookOpen className="h-3 w-3 inline mr-1" /> Historique
+                                    </button>
+                                </div>
+                            </header>
+
+                            <ScrollArea className="flex-1 px-6">
+                                {/* Favorites Tab */}
+                                {!expandedSearchBook && (
+                                    <div className="space-y-3 pb-32">
+                                        {favorites.length === 0 ? (
+                                            <div className="text-center py-16">
+                                                <Star className="h-16 w-16 mx-auto mb-4 text-slate-700" />
+                                                <p className="font-bold text-slate-400 mb-1">Aucun favori</p>
+                                                <p className="text-sm text-slate-600">Appuyez sur un verset pendant la lecture pour l'ajouter en favori</p>
+                                            </div>
+                                        ) : (
+                                            favorites.map((fav) => (
+                                                <motion.div
+                                                    key={fav.id}
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className="p-4 rounded-2xl bg-white/5 border border-white/5 hover:border-amber-500/20 transition-all group"
+                                                >
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <Badge variant="outline" className="border-amber-500/30 text-amber-400 text-[10px]">
+                                                            ⭐ {fav.reference}
+                                                        </Badge>
+                                                        <span className="text-[9px] text-slate-600">
+                                                            {new Date(fav.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-slate-300 leading-relaxed mb-3 font-serif italic">
+                                                        "{fav.text.length > 200 ? fav.text.substring(0, 200) + '...' : fav.text}"
+                                                    </p>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 text-[10px] rounded-lg text-indigo-400 hover:text-indigo-300"
+                                                            onClick={() => {
+                                                                // Parse reference to navigate: "Genèse 1:1" -> navigate to that
+                                                                const parts = fav.reference.match(/^(.+?)\s+(\d+):(\d+)$/);
+                                                                if (parts) {
+                                                                    const bookName = parts[1];
+                                                                    const chapter = parts[2];
+                                                                    const book = books.find(b => b.name === bookName);
+                                                                    if (book) {
+                                                                        handleNavigation(book.id, `${book.id}.${chapter}`);
+                                                                    }
+                                                                }
+                                                            }}
+                                                        >
+                                                            <BookOpen className="h-3 w-3 mr-1" /> Lire
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 text-[10px] rounded-lg"
+                                                            onClick={() => copyVerse(fav.text, fav.reference)}
+                                                        >
+                                                            <Copy className="h-3 w-3 mr-1" /> Copier
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 text-[10px] rounded-lg"
+                                                            onClick={() => shareVerse(fav.reference, fav.text, fav.translation)}
+                                                        >
+                                                            <Share2 className="h-3 w-3 mr-1" /> Partager
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 text-[10px] rounded-lg text-red-400 hover:text-red-300 ml-auto"
+                                                            onClick={() => { removeFavorite(fav.id); toast.info('Favori retiré'); }}
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </Button>
+                                                    </div>
+                                                </motion.div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Highlights Tab */}
+                                {expandedSearchBook === 'highlights' && (
+                                    <div className="space-y-3 pb-32">
+                                        {highlights.length === 0 ? (
+                                            <div className="text-center py-16">
+                                                <PenLine className="h-16 w-16 mx-auto mb-4 text-slate-700" />
+                                                <p className="font-bold text-slate-400 mb-1">Aucun surlignage</p>
+                                                <p className="text-sm text-slate-600">Sélectionnez un verset et choisissez une couleur pour le surligner</p>
+                                            </div>
+                                        ) : (
+                                            highlights.map((h) => (
+                                                <motion.div
+                                                    key={h.id}
+                                                    initial={{ opacity: 0, y: 10 }}
+                                                    animate={{ opacity: 1, y: 0 }}
+                                                    className={cn("p-4 rounded-2xl border border-white/5 group", HIGHLIGHT_COLORS[h.color as HighlightColor]?.bgClass || 'bg-white/5')}
+                                                >
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <Badge variant="outline" className="border-white/20 text-slate-200 text-[10px]">
+                                                            {h.reference}
+                                                        </Badge>
+                                                        <div className="flex items-center gap-2">
+                                                            <div className={cn("w-3 h-3 rounded-full", HIGHLIGHT_COLORS[h.color as HighlightColor]?.borderClass ? `bg-${h.color}-500` : 'bg-white/20')} style={{ backgroundColor: h.color.startsWith('#') ? h.color : undefined }} />
+                                                            <span className="text-[9px] text-slate-500 capitalize">{HIGHLIGHT_COLORS[h.color as HighlightColor]?.name || h.color}</span>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-sm text-slate-200 leading-relaxed mb-3 font-serif italic">
+                                                        "{h.text.length > 200 ? h.text.substring(0, 200) + '...' : h.text}"
+                                                    </p>
+                                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <Button variant="ghost" size="sm" className="h-7 text-[10px] rounded-lg" onClick={() => copyVerse(h.text, h.reference)}>
+                                                            <Copy className="h-3 w-3 mr-1" /> Copier
+                                                        </Button>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-7 text-[10px] rounded-lg text-red-400 hover:text-red-300 ml-auto"
+                                                            onClick={() => { removeHighlight(h.id); toast.info('Surlignage retiré'); }}
+                                                        >
+                                                            <Trash2 className="h-3 w-3" />
+                                                        </Button>
+                                                    </div>
+                                                </motion.div>
+                                            ))
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* History Tab */}
+                                {expandedSearchBook === 'history' && (
+                                    <div className="space-y-3 pb-32">
+                                        {recentChapters.length === 0 ? (
+                                            <div className="text-center py-16">
+                                                <BookOpen className="h-16 w-16 mx-auto mb-4 text-slate-700" />
+                                                <p className="font-bold text-slate-400 mb-1">Aucun historique</p>
+                                                <p className="text-sm text-slate-600">Vos lectures récentes apparaîtront ici</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="bg-white/5 rounded-2xl p-4 border border-white/5 mb-4">
+                                                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider mb-1">Statistiques de lecture</p>
+                                                    <div className="flex items-center justify-around mt-3">
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-white">{recentChapters.length}</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Chapitres lus</p>
+                                                        </div>
+                                                        <div className="w-px h-8 bg-white/10" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-indigo-400">{new Set(recentChapters.map(r => r.bookId)).size}</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Livres explorés</p>
+                                                        </div>
+                                                        <div className="w-px h-8 bg-white/10" />
+                                                        <div className="text-center">
+                                                            <p className="text-2xl font-black text-amber-400">{favorites.length}</p>
+                                                            <p className="text-[10px] text-slate-500 uppercase tracking-wider">Favoris</p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {recentChapters.map((rc, i) => (
+                                                    <motion.div
+                                                        key={`${rc.bookId}-${rc.chapter}-${i}`}
+                                                        initial={{ opacity: 0, x: -10 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: i * 0.05 }}
+                                                        className="flex items-center gap-4 p-4 rounded-2xl bg-white/5 border border-white/5 hover:bg-white/10 transition-all cursor-pointer"
+                                                        onClick={() => handleNavigation(rc.bookId, `${rc.bookId}.${rc.chapter}`)}
+                                                    >
+                                                        <div className="w-12 h-12 rounded-2xl bg-indigo-500/20 flex items-center justify-center">
+                                                            <Book className="h-5 w-5 text-indigo-400" />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <p className="font-bold text-white text-sm">{rc.bookName}</p>
+                                                            <p className="text-[10px] text-slate-500">Chapitre {rc.chapter}</p>
+                                                        </div>
+                                                        <ChevronRight className="h-4 w-4 text-slate-600" />
+                                                    </motion.div>
+                                                ))}
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </ScrollArea>
+                        </motion.div>
+                    )}
                     {viewState === 'study' && (
                         <motion.div
                             key="study"
