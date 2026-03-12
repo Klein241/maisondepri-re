@@ -825,12 +825,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     .eq('is_read', false);
             } else {
                 // PERF: Only load last 50 messages for fast initial render
+                // NOTE: Don't use join (sender:user_id) — no FK between prayer_group_messages and profiles
                 const { data, error } = await supabase
                     .from('prayer_group_messages')
-                    .select(`
-                        *,
-                        sender:user_id (id, full_name, avatar_url)
-                    `)
+                    .select('*')
                     .eq('group_id', id)
                     .order('created_at', { ascending: false })
                     .limit(50);
@@ -838,11 +836,23 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 // Reverse so messages display oldest first
                 if (error) throw error;
                 if (data) data.reverse();
+
+                // Batch-load sender profiles
+                const senderIds = [...new Set((data || []).map((m: any) => m.user_id))];
+                const { data: profiles } = senderIds.length > 0
+                    ? await supabase
+                        .from('profiles')
+                        .select('id, full_name, avatar_url')
+                        .in('id', senderIds)
+                    : { data: [] };
+                const profileMap = Object.fromEntries((profiles || []).map((p: any) => [p.id, p]));
+
                 // Track if there are more messages to load
                 setHasMoreMessages((data || []).length >= 50);
                 const mapped = (data || []).map((m: any) => ({
                     ...m,
                     sender_id: m.user_id,
+                    sender: profileMap[m.user_id] || null,
                     is_read: true
                 }));
                 setMessages(mapped);
@@ -880,7 +890,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             const oldestMsg = messages[0];
             const { data, error } = await supabase
                 .from('prayer_group_messages')
-                .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                .select('*')
                 .eq('group_id', selectedGroup.id)
                 .lt('created_at', oldestMsg.created_at)
                 .order('created_at', { ascending: false })
@@ -888,10 +898,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
             if (error) throw error;
             if (data) data.reverse();
+
+            // Batch-load sender profiles
+            const senderIds = [...new Set((data || []).map((m: any) => m.user_id))];
+            const { data: profiles } = senderIds.length > 0
+                ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', senderIds)
+                : { data: [] };
+            const profileMap = Object.fromEntries((profiles || []).map((p: any) => [p.id, p]));
+
             setHasMoreMessages((data || []).length >= 50);
             const mapped = (data || []).map((m: any) => ({
                 ...m,
                 sender_id: m.user_id,
+                sender: profileMap[m.user_id] || null,
                 is_read: true
             }));
             setMessages(prev => [...mapped, ...prev]);
@@ -1369,10 +1388,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             try {
                 const { data, error } = await supabase
                     .from('prayer_group_messages')
-                    .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                    .select('*')
                     .eq('group_id', group.id)
                     .order('created_at', { ascending: true });
                 if (!error && data) {
+                    // Batch-load sender profiles for poll
+                    const ids = [...new Set(data.map((m: any) => m.user_id))];
+                    const { data: profs } = ids.length > 0
+                        ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', ids)
+                        : { data: [] };
+                    const pMap = Object.fromEntries((profs || []).map((p: any) => [p.id, p]));
                     setMessages(prev => {
                         const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
                         const newLastId = data.length > 0 ? data[data.length - 1].id : null;
@@ -1380,6 +1405,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         return data.map((m: any) => ({
                             ...m,
                             sender_id: m.user_id,
+                            sender: pMap[m.user_id] || null,
                             is_read: true
                         }));
                     });
@@ -1411,10 +1437,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 try {
                     const { data, error } = await supabase
                         .from('prayer_group_messages')
-                        .select(`*, sender:user_id (id, full_name, avatar_url)`)
+                        .select('*')
                         .eq('group_id', gId)
                         .order('created_at', { ascending: true });
                     if (!error && data) {
+                        // Batch-load sender profiles for poll
+                        const ids = [...new Set(data.map((m: any) => m.user_id))];
+                        const { data: profs } = ids.length > 0
+                            ? await supabase.from('profiles').select('id, full_name, avatar_url').in('id', ids)
+                            : { data: [] };
+                        const pMap = Object.fromEntries((profs || []).map((p: any) => [p.id, p]));
                         setMessages(prev => {
                             const prevLastId = prev.length > 0 ? prev[prev.length - 1].id : null;
                             const newLastId = data.length > 0 ? data[data.length - 1].id : null;
@@ -1422,6 +1454,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             return data.map((m: any) => ({
                                 ...m,
                                 sender_id: m.user_id,
+                                sender: pMap[m.user_id] || null,
                                 is_read: true
                             }));
                         });

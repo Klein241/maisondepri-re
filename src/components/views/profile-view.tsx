@@ -39,12 +39,16 @@ import {
     Plus,
     X,
     CheckCircle2,
+    UserCheck,
+    Heart,
 } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { motion } from "framer-motion"
 import { toast } from "sonner"
 import { AuthView } from "./auth-view"
 import { supabase } from "@/lib/supabase"
+import { formatDistanceToNow } from "date-fns"
+import { fr } from "date-fns/locale"
 
 export function ProfileView() {
     const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme, setUser } = useAppStore()
@@ -80,6 +84,11 @@ export function ProfileView() {
     const [migrateSourceGroup, setMigrateSourceGroup] = useState<string | null>(null)
     const [migrateTargetGroup, setMigrateTargetGroup] = useState<string | null>(null)
     const [isMigrating, setIsMigrating] = useState(false)
+
+    // Friends state
+    const [showFriends, setShowFriends] = useState(false)
+    const [myFriends, setMyFriends] = useState<any[]>([])
+    const [isLoadingFriends, setIsLoadingFriends] = useState(false)
 
     // Load recovery email on mount
     useEffect(() => {
@@ -130,6 +139,37 @@ export function ProfileView() {
             console.error('Error loading groups:', err)
         }
         setIsLoadingGroups(false)
+    }
+
+    // Load friends
+    const loadMyFriends = async () => {
+        if (!user) return
+        setIsLoadingFriends(true)
+        try {
+            // Get accepted friendships where user is sender or receiver
+            const { data: friendships } = await supabase
+                .from('friendships')
+                .select('sender_id, receiver_id')
+                .or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`)
+                .eq('status', 'accepted')
+
+            if (friendships && friendships.length > 0) {
+                const friendIds = friendships.map((f: any) =>
+                    f.sender_id === user.id ? f.receiver_id : f.sender_id
+                )
+                const { data: profiles } = await supabase
+                    .from('profiles')
+                    .select('id, full_name, avatar_url, is_online, last_seen')
+                    .in('id', friendIds)
+                    .order('full_name')
+                setMyFriends(profiles || [])
+            } else {
+                setMyFriends([])
+            }
+        } catch (err) {
+            console.error('Error loading friends:', err)
+        }
+        setIsLoadingFriends(false)
     }
 
     // Migrate members from one group to another
@@ -622,6 +662,79 @@ export function ProfileView() {
                                                 </div>
                                             ))}
                                         </div>
+                                    )}
+                                </motion.div>
+                            )}
+                        </CardContent>
+                    </Card>
+                </motion.div>
+
+                {/* My Friends Card */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.35 }}
+                    className="mb-8"
+                >
+                    <Card className="bg-linear-to-br from-pink-500/10 to-rose-500/5 border-pink-500/20 backdrop-blur-sm overflow-hidden">
+                        <CardContent className="p-4">
+                            <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-3">
+                                    <div className="bg-pink-500/20 p-2.5 rounded-xl">
+                                        <Heart className="h-5 w-5 text-pink-400" />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-sm text-white">Mes Amis</h3>
+                                        <p className="text-[10px] text-slate-400">{myFriends.length} ami{myFriends.length !== 1 ? 's' : ''}</p>
+                                    </div>
+                                </div>
+                                <Badge
+                                    className="bg-linear-to-r from-pink-600 to-rose-600 border-none text-white text-xs font-bold px-4 py-2 cursor-pointer hover:from-pink-700 hover:to-rose-700 transition-all shadow-lg shadow-pink-500/30"
+                                    onClick={() => { setShowFriends(!showFriends); if (!showFriends) loadMyFriends(); }}
+                                >
+                                    {showFriends ? 'Fermer' : 'Voir'}
+                                    <ChevronRight className={`h-3 w-3 ml-1 transition-transform ${showFriends ? 'rotate-90' : ''}`} />
+                                </Badge>
+                            </div>
+
+                            {showFriends && (
+                                <motion.div
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    className="space-y-2 mt-3 max-h-[300px] overflow-y-auto pr-1"
+                                >
+                                    {isLoadingFriends ? (
+                                        <div className="flex justify-center py-4">
+                                            <Loader2 className="h-5 w-5 animate-spin text-pink-400" />
+                                        </div>
+                                    ) : myFriends.length === 0 ? (
+                                        <p className="text-center text-xs text-slate-500 py-4">Aucun ami pour le moment</p>
+                                    ) : (
+                                        myFriends.map((friend: any) => (
+                                            <div
+                                                key={friend.id}
+                                                className="p-3 rounded-xl bg-white/5 border border-white/10 hover:border-pink-500/30 transition-all flex items-center gap-3"
+                                            >
+                                                <div className="relative">
+                                                    <Avatar className="h-10 w-10 border border-white/10">
+                                                        <AvatarImage src={friend.avatar_url} />
+                                                        <AvatarFallback className="bg-pink-500/20 text-pink-300 text-xs">
+                                                            {(friend.full_name || '?').substring(0, 2).toUpperCase()}
+                                                        </AvatarFallback>
+                                                    </Avatar>
+                                                    {friend.is_online && (
+                                                        <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 rounded-full border-2 border-[#0F1219]" />
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="text-sm font-medium text-white truncate">{friend.full_name || 'Utilisateur'}</p>
+                                                    <p className="text-[10px] text-slate-400">
+                                                        {friend.is_online ? '🟢 En ligne' : friend.last_seen ? `Vu ${formatDistanceToNow(new Date(friend.last_seen), { addSuffix: true, locale: fr })}` : 'Hors ligne'}
+                                                    </p>
+                                                </div>
+                                                <UserCheck className="h-4 w-4 text-pink-400 shrink-0" />
+                                            </div>
+                                        ))
                                     )}
                                 </motion.div>
                             )}

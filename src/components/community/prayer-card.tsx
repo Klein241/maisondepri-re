@@ -137,6 +137,10 @@ export function PrayerCard({
 
     const handlePray = (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (isGuest) {
+            toast.error("Connectez-vous pour prier pour cette demande 🙏");
+            return;
+        }
         if (hasPrayed || isLocked) return;
 
         // Optimistic Update

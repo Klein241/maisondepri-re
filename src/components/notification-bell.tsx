@@ -126,7 +126,7 @@ export function NotificationBell() {
                     .select('*', { count: 'exact', head: true })
                     .in('conversation_id', convIds)
                     .neq('sender_id', user.id)
-                    .eq('read', false);
+                    .eq('is_read', false);
 
                 setUnreadMessages(count || 0);
             }
