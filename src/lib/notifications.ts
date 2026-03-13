@@ -29,6 +29,7 @@ export type NotificationActionType =
     | 'dm_new_message'
     | 'friend_request_received'
     | 'friend_request_accepted'
+    | 'new_book_published'
     | 'general';
 
 export interface NotificationActionData {
@@ -41,6 +42,7 @@ export interface NotificationActionData {
     communityTab?: string;
     scrollToComments?: boolean;
     scrollToMessage?: string;
+    bookId?: string;
 }
 
 interface NotifyWorkerPayload {
@@ -142,6 +144,7 @@ function mapActionTypeToLegacyType(actionType: NotificationActionType): string {
             return 'success';
         case 'friend_request_received':
         case 'friend_request_accepted':
+        case 'new_book_published':
             return 'info';
         default:
             return 'info';
@@ -174,6 +177,8 @@ function buildFallbackActionData(payload: NotifyWorkerPayload): NotificationActi
             return { tab: 'profil', viewState: 'friend-requests' };
         case 'friend_request_accepted':
             return { tab: 'community', communityTab: 'chat', viewState: 'conversation', conversationId: payload.extra_data?.conversationId };
+        case 'new_book_published':
+            return { tab: 'library', bookId: payload.target_id };
         default:
             return { tab: 'community' };
     }
@@ -212,6 +217,8 @@ function buildFallbackMessage(payload: NotifyWorkerPayload): { title: string; me
             return { title: '👋 Demande d\'ami', message: `${name} vous a envoyé une demande d'ami` };
         case 'friend_request_accepted':
             return { title: '👋 Ami ajouté !', message: `${name} a accepté votre demande d'ami` };
+        case 'new_book_published':
+            return { title: '📚 Nouveau livre disponible', message: `"${payload.target_name}" vient d'être ajouté à la bibliothèque` };
         default:
             return { title: 'Notification', message: payload.message_preview || 'Nouvelle notification' };
     }
@@ -647,6 +654,48 @@ export async function notifyFriendRequestAccepted({
         recipient_id: userId,
         extra_data: { conversationId },
     });
+}
+
+// ══════════════════════════════════════════════════════════
+// 📚 LIBRARY NOTIFICATIONS
+// ══════════════════════════════════════════════════════════
+
+/** [N] new_book_published — Admin published a new book */
+export async function notifyNewBook({
+    bookId,
+    bookTitle,
+    bookAuthor,
+    publisherId,
+    publisherName,
+}: {
+    bookId: string;
+    bookTitle: string;
+    bookAuthor: string;
+    publisherId: string;
+    publisherName: string;
+}) {
+    try {
+        // Notify all users except the publisher
+        const { data: users } = await supabase
+            .from('profiles')
+            .select('id')
+            .neq('id', publisherId)
+            .limit(500);
+
+        if (users && users.length > 0) {
+            await sendToWorker({
+                action_type: 'new_book_published',
+                actor_id: publisherId,
+                actor_name: publisherName,
+                recipient_ids: users.map((u: any) => u.id),
+                target_id: bookId,
+                target_name: bookTitle,
+                message_preview: `par ${bookAuthor}`,
+            });
+        }
+    } catch (e) {
+        console.error('[Notification] New book error:', e);
+    }
 }
 
 // ══════════════════════════════════════════════════════════

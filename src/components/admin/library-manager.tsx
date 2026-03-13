@@ -21,6 +21,7 @@ import {
     Eye, EyeOff, Download, Image, FileText, Search, X
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { notifyNewBook } from '@/lib/notifications';
 
 const CATEGORIES = [
     { value: 'bible-study', label: 'Étude biblique' },
@@ -112,6 +113,27 @@ export function LibraryManager() {
                 .eq('id', book.id);
             if (error) throw error;
             toast.success(book.is_published ? "Livre masqué" : "Livre publié");
+
+            // If book is being published (was hidden), notify users
+            if (!book.is_published) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name')
+                        .eq('id', user.id)
+                        .single();
+
+                    notifyNewBook({
+                        bookId: book.id,
+                        bookTitle: book.title,
+                        bookAuthor: book.author,
+                        publisherId: user.id,
+                        publisherName: profile?.full_name || 'Administrateur',
+                    }).catch(console.error);
+                }
+            }
+
             fetchBooks();
         } catch (e: any) {
             toast.error(e.message);
@@ -443,11 +465,30 @@ function BookForm({ initialData, onSave, onCancel }: { initialData: Book | null;
                 toast.success("Livre mis à jour !");
             } else {
                 const { data: { user } } = await supabase.auth.getUser();
-                const { error } = await supabase
+                const { data: inserted, error } = await supabase
                     .from('library_books')
-                    .insert({ ...bookData, uploaded_by: user?.id });
+                    .insert({ ...bookData, uploaded_by: user?.id })
+                    .select()
+                    .single();
                 if (error) throw error;
                 toast.success("Livre ajouté à la bibliothèque !");
+
+                // Send notification to all users if published
+                if (isPublished && inserted && user) {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name')
+                        .eq('id', user.id)
+                        .single();
+
+                    notifyNewBook({
+                        bookId: inserted.id,
+                        bookTitle: title.trim(),
+                        bookAuthor: author.trim() || 'Auteur inconnu',
+                        publisherId: user.id,
+                        publisherName: profile?.full_name || 'Administrateur',
+                    }).catch(console.error);
+                }
             }
 
             onSave();

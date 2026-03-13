@@ -29,7 +29,7 @@ import { formatDistanceToNow } from 'date-fns';
 import { fr } from 'date-fns/locale';
 import { toast } from 'sonner';
 import { EmojiPicker } from '@/components/ui/emoji-picker';
-import { notifyDirectMessage } from '@/lib/notifications';
+import { notifyDirectMessage, notifyGroupNewMessage } from '@/lib/notifications';
 import { useAppStore } from '@/lib/store';
 import { cacheMessages, getCachedGroupMessages, getCachedConversationMessages, evictOldMedia, CachedMessage } from '@/lib/local-storage-service';
 import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUser, WhatsAppChatProps, GameSession } from './chat-types';
@@ -978,6 +978,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         }];
                     });
                 }
+
+                // Send notification to group members
+                notifyGroupNewMessage({
+                    groupId: selectedGroup.id,
+                    groupName: selectedGroup.name,
+                    senderId: user.id,
+                    senderName: user.name || 'Utilisateur',
+                    senderAvatar: user.avatar || undefined,
+                    messagePreview: msgContent,
+                }).catch(console.error);
             }
 
             inputRef.current?.focus();
