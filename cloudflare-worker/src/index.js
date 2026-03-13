@@ -389,13 +389,99 @@ async function handleLinkPreview(request) {
 // ══════════════════════════════════════════════════════════
 
 async function handleAnalytics(env) {
-    const list = await env.PUSH_KV.list({ prefix: 'push:' });
+    const keys = await env.PUSH_KV.list();
     return json({
-        push_subscribers: list.keys.length,
-        platform: 'cloudflare-workers-free',
-        services: ['push-notifications', 'link-preview', 'webhook'],
-        vapid_configured: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY),
+        total_push_subscriptions: keys.keys.length,
+        timestamp: new Date().toISOString(),
     });
+}
+
+// ══════════════════════════════════════════════════════════
+// 📦 R2 FILE STORAGE (Library books & covers)
+// ══════════════════════════════════════════════════════════
+
+/** Upload a file to R2 via multipart form */
+async function handleR2Upload(request, env) {
+    if (request.method !== 'POST') return json({ error: 'POST required' }, 405);
+
+    // Simple auth check
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || authHeader !== `Bearer ${env.ADMIN_KEY}`) {
+        return json({ error: 'Unauthorized' }, 401);
+    }
+
+    try {
+        const formData = await request.formData();
+        const file = formData.get('file');
+        const folder = formData.get('folder') || 'books'; // 'books' or 'covers'
+
+        if (!file || !(file instanceof File)) {
+            return json({ error: 'No file provided' }, 400);
+        }
+
+        // Generate unique path
+        const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+        const key = `${folder}/${Date.now()}_${cleanName}`;
+
+        // Upload to R2
+        await env.LIBRARY_R2.put(key, file.stream(), {
+            httpMetadata: {
+                contentType: file.type || 'application/octet-stream',
+                contentDisposition: `inline; filename="${file.name}"`,
+            },
+            customMetadata: {
+                originalName: file.name,
+                uploadedAt: new Date().toISOString(),
+            },
+        });
+
+        // Build public URL
+        const workerUrl = new URL(request.url).origin;
+        const publicUrl = `${workerUrl}/r2/${key}`;
+
+        return json({ success: true, key, url: publicUrl, size: file.size });
+    } catch (e) {
+        return json({ error: e.message }, 500);
+    }
+}
+
+/** Serve a file from R2 */
+async function handleR2Serve(request, env, key) {
+    const object = await env.LIBRARY_R2.get(key);
+    if (!object) return json({ error: 'File not found' }, 404);
+
+    const headers = new Headers({
+        ...CORS,
+        'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'ETag': object.httpEtag,
+    });
+
+    if (object.httpMetadata?.contentDisposition) {
+        headers.set('Content-Disposition', object.httpMetadata.contentDisposition);
+    }
+
+    return new Response(object.body, { headers });
+}
+
+/** Delete a file from R2 */
+async function handleR2Delete(request, env) {
+    if (request.method !== 'POST') return json({ error: 'POST required' }, 405);
+
+    const authHeader = request.headers.get('Authorization');
+    if (!authHeader || authHeader !== `Bearer ${env.ADMIN_KEY}`) {
+        return json({ error: 'Unauthorized' }, 401);
+    }
+
+    try {
+        const { key } = await request.json();
+        if (!key) return json({ error: 'No key provided' }, 400);
+
+        await env.LIBRARY_R2.delete(key);
+        return json({ success: true, deleted: key });
+    } catch (e) {
+        return json({ error: e.message }, 500);
+    }
 }
 
 // ══════════════════════════════════════════════════════════
@@ -431,6 +517,14 @@ export default {
             // Analytics
             if (pathname === '/api/analytics') return handleAnalytics(env);
 
+            // R2 Storage
+            if (pathname === '/api/r2/upload') return handleR2Upload(request, env);
+            if (pathname === '/api/r2/delete') return handleR2Delete(request, env);
+            if (pathname.startsWith('/r2/')) {
+                const key = pathname.slice(4); // Remove '/r2/'
+                return handleR2Serve(request, env, key);
+            }
+
             return json({
                 error: 'Not found', routes: [
                     'GET  /health',
@@ -442,6 +536,9 @@ export default {
                     'POST /api/webhook/notification',
                     'POST /api/link-preview',
                     'GET  /api/analytics',
+                    'POST /api/r2/upload',
+                    'POST /api/r2/delete',
+                    'GET  /r2/:key',
                 ]
             }, 404);
         } catch (e) {

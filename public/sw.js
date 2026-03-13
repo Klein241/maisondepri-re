@@ -1,8 +1,17 @@
 // Service Worker — Maison de Prière
-// Handles: Push Notifications, Offline caching
+// Handles: Push Notifications, Offline caching, Library book caching
 // Backend: Cloudflare Worker (maisondepriere-api)
 
-const CACHE_NAME = 'mdp-cache-v2';
+const CACHE_NAME = 'mdp-cache-v3';
+const BOOK_CACHE = 'mdp-books-v1';
+
+// App shell files to precache
+const APP_SHELL = [
+    '/',
+    '/manifest.json',
+    '/icon-192.png',
+    '/icon-512.png',
+];
 
 // Push notification received
 self.addEventListener('push', (event) => {
@@ -17,6 +26,8 @@ self.addEventListener('push', (event) => {
             actions.push({ action: 'reply', title: '💬 Répondre' });
         } else if (data.data?.prayerId) {
             actions.push({ action: 'pray', title: '🙏 Prier' });
+        } else if (data.data?.bookId) {
+            actions.push({ action: 'read', title: '📖 Lire' });
         }
         actions.push({ action: 'open', title: 'Ouvrir' });
 
@@ -57,6 +68,8 @@ self.addEventListener('notificationclick', (event) => {
         url = `/?nav=group&id=${data.groupId}`;
     } else if (data.prayerId) {
         url = `/?nav=prayer&id=${data.prayerId}`;
+    } else if (data.bookId) {
+        url = `/?tab=library&book=${data.bookId}`;
     }
 
     event.waitUntil(
@@ -74,9 +87,12 @@ self.addEventListener('notificationclick', (event) => {
     );
 });
 
-// Listen for SHOW_NOTIFICATION messages from the app
+// Listen for messages from the app
 self.addEventListener('message', (event) => {
-    if (event.data && event.data.type === 'SHOW_NOTIFICATION') {
+    if (!event.data) return;
+
+    // Show notification
+    if (event.data.type === 'SHOW_NOTIFICATION') {
         self.registration.showNotification(event.data.title || 'Maison de Prière', {
             body: event.data.body || '',
             icon: '/icons/icon-192x192.png',
@@ -86,10 +102,67 @@ self.addEventListener('message', (event) => {
             vibrate: [100, 50, 100],
         });
     }
+
+    // Cache a book for offline reading
+    if (event.data.type === 'CACHE_BOOK') {
+        const { url, title } = event.data;
+        if (url) {
+            caches.open(BOOK_CACHE).then(cache => {
+                fetch(url).then(response => {
+                    if (response.ok) {
+                        cache.put(url, response.clone());
+                        // Notify the app that caching is done
+                        event.source?.postMessage({
+                            type: 'BOOK_CACHED',
+                            url,
+                            title,
+                            success: true,
+                        });
+                    }
+                }).catch(err => {
+                    event.source?.postMessage({
+                        type: 'BOOK_CACHED',
+                        url,
+                        title,
+                        success: false,
+                        error: err.message,
+                    });
+                });
+            });
+        }
+    }
+
+    // Remove a cached book
+    if (event.data.type === 'UNCACHE_BOOK') {
+        const { url } = event.data;
+        if (url) {
+            caches.open(BOOK_CACHE).then(cache => cache.delete(url));
+        }
+    }
+
+    // Check which books are cached
+    if (event.data.type === 'GET_CACHED_BOOKS') {
+        caches.open(BOOK_CACHE).then(cache => {
+            cache.keys().then(requests => {
+                const urls = requests.map(r => r.url);
+                event.source?.postMessage({
+                    type: 'CACHED_BOOKS_LIST',
+                    urls,
+                });
+            });
+        });
+    }
 });
 
-// Install
+// Install — precache app shell
 self.addEventListener('install', (event) => {
+    event.waitUntil(
+        caches.open(CACHE_NAME).then(cache => {
+            return cache.addAll(APP_SHELL).catch(() => {
+                // Some files may not exist, that's ok
+            });
+        })
+    );
     self.skipWaiting();
 });
 
@@ -97,7 +170,67 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
     event.waitUntil(
         caches.keys().then(keys =>
-            Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+            Promise.all(
+                keys
+                    .filter(k => k !== CACHE_NAME && k !== BOOK_CACHE)
+                    .map(k => caches.delete(k))
+            )
         ).then(() => self.clients.claim())
     );
+});
+
+// Fetch — serve cached books offline, network-first for everything else
+self.addEventListener('fetch', (event) => {
+    const url = new URL(event.request.url);
+
+    // For book files (R2 or Supabase storage URLs): cache-first strategy
+    if (url.pathname.includes('/r2/books/') || url.pathname.includes('/library/books/')) {
+        event.respondWith(
+            caches.open(BOOK_CACHE).then(cache =>
+                cache.match(event.request).then(cached => {
+                    if (cached) return cached;
+                    return fetch(event.request).then(response => {
+                        if (response.ok) {
+                            cache.put(event.request, response.clone());
+                        }
+                        return response;
+                    });
+                })
+            ).catch(() => {
+                return new Response('Livre non disponible hors ligne', {
+                    status: 503,
+                    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+                });
+            })
+        );
+        return;
+    }
+
+    // For cover images: cache-first
+    if (url.pathname.includes('/r2/covers/') || url.pathname.includes('/library/covers/')) {
+        event.respondWith(
+            caches.open(BOOK_CACHE).then(cache =>
+                cache.match(event.request).then(cached => {
+                    if (cached) return cached;
+                    return fetch(event.request).then(response => {
+                        if (response.ok) {
+                            cache.put(event.request, response.clone());
+                        }
+                        return response;
+                    });
+                })
+            ).catch(() => fetch(event.request))
+        );
+        return;
+    }
+
+    // For navigation requests: network-first with offline fallback
+    if (event.request.mode === 'navigate') {
+        event.respondWith(
+            fetch(event.request).catch(() =>
+                caches.match('/').then(cached => cached || new Response('Hors ligne', { status: 503 }))
+            )
+        );
+        return;
+    }
 });

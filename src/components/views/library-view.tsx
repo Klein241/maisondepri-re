@@ -1,11 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     BookOpen, Star, Download, Heart, Search, ArrowLeft,
     Clock, Eye, ChevronRight, Loader2, BookMarked, History,
-    X, Share2
+    X, Share2, Lock, ChevronLeft, ZoomIn, ZoomOut, Wifi, WifiOff
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -43,6 +43,17 @@ interface Book {
     avg_rating: number;
     rating_count: number;
     download_count: number;
+    slug: string | null;
+}
+
+function slugify(text: string): string {
+    return text
+        .toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9\s-]/g, '')
+        .replace(/\s+/g, '-')
+        .replace(/-+/g, '-')
+        .slice(0, 80);
 }
 
 // Star rating component
@@ -85,6 +96,42 @@ function BookCover({ title, category }: { title: string; category: string }) {
     );
 }
 
+// Auth gate: overlay for non-logged-in users trying to use features
+function AuthGate({ onClose }: { onClose: () => void }) {
+    return (
+        <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-60 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+            onClick={onClose}
+        >
+            <motion.div
+                initial={{ scale: 0.9, y: 20 }}
+                animate={{ scale: 1, y: 0 }}
+                className="bg-[#161B26] rounded-2xl p-6 max-w-sm w-full text-center border border-white/10"
+                onClick={e => e.stopPropagation()}
+            >
+                <Lock className="h-12 w-12 text-amber-400 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-white mb-2">Connexion requise</h3>
+                <p className="text-sm text-slate-400 mb-6">
+                    Connectez-vous pour lire, télécharger, noter les livres et gérer vos favoris.
+                </p>
+                <Button
+                    className="w-full bg-linear-to-r from-primary to-purple-600 text-white"
+                    onClick={() => {
+                        // Navigate to auth - store will handle this
+                        window.location.hash = '#auth';
+                        onClose();
+                    }}
+                >
+                    Se connecter
+                </Button>
+            </motion.div>
+        </motion.div>
+    );
+}
+
 export function LibraryView() {
     const { user } = useAppStore();
     const [books, setBooks] = useState<Book[]>([]);
@@ -94,25 +141,69 @@ export function LibraryView() {
     const [selectedBook, setSelectedBook] = useState<Book | null>(null);
     const [showFavorites, setShowFavorites] = useState(false);
     const [showHistory, setShowHistory] = useState(false);
+    const [showAuthGate, setShowAuthGate] = useState(false);
 
     // Supabase-backed user data
     const [favorites, setFavorites] = useState<Set<string>>(new Set());
     const [ratings, setRatings] = useState<Record<string, number>>({});
     const [readHistory, setReadHistory] = useState<any[]>([]);
 
-    // Reading state
+    // Reading state - in-app PDF viewer
     const [isReading, setIsReading] = useState(false);
-    const [readingUrl, setReadingUrl] = useState('');
+    const [readingBook, setReadingBook] = useState<Book | null>(null);
 
-    // Load books from Supabase
+    // Offline cache state
+    const [cachedBookUrls, setCachedBookUrls] = useState<Set<string>>(new Set());
+    const [cachingBookId, setCachingBookId] = useState<string | null>(null);
+
+    const isLoggedIn = !!user?.id;
+
+    // Require auth helper
+    const requireAuth = useCallback((action: () => void) => {
+        if (!isLoggedIn) {
+            setShowAuthGate(true);
+            return;
+        }
+        action();
+    }, [isLoggedIn]);
+
+    // Load books (public - no auth required)
     useEffect(() => {
         loadBooks();
-        if (user?.id) {
+    }, []);
+
+    // Load user data only when logged in
+    useEffect(() => {
+        if (isLoggedIn) {
             loadUserFavorites();
             loadUserRatings();
             loadReadingHistory();
         }
-    }, [user?.id]);
+    }, [isLoggedIn]);
+
+    // Listen for SW cache messages + request cached books list
+    useEffect(() => {
+        const handler = (event: MessageEvent) => {
+            if (event.data?.type === 'CACHED_BOOKS_LIST') {
+                setCachedBookUrls(new Set(event.data.urls));
+            }
+            if (event.data?.type === 'BOOK_CACHED') {
+                setCachingBookId(null);
+                if (event.data.success) {
+                    setCachedBookUrls(prev => new Set([...prev, event.data.url]));
+                    toast.success(`📶 "${event.data.title}" disponible hors-ligne`);
+                } else {
+                    toast.error('Erreur de cache hors-ligne');
+                }
+            }
+        };
+        navigator.serviceWorker?.addEventListener('message', handler);
+        // Ask SW for current cached books
+        navigator.serviceWorker?.ready.then(reg => {
+            reg.active?.postMessage({ type: 'GET_CACHED_BOOKS' });
+        });
+        return () => navigator.serviceWorker?.removeEventListener('message', handler);
+    }, []);
 
     const loadBooks = async () => {
         setIsLoading(true);
@@ -168,7 +259,7 @@ export function LibraryView() {
     };
 
     const toggleFavorite = useCallback(async (bookId: string) => {
-        if (!user?.id) { toast.error("Connectez-vous pour ajouter aux favoris"); return; }
+        if (!user?.id) { setShowAuthGate(true); return; }
 
         const isFav = favorites.has(bookId);
         // Optimistic
@@ -197,7 +288,7 @@ export function LibraryView() {
     }, [user?.id, favorites]);
 
     const setBookRating = useCallback(async (bookId: string, rating: number) => {
-        if (!user?.id) { toast.error("Connectez-vous pour noter"); return; }
+        if (!user?.id) { setShowAuthGate(true); return; }
 
         setRatings(prev => ({ ...prev, [bookId]: rating }));
 
@@ -207,7 +298,7 @@ export function LibraryView() {
                     { onConflict: 'book_id,user_id' });
             if (error) throw error;
             toast.success(`Note ${rating}/5 enregistrée ⭐`);
-            // Refresh books to get updated avg
+            // The trigger will auto-update avg_rating and rating_count
             loadBooks();
         } catch (e: any) {
             toast.error("Erreur: " + e.message);
@@ -215,28 +306,21 @@ export function LibraryView() {
     }, [user?.id]);
 
     const openBook = useCallback(async (book: Book) => {
+        if (!user?.id) { setShowAuthGate(true); return; }
+
         // Track in reading history
-        if (user?.id) {
-            try {
-                await supabase.from('library_reading_history')
-                    .upsert({
-                        book_id: book.id,
-                        user_id: user.id,
-                        total_pages: book.page_count || 0,
-                        last_read_at: new Date().toISOString(),
-                    }, { onConflict: 'book_id,user_id' });
-            } catch (e) { /* ignore */ }
-        }
+        try {
+            await supabase.from('library_reading_history')
+                .upsert({
+                    book_id: book.id,
+                    user_id: user.id,
+                    total_pages: book.page_count || 0,
+                    last_read_at: new Date().toISOString(),
+                }, { onConflict: 'book_id,user_id' });
+        } catch (e) { /* ignore */ }
 
         if (book.file_url) {
-            // For PDFs: use embedded viewer
-            if (book.file_type === 'pdf') {
-                setReadingUrl(book.file_url);
-            } else {
-                // For other types, open in new tab
-                window.open(book.file_url, '_blank');
-                return;
-            }
+            setReadingBook(book);
             setIsReading(true);
         } else {
             toast.info("Fichier non disponible");
@@ -244,22 +328,44 @@ export function LibraryView() {
     }, [user?.id]);
 
     const downloadBook = useCallback(async (book: Book) => {
-        if (book.file_url) {
-            // Track download count
-            try {
-                await supabase.from('library_books')
-                    .update({ download_count: (book.download_count || 0) + 1 })
-                    .eq('id', book.id);
-            } catch (e) { /* ignore */ }
+        if (!user?.id) { setShowAuthGate(true); return; }
 
-            window.open(book.file_url, '_blank');
-            toast.success('Téléchargement lancé 📥');
+        if (book.file_url) {
+            // Track download in dedicated table (trigger updates count)
+            try {
+                await supabase.from('library_downloads').insert({
+                    book_id: book.id,
+                    user_id: user.id,
+                });
+            } catch (e) { /* ignore if table doesn't exist */ }
+
+            // Download using fetch + blob for in-app experience
+            try {
+                toast.info("Téléchargement en cours...");
+                const response = await fetch(book.file_url);
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = book.file_name || `${book.title}.${book.file_type || 'pdf'}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+                toast.success('Téléchargement terminé 📥');
+            } catch (e) {
+                // Fallback to direct open
+                window.open(book.file_url, '_blank');
+                toast.success('Téléchargement lancé 📥');
+            }
         }
-    }, []);
+    }, [user?.id]);
 
     const shareBook = useCallback(async (book: Book) => {
+        const slug = book.slug || slugify(book.title);
+        const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+        const shareUrl = `${baseUrl}/livre/${slug}`;
         const shareText = `📚 ${book.title}\npar ${book.author}\n\nDécouvrez ce livre sur Maison de Prière !`;
-        const shareUrl = typeof window !== 'undefined' ? window.location.origin : '';
 
         if (navigator.share) {
             try {
@@ -276,6 +382,34 @@ export function LibraryView() {
         return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     };
 
+    const cacheBookOffline = useCallback(async (book: Book) => {
+        if (!book.file_url) return;
+        const isCached = cachedBookUrls.has(book.file_url);
+
+        if (isCached) {
+            // Remove from cache
+            navigator.serviceWorker?.ready.then(reg => {
+                reg.active?.postMessage({ type: 'UNCACHE_BOOK', url: book.file_url });
+            });
+            setCachedBookUrls(prev => {
+                const next = new Set(prev);
+                next.delete(book.file_url);
+                return next;
+            });
+            toast.info('Livre retiré du cache hors-ligne');
+        } else {
+            // Add to cache
+            setCachingBookId(book.id);
+            navigator.serviceWorker?.ready.then(reg => {
+                reg.active?.postMessage({
+                    type: 'CACHE_BOOK',
+                    url: book.file_url,
+                    title: book.title,
+                });
+            });
+        }
+    }, [cachedBookUrls]);
+
     // Filter books
     const filteredBooks = books.filter(book => {
         const matchesSearch = !searchQuery ||
@@ -286,22 +420,53 @@ export function LibraryView() {
         return matchesSearch && matchesCategory && matchesFavorites;
     });
 
-    // Reading view
-    if (isReading && readingUrl) {
+    // ═══════════════════════ IN-APP PDF READER ═══════════════════════
+    if (isReading && readingBook) {
         return (
-            <div className="fixed inset-0 z-50 bg-black">
-                <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between p-3 bg-linear-to-b from-black/80 to-transparent">
+            <div className="fixed inset-0 z-50 bg-[#0B0E14] flex flex-col">
+                {/* Reader header */}
+                <div className="flex items-center justify-between px-3 py-2 bg-[#161B26] border-b border-white/10 shrink-0">
+                    <Button size="sm" variant="ghost" className="text-white hover:bg-white/10 gap-1"
+                        onClick={() => { setIsReading(false); setReadingBook(null); }}>
+                        <ArrowLeft className="h-4 w-4" /> Retour
+                    </Button>
+                    <div className="text-center flex-1 min-w-0 px-2">
+                        <p className="text-xs font-medium text-white truncate">{readingBook.title}</p>
+                        <p className="text-[10px] text-slate-400 truncate">{readingBook.author}</p>
+                    </div>
                     <Button size="sm" variant="ghost" className="text-white hover:bg-white/10"
-                        onClick={() => { setIsReading(false); setReadingUrl(''); }}>
-                        <ArrowLeft className="h-4 w-4 mr-1" /> Retour
+                        onClick={() => downloadBook(readingBook)}>
+                        <Download className="h-4 w-4" />
                     </Button>
                 </div>
-                <iframe src={readingUrl} className="w-full h-full border-none" allow="autoplay" />
+                {/* PDF embed - object/embed gives native rendering without browser nav bar */}
+                <div className="flex-1 overflow-hidden">
+                    {readingBook.file_type === 'pdf' ? (
+                        <object
+                            data={`${readingBook.file_url}#toolbar=1&navpanes=0&scrollbar=1`}
+                            type="application/pdf"
+                            className="w-full h-full"
+                        >
+                            {/* Fallback for mobile where object doesn't work for PDFs */}
+                            <iframe
+                                src={`https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(readingBook.file_url)}`}
+                                className="w-full h-full border-none"
+                                title={readingBook.title}
+                            />
+                        </object>
+                    ) : (
+                        <iframe
+                            src={readingBook.file_url}
+                            className="w-full h-full border-none"
+                            title={readingBook.title}
+                        />
+                    )}
+                </div>
             </div>
         );
     }
 
-    // Book detail view
+    // ═══════════════════════ BOOK DETAIL VIEW ═══════════════════════
     if (selectedBook) {
         const userRating = ratings[selectedBook.id] || 0;
         const historyEntry = readHistory.find(h => h.book_id === selectedBook.id);
@@ -329,9 +494,16 @@ export function LibraryView() {
                             <Badge className="bg-primary/20 text-primary border-none text-[10px] mb-2">
                                 {CATEGORIES.find(c => c.id === selectedBook.category)?.icon} {CATEGORIES.find(c => c.id === selectedBook.category)?.label}
                             </Badge>
-                            {selectedBook.file_size > 0 && (
-                                <p className="text-xs text-slate-500 mb-1">{formatSize(selectedBook.file_size)}</p>
-                            )}
+                            <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
+                                {selectedBook.file_size > 0 && (
+                                    <span>{formatSize(selectedBook.file_size)}</span>
+                                )}
+                                {selectedBook.download_count > 0 && (
+                                    <span className="flex items-center gap-1">
+                                        <Download className="h-3 w-3" /> {selectedBook.download_count}
+                                    </span>
+                                )}
+                            </div>
                             {/* Average rating */}
                             <div className="flex items-center gap-1.5 mb-2">
                                 <StarRating rating={Math.round(Number(selectedBook.avg_rating))} size="sm" />
@@ -339,10 +511,16 @@ export function LibraryView() {
                                     {Number(selectedBook.avg_rating).toFixed(1)} ({selectedBook.rating_count} avis)
                                 </span>
                             </div>
-                            {/* Your rating */}
+                            {/* Your rating (requires login) */}
                             <div>
-                                <p className="text-[10px] text-slate-500 mb-1">Votre note</p>
-                                <StarRating rating={userRating} onChange={(r) => setBookRating(selectedBook.id, r)} size="lg" />
+                                <p className="text-[10px] text-slate-500 mb-1">
+                                    {isLoggedIn ? 'Votre note' : '🔒 Connectez-vous pour noter'}
+                                </p>
+                                <StarRating
+                                    rating={userRating}
+                                    onChange={isLoggedIn ? (r) => setBookRating(selectedBook.id, r) : undefined}
+                                    size="lg"
+                                />
                             </div>
                         </div>
                     </div>
@@ -365,18 +543,19 @@ export function LibraryView() {
                         </Card>
                     )}
 
-                    <div className="flex gap-3 mb-6">
+                    <div className="flex gap-3 mb-3">
                         <Button className="flex-1 bg-linear-to-r from-primary to-purple-600 text-white shadow-lg shadow-primary/30"
-                            onClick={() => openBook(selectedBook)}>
-                            <Eye className="h-4 w-4 mr-2" /> Lire
+                            onClick={() => requireAuth(() => openBook(selectedBook))}>
+                            {isLoggedIn ? <Eye className="h-4 w-4 mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+                            Lire
                         </Button>
                         <Button variant="outline" className="border-white/10 text-white hover:bg-white/5"
-                            onClick={() => downloadBook(selectedBook)}>
+                            onClick={() => requireAuth(() => downloadBook(selectedBook))}>
                             <Download className="h-4 w-4" />
                         </Button>
                         <Button variant="outline"
                             className={`border-white/10 ${isFav ? 'text-red-400 border-red-400/30' : 'text-white'} hover:bg-white/5`}
-                            onClick={() => toggleFavorite(selectedBook.id)}>
+                            onClick={() => requireAuth(() => toggleFavorite(selectedBook.id))}>
                             <Heart className={`h-4 w-4 ${isFav ? 'fill-red-400' : ''}`} />
                         </Button>
                         <Button variant="outline" className="border-white/10 text-white hover:bg-white/5"
@@ -384,12 +563,43 @@ export function LibraryView() {
                             <Share2 className="h-4 w-4" />
                         </Button>
                     </div>
+
+                    {/* Offline cache button */}
+                    {isLoggedIn && selectedBook.file_url && (
+                        <Button
+                            variant="outline"
+                            className={`w-full mb-4 border-white/10 ${cachedBookUrls.has(selectedBook.file_url) ? 'text-emerald-400 border-emerald-400/30' : 'text-slate-400'} hover:bg-white/5`}
+                            onClick={() => cacheBookOffline(selectedBook)}
+                            disabled={cachingBookId === selectedBook.id}
+                        >
+                            {cachingBookId === selectedBook.id ? (
+                                <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Téléchargement...</>
+                            ) : cachedBookUrls.has(selectedBook.file_url) ? (
+                                <><WifiOff className="h-4 w-4 mr-2" /> Disponible hors-ligne ✔️</>
+                            ) : (
+                                <><Wifi className="h-4 w-4 mr-2" /> Sauvegarder pour lire hors-ligne</>
+                            )}
+                        </Button>
+                    )}
+
+                    {/* Login prompt for non-auth users */}
+                    {!isLoggedIn && (
+                        <Card className="bg-amber-500/10 border-amber-500/20 mb-4">
+                            <CardContent className="p-3 flex items-center gap-3">
+                                <Lock className="h-5 w-5 text-amber-400 shrink-0" />
+                                <div className="flex-1">
+                                    <p className="text-xs text-amber-300 font-medium">Connexion requise</p>
+                                    <p className="text-[10px] text-amber-300/70">pour lire, télécharger, noter et ajouter en favoris</p>
+                                </div>
+                            </CardContent>
+                        </Card>
+                    )}
                 </div>
             </div>
         );
     }
 
-    // Main library view
+    // ═══════════════════════ MAIN LIBRARY VIEW ═══════════════════════
     return (
         <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-24 overflow-y-auto">
             <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
@@ -407,16 +617,20 @@ export function LibraryView() {
                         <p className="text-xs text-slate-400">{books.length} livres disponibles</p>
                     </div>
                     <div className="flex gap-2">
-                        <Button size="sm" variant={showHistory ? 'default' : 'ghost'}
-                            className={`h-9 ${showHistory ? 'bg-emerald-600' : 'text-slate-400 hover:text-white'}`}
-                            onClick={() => { setShowHistory(!showHistory); setShowFavorites(false); }}>
-                            <History className="h-4 w-4" />
-                        </Button>
-                        <Button size="sm" variant={showFavorites ? 'default' : 'ghost'}
-                            className={`h-9 ${showFavorites ? 'bg-red-600' : 'text-slate-400 hover:text-white'}`}
-                            onClick={() => { setShowFavorites(!showFavorites); setShowHistory(false); }}>
-                            <Heart className={`h-4 w-4 ${showFavorites ? 'fill-white' : ''}`} />
-                        </Button>
+                        {isLoggedIn && (
+                            <>
+                                <Button size="sm" variant={showHistory ? 'default' : 'ghost'}
+                                    className={`h-9 ${showHistory ? 'bg-emerald-600' : 'text-slate-400 hover:text-white'}`}
+                                    onClick={() => { setShowHistory(!showHistory); setShowFavorites(false); }}>
+                                    <History className="h-4 w-4" />
+                                </Button>
+                                <Button size="sm" variant={showFavorites ? 'default' : 'ghost'}
+                                    className={`h-9 ${showFavorites ? 'bg-red-600' : 'text-slate-400 hover:text-white'}`}
+                                    onClick={() => { setShowFavorites(!showFavorites); setShowHistory(false); }}>
+                                    <Heart className={`h-4 w-4 ${showFavorites ? 'fill-white' : ''}`} />
+                                </Button>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -445,8 +659,8 @@ export function LibraryView() {
                     ))}
                 </div>
 
-                {/* Reading History */}
-                {showHistory && (
+                {/* Reading History (login required) */}
+                {showHistory && isLoggedIn && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6">
                         <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
                             <Clock className="h-4 w-4 text-emerald-400" /> Historique de lecture
@@ -500,7 +714,6 @@ export function LibraryView() {
                     <div className="grid grid-cols-3 gap-3">
                         {filteredBooks.map(book => {
                             const isFav = favorites.has(book.id);
-                            const userRating = ratings[book.id] || 0;
 
                             return (
                                 <motion.div key={book.id} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
@@ -528,6 +741,11 @@ export function LibraryView() {
                                                 <span className="text-[9px] text-amber-400">{Number(book.avg_rating).toFixed(1)}</span>
                                             </>
                                         )}
+                                        {book.download_count > 0 && (
+                                            <span className="text-[9px] text-slate-500 ml-1">
+                                                <Download className="h-2 w-2 inline" /> {book.download_count}
+                                            </span>
+                                        )}
                                     </div>
                                 </motion.div>
                             );
@@ -535,6 +753,11 @@ export function LibraryView() {
                     </div>
                 )}
             </div>
+
+            {/* Auth Gate Modal */}
+            <AnimatePresence>
+                {showAuthGate && <AuthGate onClose={() => setShowAuthGate(false)} />}
+            </AnimatePresence>
         </div>
     );
 }

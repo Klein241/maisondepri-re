@@ -12,6 +12,12 @@ id = "REPLACE_WITH_KV_NAMESPACE_ID"
 [vars]
 VAPID_EMAIL = "mailto:admin@maisondepriere.app"
 
+# ── R2 bucket for library files (books & covers) ────────
+# Create with: npx wrangler r2 bucket create library
+[[r2_buckets]]
+binding = "LIBRARY_R2"
+bucket_name = "library"
+
 # ── Secrets (set via CLI, not here) ──────────────────────
 # npx wrangler secret put VAPID_PUBLIC_KEY
 # npx wrangler secret put VAPID_PRIVATE_KEY

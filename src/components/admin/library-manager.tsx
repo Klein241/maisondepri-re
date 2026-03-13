@@ -23,6 +23,44 @@ import {
 import { toast } from 'sonner';
 import { notifyNewBook } from '@/lib/notifications';
 
+// R2 upload helper
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || process.env.NEXT_PUBLIC_NOTIFICATION_WORKER_URL || '';
+const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
+
+async function uploadToR2(file: File, folder: 'books' | 'covers'): Promise<{ url: string; key: string }> {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('folder', folder);
+
+    const res = await fetch(`${WORKER_URL}/api/r2/upload`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${ADMIN_KEY}` },
+        body: formData,
+    });
+
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: 'Upload failed' }));
+        throw new Error(err.error || 'Upload failed');
+    }
+
+    return res.json();
+}
+
+async function deleteFromR2(url: string): Promise<void> {
+    // Extract R2 key from URL: https://worker.url/r2/books/123_file.pdf -> books/123_file.pdf
+    const r2Match = url.match(/\/r2\/(.+)$/);
+    if (!r2Match) return; // Not an R2 URL (maybe old Supabase URL)
+
+    await fetch(`${WORKER_URL}/api/r2/delete`, {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${ADMIN_KEY}`,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ key: r2Match[1] }),
+    });
+}
+
 const CATEGORIES = [
     { value: 'bible-study', label: 'Étude biblique' },
     { value: 'prayer', label: 'Prière' },
@@ -85,15 +123,20 @@ export function LibraryManager() {
     const handleDelete = async (book: Book) => {
         if (!confirm(`Supprimer "${book.title}" ? Cette action est irréversible.`)) return;
         try {
-            // Delete file from storage
+            // Delete file from R2 (or legacy Supabase Storage)
             if (book.file_url) {
-                const filePath = book.file_url.split('/library/')[1];
-                if (filePath) await supabase.storage.from('library').remove([filePath]);
+                await deleteFromR2(book.file_url).catch(() => {
+                    // Fallback: try Supabase Storage for old books
+                    const filePath = book.file_url.split('/library/')[1];
+                    if (filePath) supabase.storage.from('library').remove([filePath]);
+                });
             }
-            // Delete cover from storage
+            // Delete cover from R2 (or legacy Supabase Storage)
             if (book.cover_url) {
-                const coverPath = book.cover_url.split('/library/')[1];
-                if (coverPath) await supabase.storage.from('library').remove([coverPath]);
+                await deleteFromR2(book.cover_url).catch(() => {
+                    const coverPath = book.cover_url!.split('/library/')[1];
+                    if (coverPath) supabase.storage.from('library').remove([coverPath]);
+                });
             }
             // Delete book record
             const { error } = await supabase.from('library_books').delete().eq('id', book.id);
@@ -387,59 +430,52 @@ function BookForm({ initialData, onSave, onCancel }: { initialData: Book | null;
             let fileType = initialData?.file_type || 'pdf';
             let coverUrl = initialData?.cover_url || '';
 
-            // Upload book file
+            // Upload book file to R2
             if (bookFile) {
-                setUploadProgress('Upload du fichier...');
+                setUploadProgress('Upload du fichier vers R2...');
                 const ext = bookFile.name.split('.').pop()?.toLowerCase();
-                const path = `books/${Date.now()}_${bookFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
-                const { error: uploadError } = await supabase.storage
-                    .from('library')
-                    .upload(path, bookFile, {
-                        cacheControl: '3600',
-                        upsert: false,
-                    });
-
-                if (uploadError) throw uploadError;
-
-                const { data: urlData } = supabase.storage.from('library').getPublicUrl(path);
-                fileUrl = urlData.publicUrl;
+                const result = await uploadToR2(bookFile, 'books');
+                fileUrl = result.url;
                 fileName = bookFile.name;
                 fileSize = bookFile.size;
                 fileType = ext || 'pdf';
 
                 // Delete old file if updating
                 if (initialData?.file_url) {
-                    const oldPath = initialData.file_url.split('/library/')[1];
-                    if (oldPath) await supabase.storage.from('library').remove([oldPath]);
+                    await deleteFromR2(initialData.file_url).catch(() => {
+                        const oldPath = initialData.file_url.split('/library/')[1];
+                        if (oldPath) supabase.storage.from('library').remove([oldPath]);
+                    });
                 }
             }
 
-            // Upload cover image
+            // Upload cover image to R2
             if (coverFile) {
-                setUploadProgress('Upload de la couverture...');
-                const coverPath = `covers/${Date.now()}_${coverFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+                setUploadProgress('Upload de la couverture vers R2...');
 
-                const { error: coverError } = await supabase.storage
-                    .from('library')
-                    .upload(coverPath, coverFile, {
-                        cacheControl: '3600',
-                        upsert: false,
-                    });
-
-                if (coverError) throw coverError;
-
-                const { data: coverUrlData } = supabase.storage.from('library').getPublicUrl(coverPath);
-                coverUrl = coverUrlData.publicUrl;
+                const coverResult = await uploadToR2(coverFile, 'covers');
+                coverUrl = coverResult.url;
 
                 // Delete old cover if updating
                 if (initialData?.cover_url) {
-                    const oldCoverPath = initialData.cover_url.split('/library/')[1];
-                    if (oldCoverPath) await supabase.storage.from('library').remove([oldCoverPath]);
+                    await deleteFromR2(initialData.cover_url).catch(() => {
+                        const oldCoverPath = initialData.cover_url!.split('/library/')[1];
+                        if (oldCoverPath) supabase.storage.from('library').remove([oldCoverPath]);
+                    });
                 }
             }
 
             setUploadProgress('Sauvegarde...');
+
+            // Generate slug from title
+            const slug = title.trim()
+                .toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z0-9\s-]/g, '')
+                .replace(/\s+/g, '-')
+                .replace(/-+/g, '-')
+                .slice(0, 80);
 
             const bookData = {
                 title: title.trim(),
@@ -453,6 +489,7 @@ function BookForm({ initialData, onSave, onCancel }: { initialData: Book | null;
                 file_type: fileType,
                 page_count: parseInt(pageCount) || 0,
                 is_published: isPublished,
+                slug,
                 updated_at: new Date().toISOString(),
             };
 

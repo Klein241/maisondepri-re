@@ -1,14 +1,15 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'export', // ← Static export — NO serverless functions, NO credits consumed
+  // No 'output: export' — we use Cloudflare Workers via OpenNext (SSR)
+  // This gives us: dynamic routes, SSR pages, OG meta for book links
+  // And it's FREE: 100K requests/day on Cloudflare Workers free tier
   images: {
-    unoptimized: true, // Required for static export
+    unoptimized: true, // Use external image URLs (Supabase/R2)
   },
   typescript: {
     ignoreBuildErrors: true, // Prevent build fails on type warnings
   },
-  trailingSlash: true, // Better compatibility with static hosting
 };
 
 export default nextConfig;
