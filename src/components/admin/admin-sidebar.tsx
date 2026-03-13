@@ -30,7 +30,8 @@ import {
     Heart,
     UsersRound,
     FolderOpen,
-    Eye
+    Eye,
+    BookMarked
 } from "lucide-react"
 
 const sidebarItems = [
@@ -63,6 +64,11 @@ const sidebarItems = [
         title: "Prières",
         href: "/admin/prayers",
         icon: Heart,
+    },
+    {
+        title: "Bibliothèque",
+        href: "/admin/content",
+        icon: BookMarked,
     },
     {
         title: "Modération",
@@ -115,7 +121,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
                     Gestion
                 </h4>
                 <nav className="space-y-1">
-                    {sidebarItems.slice(0, 6).map((item) => {
+                    {sidebarItems.slice(0, 7).map((item) => {
                         const Icon = item.icon
                         const isActive = pathname === item.href
                         return (
@@ -143,7 +149,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
                     Communauté
                 </h4>
                 <nav className="space-y-1">
-                    {sidebarItems.slice(6, 10).map((item) => {
+                    {sidebarItems.slice(7, 11).map((item) => {
                         const Icon = item.icon
                         const isActive = pathname === item.href || pathname?.startsWith(item.href + '/')
                         return (
@@ -171,7 +177,7 @@ function SidebarContent({ onLinkClick }: { onLinkClick?: () => void }) {
                     Système
                 </h4>
                 <nav className="space-y-1">
-                    {sidebarItems.slice(10).map((item) => {
+                    {sidebarItems.slice(11).map((item) => {
                         const Icon = item.icon
                         const isActive = pathname === item.href || pathname?.startsWith(item.href)
                         return (
