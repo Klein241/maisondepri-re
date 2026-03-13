@@ -362,15 +362,22 @@ BEGIN
         ALTER TABLE friendships ENABLE ROW LEVEL SECURITY;
 
         EXECUTE 'DROP POLICY IF EXISTS "Users can view own friendships" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can send friend requests" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Receivers can respond to requests" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Users can delete own friendships" ON friendships';
         EXECUTE 'DROP POLICY IF EXISTS "friendships_select" ON friendships';
         EXECUTE 'DROP POLICY IF EXISTS "friendships_insert" ON friendships';
         EXECUTE 'DROP POLICY IF EXISTS "friendships_update" ON friendships';
         EXECUTE 'DROP POLICY IF EXISTS "friendships_delete" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Own or admin view friendships" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Users create friendships" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Own or admin update friendships" ON friendships';
+        EXECUTE 'DROP POLICY IF EXISTS "Own or admin delete friendships" ON friendships';
 
-        EXECUTE 'CREATE POLICY "Own or admin view friendships" ON friendships FOR SELECT TO authenticated USING (auth.uid() = user_id OR auth.uid() = friend_id OR is_admin())';
-        EXECUTE 'CREATE POLICY "Users create friendships" ON friendships FOR INSERT TO authenticated WITH CHECK (auth.uid() = user_id OR auth.uid() = friend_id)';
-        EXECUTE 'CREATE POLICY "Own or admin update friendships" ON friendships FOR UPDATE TO authenticated USING (auth.uid() = user_id OR auth.uid() = friend_id OR is_admin())';
-        EXECUTE 'CREATE POLICY "Own or admin delete friendships" ON friendships FOR DELETE TO authenticated USING (auth.uid() = user_id OR auth.uid() = friend_id OR is_admin())';
+        EXECUTE 'CREATE POLICY "Own or admin view friendships" ON friendships FOR SELECT TO authenticated USING (auth.uid() = sender_id OR auth.uid() = receiver_id OR is_admin())';
+        EXECUTE 'CREATE POLICY "Users create friendships" ON friendships FOR INSERT TO authenticated WITH CHECK (auth.uid() = sender_id)';
+        EXECUTE 'CREATE POLICY "Own or admin update friendships" ON friendships FOR UPDATE TO authenticated USING (auth.uid() = sender_id OR auth.uid() = receiver_id OR is_admin())';
+        EXECUTE 'CREATE POLICY "Own or admin delete friendships" ON friendships FOR DELETE TO authenticated USING (auth.uid() = sender_id OR auth.uid() = receiver_id OR is_admin())';
     END IF;
 END $$;
 
