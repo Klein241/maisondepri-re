@@ -617,7 +617,7 @@ export function PrayerGroupManager({
                     <Button variant="ghost" size="icon" onClick={() => setView('main')} className="shrink-0">
                         <X className="h-4 w-4" />
                     </Button>
-                    <h3 className="font-semibold text-base sm:text-lg">Créer un groupe de prière</h3>
+                    <h3 className="font-semibold text-base sm:text-lg">🚪 Créer une chambre haute</h3>
                 </div>
 
                 <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
@@ -995,7 +995,7 @@ export function PrayerGroupManager({
             <div className="flex items-center justify-between">
                 <h3 className="font-semibold text-base sm:text-lg flex items-center gap-2">
                     <Users className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
-                    Groupe de prière
+                    Chambre haute
                 </h3>
                 {onClose && (
                     <Button variant="ghost" size="icon" onClick={onClose} className="shrink-0">
@@ -1221,7 +1221,7 @@ export function JoinPrayerGroupButton({
             <Dialog open={isOpen} onOpenChange={setIsOpen}>
                 <DialogContent className="max-w-[92vw] sm:max-w-md bg-[#0F1219] border-white/10 text-white rounded-2xl sm:rounded-4xl max-h-[85vh] overflow-y-auto p-4 sm:p-6">
                     <DialogHeader>
-                        <DialogTitle className="sr-only">Groupe de prière</DialogTitle>
+                        <DialogTitle className="sr-only">Chambre haute</DialogTitle>
                     </DialogHeader>
                     <PrayerGroupManager
                         prayerId={prayerId}

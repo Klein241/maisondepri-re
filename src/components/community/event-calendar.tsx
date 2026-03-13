@@ -88,7 +88,7 @@ export function EventCalendarButton({ groupId, groupName, className }: EventCale
         {
             icon: '🤝',
             title: 'Rencontre de groupe',
-            description: 'Réunion du groupe de prière',
+            description: 'Réunion de la chambre haute',
             duration: '1h30',
             startTime: '17:00',
             endTime: '18:30'

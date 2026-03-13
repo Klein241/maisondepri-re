@@ -458,7 +458,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             });
                             setUserGroups(prev => [...prev, groupData.id]);
                             loadGroups();
-                            toast.success('\u{1F64F} Demande + groupe de prière créés!');
+                            toast.success('\u{1F6AA} Demande + chambre haute créées!');
                         }
                     } catch (ge) {
                         console.error('Error creating linked group:', ge);
@@ -1007,7 +1007,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                     <Users className="h-5 w-5 text-emerald-400" />
                                                 </div>
                                                 <div>
-                                                    <p className="font-bold text-sm">Créer un groupe de prière</p>
+                                                    <p className="font-bold text-sm">🚪 Créer une chambre haute</p>
                                                     <p className="text-xs text-slate-500">D'autres pourront rejoindre pour prier ensemble</p>
                                                 </div>
                                             </div>
@@ -1253,7 +1253,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                     <div className="text-center py-12">
                                         <Users className="h-12 w-12 text-slate-700 mx-auto mb-4" />
                                         <p className="text-slate-500">Aucun groupe disponible</p>
-                                        <p className="text-sm text-slate-600 mt-2">Créez le premier groupe de prière!</p>
+                                        <p className="text-sm text-slate-600 mt-2">🚪 Créez la première chambre haute!</p>
                                         <Button
                                             className="mt-4 rounded-xl bg-indigo-600"
                                             onClick={() => setShowCreateGroupDialog(true)}
@@ -1803,7 +1803,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
                 <DialogContent className="bg-[#0F1219] border-white/10 text-white max-w-[92vw] sm:max-w-md rounded-2xl sm:rounded-4xl max-h-[85vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle className="text-xl font-bold">Créer un groupe de prière</DialogTitle>
+                        <DialogTitle className="text-xl font-bold">🚪 Créer une chambre haute</DialogTitle>
                         <DialogDescription className="text-slate-400">
                             Créez un espace pour prier ensemble
                         </DialogDescription>

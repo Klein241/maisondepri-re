@@ -34,12 +34,12 @@ const STEPS: TutorialStep[] = [
         emoji: '🙏',
     },
     {
-        title: 'Groupes de prière',
-        description: 'Créez ou rejoignez des groupes de prière. Les admins peuvent envoyer des annonces, créer des événements, lancer des jeûnes collectifs et épingler des sujets de prière.',
+        title: 'Chambres Hautes & Maisons de Prière',
+        description: 'Créez une chambre haute 🚪 autour d\'une demande de prière, puis migrez vos membres vers une maison de prière 🏠 permanente. Chat, annonces, jeûnes collectifs et plus !',
         icon: Users,
         color: 'text-indigo-400',
         bgGradient: 'from-indigo-600/20 to-blue-600/10',
-        emoji: '👥',
+        emoji: '🚪',
     },
     {
         title: 'Messages privés',

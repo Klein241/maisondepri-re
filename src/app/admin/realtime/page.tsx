@@ -186,7 +186,7 @@ export default function RealtimeViewsPage() {
                         type: 'message',
                         user_name: profile?.full_name || 'Utilisateur',
                         user_avatar: profile?.avatar_url,
-                        description: `A envoyé un message dans un groupe de prière`,
+                        description: `A envoyé un message dans une chambre haute`,
                     });
                 }
             )

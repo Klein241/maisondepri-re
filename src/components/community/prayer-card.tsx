@@ -200,7 +200,7 @@ export function PrayerCard({
                 }
 
                 setIsLocked(true);
-                toast.success("🙌 Prière marquée comme exaucée! Le groupe a été fermé.");
+                toast.success("🙌 Prière exaucée! La chambre haute sera fermée sous 7 jours.");
                 setShowTestimonyDialog(true);
             } else {
                 toast.info("Statut mis à jour");
@@ -503,7 +503,7 @@ export function PrayerCard({
                                 onClick={() => setShowGroupDialog(true)}
                             >
                                 <Users className="h-4 w-4 mr-1" />
-                                <span className="text-xs">Groupe</span>
+                                <span className="text-xs">🚪 Chambre</span>
                                 {hasLinkedGroup && (
                                     <span className="ml-1 w-2 h-2 bg-emerald-400 rounded-full" />
                                 )}

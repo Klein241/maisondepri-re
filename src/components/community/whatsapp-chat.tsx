@@ -2480,7 +2480,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             {groups.length === 0 ? (
                                 <div className="text-center py-12 text-muted-foreground">
                                     <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                                    <p>Aucun groupe de prière</p>
+                                    <p>Aucune chambre haute</p>
                                     <p className="text-xs mt-1">Créez un groupe ou rejoignez-en un</p>
                                 </div>
                             ) : (
@@ -2524,7 +2524,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                                     )}
                                                                     <Crown className="h-3 w-3 text-amber-400 shrink-0" />
                                                                 </div>
-                                                                <p className="text-xs text-slate-400 truncate">{group.description || 'Groupe de prière'}</p>
+                                                                <p className="text-xs text-slate-400 truncate">{group.description || 'Chambre haute'}</p>
                                                                 <div className="flex items-center gap-2 mt-1">
                                                                     <span className="text-[10px] text-slate-500 flex items-center gap-1">
                                                                         <Users className="h-2.5 w-2.5" /> {group.member_count} membres
@@ -2571,7 +2571,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                                         <Badge className="bg-red-500/20 text-red-400 text-[9px] shrink-0">URGENT</Badge>
                                                                     )}
                                                                 </div>
-                                                                <p className="text-xs text-slate-400 truncate">{group.description || 'Groupe de prière'}</p>
+                                                                <p className="text-xs text-slate-400 truncate">{group.description || 'Chambre haute'}</p>
                                                                 <div className="flex items-center gap-2 mt-1">
                                                                     <span className="text-[10px] text-slate-500 flex items-center gap-1">
                                                                         <Users className="h-2.5 w-2.5" /> {group.member_count} membres
@@ -3820,7 +3820,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             <div className="w-9 h-9 rounded-xl bg-green-600 flex items-center justify-center">
                                 <Users className="h-4 w-4 text-white" />
                             </div>
-                            Créer un groupe de prière
+                            🚪 Créer une chambre haute
                         </DialogTitle>
                     </DialogHeader>
                     <div className="space-y-4 py-2">

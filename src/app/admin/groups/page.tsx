@@ -391,10 +391,10 @@ export default function AdminGroupsPage() {
             <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                     <h2 className="text-3xl font-bold tracking-tight bg-linear-to-r from-primary to-purple-400 bg-clip-text text-transparent">
-                        Groupes de Prière
+                        🚪 Chambres Hautes
                     </h2>
                     <p className="text-muted-foreground mt-1">
-                        Gérez les groupes de prière de la communauté
+                        Gérez les chambres hautes et maisons de prière
                     </p>
                 </div>
 
@@ -415,7 +415,7 @@ export default function AdminGroupsPage() {
                             <DialogHeader>
                                 <DialogTitle className="flex items-center gap-2">
                                     <Users className="h-5 w-5 text-indigo-500" />
-                                    Nouveau groupe de prière
+                                    Nouvelle chambre haute 🚪
                                 </DialogTitle>
                                 <DialogDescription>
                                     Créez un groupe pour rassembler les priants
@@ -426,7 +426,7 @@ export default function AdminGroupsPage() {
                                 <div className="space-y-2">
                                     <Label>Nom du groupe *</Label>
                                     <Input
-                                        placeholder="Groupe de prière pour..."
+                                        placeholder="Chambre haute pour..."
                                         value={newGroup.name}
                                         onChange={(e) => setNewGroup(prev => ({ ...prev, name: e.target.value }))}
                                     />

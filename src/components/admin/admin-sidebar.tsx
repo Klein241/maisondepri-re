@@ -56,7 +56,7 @@ const sidebarItems = [
         icon: Book,
     },
     {
-        title: "Groupes de Prière",
+        title: "🚪 Chambres Hautes",
         href: "/admin/groups",
         icon: UsersRound,
     },

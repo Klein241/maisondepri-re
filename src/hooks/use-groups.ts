@@ -249,7 +249,7 @@ export function useGroups(user: UserInfo | null) {
             notifyGroupAccessApproved({
                 userId,
                 groupId,
-                groupName: groupData?.name || selectedGroup?.name || 'Groupe de prière',
+                groupName: groupData?.name || selectedGroup?.name || 'Chambre haute',
             }).catch(console.error);
 
             setGroupJoinRequests(prev => prev.filter(r => r.id !== requestId));
@@ -382,7 +382,7 @@ export function useGroups(user: UserInfo | null) {
                 }
             }
 
-            toast.success('🙏 Groupe de prière créé avec succès!');
+            toast.success('🚪 Chambre haute créée avec succès!');
             setNewGroupName('');
             setNewGroupDescription('');
             setIsGroupPublic(true);
