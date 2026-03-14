@@ -1717,6 +1717,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const handleGroupPhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file || !selectedGroup || !user) return;
+        // Only admin/creator can change group photo
+        if (!isGroupAdmin) {
+            toast.error('Seul l\'administrateur peut changer la photo du groupe');
+            return;
+        }
         setIsUploadingGroupPhoto(true);
         try {
             const ext = file.name.split('.').pop();
