@@ -24,8 +24,8 @@ export interface Env {
     PUSH_TOKEN_CACHE: KVNamespace;
     UNREAD_COUNTERS: KVNamespace;
     USER_PREFERENCES: KVNamespace;
-    // Queue
-    PUSH_QUEUE: Queue;
+    // Queue (optional — only if on Workers Paid plan)
+    PUSH_QUEUE?: Queue;
     // Secrets
     SUPABASE_URL: string;
     SUPABASE_SERVICE_KEY: string;
@@ -776,7 +776,7 @@ async function sendWebPush(
 // HANDLER: POST /notify
 // ══════════════════════════════════════════════════════════
 
-async function handleNotify(request: Request, env: Env): Promise<Response> {
+async function handleNotify(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const payload: NotifyPayload = await request.json();
     const { action_type, actor_id, actor_name, actor_avatar } = payload;
 
@@ -897,14 +897,8 @@ async function handleNotify(request: Request, env: Env): Promise<Response> {
                     const isDuplicate = await checkPushDedup(env.NOTIFICATION_CACHE, recipientId, dedupKey);
 
                     if (!isDuplicate) {
-                        await env.PUSH_QUEUE.send({
-                            userId: recipientId,
-                            title,
-                            body: message,
-                            data: actionData,
-                            priority,
-                            aggKey: dedupKey,
-                        });
+                        // Send push directly (no queue needed)
+                        ctx.waitUntil(sendPushDirect(recipientId, title, message, actionData, priority, dedupKey, env));
                         await recordRateLimit(env.NOTIFICATION_CACHE, recipientId);
                     }
                 }
@@ -1134,71 +1128,61 @@ async function handlePushRegister(request: Request, env: Env): Promise<Response>
 }
 
 // ══════════════════════════════════════════════════════════
-// QUEUE CONSUMER — Batched Push Delivery
+// DIRECT PUSH SENDER (replaces queue for free tier)
 // ══════════════════════════════════════════════════════════
 
-async function handleQueueBatch(batch: MessageBatch, env: Env): Promise<void> {
-    for (const msg of batch.messages) {
-        const { userId, title, body, data, priority, aggKey } = msg.body as any;
+async function sendPushDirect(
+    userId: string,
+    title: string,
+    body: string,
+    data: any,
+    priority: string,
+    aggKey: string,
+    env: Env
+): Promise<void> {
+    try {
+        // Get push subscription from KV first, then Supabase
+        let subJson = await env.PUSH_TOKEN_CACHE.get(`push:${userId}`);
 
-        try {
-            // Get push subscription from KV first, then Supabase
-            let subJson = await env.PUSH_TOKEN_CACHE.get(`push:${userId}`);
-
-            if (!subJson) {
-                // Try Supabase
-                const db = new SupabaseClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-                const tokens = await db.select('push_tokens', {
-                    select: 'subscription_json',
-                    filters: `user_id=eq.${userId}`,
-                    single: true,
-                });
-                if (tokens?.subscription_json) {
-                    subJson = tokens.subscription_json;
-                    // Re-cache in KV
-                    await env.PUSH_TOKEN_CACHE.put(`push:${userId}`, subJson, { expirationTtl: 86400 });
-                }
+        if (!subJson) {
+            const db = new SupabaseClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+            const tokens = await db.select('push_tokens', {
+                select: 'subscription_json',
+                filters: `user_id=eq.${userId}`,
+                single: true,
+            });
+            if (tokens?.subscription_json) {
+                subJson = tokens.subscription_json;
+                await env.PUSH_TOKEN_CACHE.put(`push:${userId}`, subJson, { expirationTtl: 86400 });
             }
-
-            if (!subJson) {
-                msg.ack();
-                continue;
-            }
-
-            const subscription = JSON.parse(subJson);
-
-            const pushPayload = {
-                title,
-                body,
-                icon: '/icons/icon-192x192.png',
-                badge: '/icons/icon-72x72.png',
-                data: { url: '/', ...data },
-                urgency: priority === 'high' ? 'high' : 'normal',
-                tag: aggKey || undefined,
-                renotify: !!aggKey,
-            };
-
-            const result = await sendWebPush(subscription, pushPayload, env);
-
-            if (result.ok) {
-                msg.ack();
-            } else if (result.status === 410 || result.status === 404) {
-                // Subscription expired → clean up
-                await env.PUSH_TOKEN_CACHE.delete(`push:${userId}`);
-                const db = new SupabaseClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
-                try {
-                    await db.query('push_tokens', {
-                        method: 'DELETE',
-                        filters: `user_id=eq.${userId}`,
-                    });
-                } catch (e) { /* non-critical */ }
-                msg.ack();
-            } else {
-                msg.retry(); // Will retry with exponential backoff
-            }
-        } catch (e) {
-            msg.retry();
         }
+
+        if (!subJson) return;
+
+        const subscription = JSON.parse(subJson);
+        const pushPayload = {
+            title,
+            body,
+            icon: '/icons/icon-192x192.png',
+            badge: '/icons/icon-72x72.png',
+            data: { url: '/', ...data },
+            urgency: priority === 'high' ? 'high' : 'normal',
+            tag: aggKey || undefined,
+            renotify: !!aggKey,
+        };
+
+        const result = await sendWebPush(subscription, pushPayload, env);
+
+        if (result.status === 410 || result.status === 404) {
+            // Subscription expired → clean up
+            await env.PUSH_TOKEN_CACHE.delete(`push:${userId}`);
+            const db = new SupabaseClient(env.SUPABASE_URL, env.SUPABASE_SERVICE_KEY);
+            try {
+                await db.query('push_tokens', { method: 'DELETE', filters: `user_id=eq.${userId}` });
+            } catch (e) { /* non-critical */ }
+        }
+    } catch (e) {
+        console.error('[Push] Direct send error for user', userId, e);
     }
 }
 
@@ -1256,13 +1240,8 @@ async function handleCron(env: Env): Promise<void> {
             }
 
             if (prefs.push) {
-                await env.PUSH_QUEUE.send({
-                    userId: prayer.user_id,
-                    title,
-                    body: message,
-                    data: actionData,
-                    priority: 'low',
-                });
+                // Send push directly (no queue needed)
+                await sendPushDirect(prayer.user_id, title, message, actionData, 'low', `cron:prayer:${prayer.id}`, env);
             }
 
             // Mark reminder as sent (TTL 7 days — don't resend)
@@ -1313,7 +1292,7 @@ function handleHealth(env: Env): Response {
         features: [
             'aggregation',
             'kv-counters',
-            'queue-push',
+            'direct-push',
             'cron-reminders',
             'cursor-pagination',
             'user-preferences',
@@ -1327,7 +1306,7 @@ function handleHealth(env: Env): Response {
 // ══════════════════════════════════════════════════════════
 
 export default {
-    async fetch(request: Request, env: Env): Promise<Response> {
+    async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
         // CORS preflight
         if (request.method === 'OPTIONS') {
             return new Response(null, { status: 204, headers: CORS_HEADERS });
@@ -1338,7 +1317,7 @@ export default {
 
         try {
             // ── Notification Gateway ──
-            if (pathname === '/notify' && method === 'POST') return handleNotify(request, env);
+            if (pathname === '/notify' && method === 'POST') return handleNotify(request, env, ctx);
             if (pathname === '/notify/count' && method === 'GET') return handleGetCount(request, env);
             if (pathname === '/notify/read' && method === 'PATCH') return handleMarkRead(request, env);
             if (pathname === '/notify/read-all' && method === 'PATCH') return handleMarkAllRead(request, env);
@@ -1375,11 +1354,6 @@ export default {
         } catch (e: any) {
             return json({ error: e.message, stack: e.stack }, 500);
         }
-    },
-
-    // Queue consumer
-    async queue(batch: MessageBatch, env: Env): Promise<void> {
-        await handleQueueBatch(batch, env);
     },
 
     // Cron trigger
