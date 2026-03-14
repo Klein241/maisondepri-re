@@ -17,6 +17,7 @@ import {
     Calendar,
     Settings,
     Moon,
+    Sun,
     Bell,
     LogOut,
     Share2,
@@ -52,9 +53,18 @@ import { AuthView } from "./auth-view"
 import { supabase } from "@/lib/supabase"
 import { formatDistanceToNow } from "date-fns"
 import { fr } from "date-fns/locale"
+import { useTheme } from "next-themes"
 
 export function ProfileView() {
-    const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme, setUser } = useAppStore()
+    const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme, setUser, prayerRequests } = useAppStore()
+    const { setTheme: setNextTheme, resolvedTheme } = useTheme()
+
+    // Sync store theme ↔ next-themes
+    useEffect(() => {
+        if (theme && theme !== 'system') {
+            setNextTheme(theme)
+        }
+    }, [theme, setNextTheme])
     const [isUploading, setIsUploading] = useState(false)
     const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -814,41 +824,72 @@ export function ProfileView() {
                     </Card>
                 </motion.div>
 
-                {/* Achievements Section */}
+                {/* Badges Section — Personalized stats */}
                 <div className="mb-8">
                     <div className="flex items-center justify-between mb-4">
                         <h3 className="font-semibold text-lg flex items-center gap-2">
                             <Trophy className="h-4 w-4 text-primary" />
-                            Succès ({unlockedAchievements.length}/{achievements.length})
+                            Mes Badges
                         </h3>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                        {achievements.map((achievement) => {
-                            const isUnlocked = unlockedAchievements.includes(achievement.id)
-                            return (
-                                <motion.div
-                                    key={achievement.id}
-                                    whileHover={{ scale: 1.02 }}
-                                    whileTap={{ scale: 0.98 }}
-                                >
-                                    <Card className={`h-full border-none shadow-sm transition-colors ${isUnlocked
-                                        ? 'bg-linear-to-br from-card to-primary/5'
-                                        : 'bg-muted/50 opacity-60 grayscale'
-                                        }`}>
-                                        <CardContent className="p-4 flex flex-col items-center text-center h-full">
-                                            <div className={`
-                                        p-3 rounded-full mb-3 shadow-inner
-                                        ${isUnlocked ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'}
-                                    `}>
-                                                <span className="text-2xl">{achievement.icon}</span>
-                                            </div>
-                                            <h4 className="font-semibold text-sm mb-1">{achievement.name}</h4>
-                                            <p className="text-xs text-muted-foreground line-clamp-2">{achievement.description}</p>
-                                        </CardContent>
-                                    </Card>
-                                </motion.div>
-                            )
-                        })}
+                        {/* Badge: Ma Communauté */}
+                        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <Card className="h-full border-none shadow-sm bg-linear-to-br from-indigo-500/10 to-purple-500/5 border-indigo-500/20">
+                                <CardContent className="p-4 flex flex-col items-center text-center h-full">
+                                    <div className="p-3 rounded-full mb-3 shadow-inner bg-indigo-500/15">
+                                        <Users className="h-6 w-6 text-indigo-400" />
+                                    </div>
+                                    <h4 className="font-semibold text-sm mb-1">Ma Communauté</h4>
+                                    <p className="text-2xl font-bold text-indigo-400">{myGroups.length}</p>
+                                    <p className="text-[10px] text-muted-foreground">groupe{myGroups.length !== 1 ? 's' : ''} rejoints</p>
+                                </CardContent>
+                            </Card>
+                        </motion.div>
+
+                        {/* Badge: Mes Amis */}
+                        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <Card className="h-full border-none shadow-sm bg-linear-to-br from-pink-500/10 to-rose-500/5 border-pink-500/20">
+                                <CardContent className="p-4 flex flex-col items-center text-center h-full">
+                                    <div className="p-3 rounded-full mb-3 shadow-inner bg-pink-500/15">
+                                        <Heart className="h-6 w-6 text-pink-400" />
+                                    </div>
+                                    <h4 className="font-semibold text-sm mb-1">Mes Amis</h4>
+                                    <p className="text-2xl font-bold text-pink-400">{myFriends.length}</p>
+                                    <p className="text-[10px] text-muted-foreground">ami{myFriends.length !== 1 ? 's' : ''} connectés</p>
+                                </CardContent>
+                            </Card>
+                        </motion.div>
+
+                        {/* Badge: Guerrier de Prière */}
+                        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <Card className="h-full border-none shadow-sm bg-linear-to-br from-amber-500/10 to-yellow-500/5 border-amber-500/20">
+                                <CardContent className="p-4 flex flex-col items-center text-center h-full">
+                                    <div className="p-3 rounded-full mb-3 shadow-inner bg-amber-500/15">
+                                        <span className="text-2xl">🙏</span>
+                                    </div>
+                                    <h4 className="font-semibold text-sm mb-1">Guerrier de Prière</h4>
+                                    <p className="text-2xl font-bold text-amber-400">
+                                        {prayerRequests.filter(p => p.prayedBy?.includes(user?.id || '')).length}
+                                    </p>
+                                    <p className="text-[10px] text-muted-foreground">prières soutenues</p>
+                                </CardContent>
+                            </Card>
+                        </motion.div>
+
+                        {/* Badge: Fidèle */}
+                        <motion.div whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                            <Card className="h-full border-none shadow-sm bg-linear-to-br from-green-500/10 to-emerald-500/5 border-green-500/20">
+                                <CardContent className="p-4 flex flex-col items-center text-center h-full">
+                                    <div className="p-3 rounded-full mb-3 shadow-inner bg-green-500/15">
+                                        <Flame className="h-6 w-6 text-green-400" />
+                                    </div>
+                                    <h4 className="font-semibold text-sm mb-1">Fidèle</h4>
+                                    <p className="text-2xl font-bold text-green-400">{streak}</p>
+                                    <p className="text-[10px] text-muted-foreground">jours consécutifs</p>
+                                </CardContent>
+                            </Card>
+                        </motion.div>
                     </div>
                 </div>
 
@@ -1078,17 +1119,21 @@ export function ProfileView() {
                         <CardContent className="p-0 divide-y">
                             <div className="flex items-center justify-between p-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="bg-purple-500/10 p-2 rounded-lg text-purple-500">
-                                        <Moon className="h-4 w-4" />
+                                    <div className={`p-2 rounded-lg ${resolvedTheme === 'dark' ? 'bg-purple-500/10 text-purple-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                                        {resolvedTheme === 'dark' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
                                     </div>
                                     <div>
                                         <p className="font-medium text-sm">Apparence</p>
-                                        <p className="text-xs text-muted-foreground">{theme === 'dark' ? 'Mode sombre' : 'Mode clair'}</p>
+                                        <p className="text-xs text-muted-foreground">{resolvedTheme === 'dark' ? 'Mode sombre 🌙' : 'Mode clair ☀️'}</p>
                                     </div>
                                 </div>
                                 <Switch
-                                    checked={theme === 'dark'}
-                                    onCheckedChange={(checked) => setTheme(checked ? 'dark' : 'light')}
+                                    checked={resolvedTheme === 'dark'}
+                                    onCheckedChange={(checked) => {
+                                        const newTheme = checked ? 'dark' : 'light'
+                                        setTheme(newTheme)
+                                        setNextTheme(newTheme)
+                                    }}
                                 />
                             </div>
 

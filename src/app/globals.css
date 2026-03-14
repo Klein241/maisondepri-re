@@ -6,7 +6,7 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Slate-based dark theme (Mobile-First approach) */
+  /* Light theme (default) */
   --font-inter: var(--font-inter);
   --font-crimson: var(--font-crimson);
 
@@ -15,13 +15,42 @@
   --vibrant-blue: #3B82F6;
   --cyan-accent: #06B6D4;
   --gold-accent: #F59E0B;
-  /* Warm gold */
 
-  /* Default vars mapped to Slate dark mode */
+  /* Light mode vars */
+  --background: 0 0% 100%;
+  --foreground: 222.2 47.4% 11.2%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 47.4% 11.2%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 47.4% 11.2%;
+
+  --primary: 263.4 70% 50.4%;
+  --primary-foreground: 210 40% 98%;
+
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 46.9%;
+
+  --accent: 210 40% 96%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 263.4 70% 50.4%;
+
+  --radius: 1rem;
+}
+
+.dark {
   --background: 222.2 47.4% 11.2%;
-  /* #0F172A */
   --foreground: 210 40% 98%;
-  /* #F8FAFC */
 
   --card: 222.2 47.4% 11.2%;
   --card-foreground: 210 40% 98%;
@@ -30,7 +59,6 @@
   --popover-foreground: 210 40% 98%;
 
   --primary: 263.4 70% 50.4%;
-  /* Close to Deep Purple */
   --primary-foreground: 210 40% 98%;
 
   --secondary: 217.2 32.6% 17.5%;
@@ -38,7 +66,6 @@
 
   --muted: 217.2 32.6% 17.5%;
   --muted-foreground: 215 20.2% 65.1%;
-  /* #CBD5E1 */
 
   --accent: 217.2 32.6% 17.5%;
   --accent-foreground: 210 40% 98%;
@@ -49,15 +76,6 @@
   --border: 217.2 32.6% 17.5%;
   --input: 217.2 32.6% 17.5%;
   --ring: 263.4 70% 50.4%;
-
-  --radius: 1rem;
-  /* Rounded corners */
-}
-
-.dark {
-  --background: 222.2 47.4% 11.2%;
-  --foreground: 210 40% 98%;
-  /* ... same as root since we default to dark ... */
 }
 
 @theme inline {
@@ -102,8 +120,6 @@
 
   body {
     @apply bg-background text-foreground font-sans;
-    background-color: #0F172A;
-    /* Force dark background */
   }
 }
 

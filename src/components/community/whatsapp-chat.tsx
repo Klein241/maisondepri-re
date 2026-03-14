@@ -7,7 +7,7 @@ import {
     Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
     Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
-    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar
+    BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar, ChevronsUp
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -171,6 +171,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Voice Salon state (Discord-style group audio)
     const [showVoiceSalon, setShowVoiceSalon] = useState(false);
+
+    // Group search filter
+    const [groupSearchQuery, setGroupSearchQuery] = useState('');
+
+    // Scroll-to-top state
+    const scrollAreaRef = useRef<HTMLDivElement>(null);
+    const [showScrollTop, setShowScrollTop] = useState(false);
 
     // Group Game state
     const [showGroupGame, setShowGroupGame] = useState(false);
@@ -2531,6 +2538,24 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         </div>
                     ) : activeTab === 'groups' ? (
                         <div className="p-3 space-y-4">
+                            {/* Search bar for groups */}
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                                <Input
+                                    placeholder="Rechercher un groupe..."
+                                    value={groupSearchQuery}
+                                    onChange={(e) => setGroupSearchQuery(e.target.value)}
+                                    className="pl-9 bg-white/5 border-white/10 text-white placeholder:text-slate-500 h-10 rounded-xl"
+                                />
+                                {groupSearchQuery && (
+                                    <button
+                                        onClick={() => setGroupSearchQuery('')}
+                                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                                    >
+                                        <X className="h-4 w-4" />
+                                    </button>
+                                )}
+                            </div>
                             {/* Create group button */}
                             <button
                                 onClick={() => {
@@ -2545,16 +2570,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 <span className="text-green-400 font-medium">Créer un Groupe</span>
                             </button>
 
-                            {groups.length === 0 ? (
+                            {groups.filter(g => !groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase())).length === 0 ? (
                                 <div className="text-center py-12 text-muted-foreground">
                                     <Users className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                                    <p>Aucune chambre haute</p>
-                                    <p className="text-xs mt-1">Créez un groupe ou rejoignez-en un</p>
+                                    <p>{groupSearchQuery ? 'Aucun groupe trouvé' : 'Aucune chambre haute'}</p>
+                                    <p className="text-xs mt-1">{groupSearchQuery ? 'Essayez un autre mot-clé' : 'Créez un groupe ou rejoignez-en un'}</p>
                                 </div>
                             ) : (
                                 <>
                                     {/* Groups created by user */}
-                                    {groups.filter(g => g.created_by === user.id).length > 0 && (
+                                    {groups.filter(g => g.created_by === user.id && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).length > 0 && (
                                         <div>
                                             <h3 className="text-sm font-bold text-white mb-2 px-1">
                                                 📌 Les groupes créés par vous
@@ -2565,7 +2590,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 )}
                                             </h3>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {groups.filter(g => g.created_by === user.id).map(group => (
+                                                {groups.filter(g => g.created_by === user.id && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).map(group => (
                                                     <button
                                                         key={group.id}
                                                         onClick={() => openGroup(group)}
@@ -2607,13 +2632,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                     )}
 
                                     {/* Groups joined by user */}
-                                    {groups.filter(g => g.created_by !== user.id).length > 0 && (
+                                    {groups.filter(g => g.created_by !== user.id && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).length > 0 && (
                                         <div>
                                             <h3 className="text-sm font-bold text-white mb-2 px-1">
                                                 🤝 Les groupes rejoints par vous
                                             </h3>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                                {groups.filter(g => g.created_by !== user.id).map(group => (
+                                                {groups.filter(g => g.created_by !== user.id && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).map(group => (
                                                     <button
                                                         key={group.id}
                                                         onClick={() => openGroup(group)}
@@ -3043,7 +3068,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             )}
 
             {/* Messages — only this area scrolls */}
-            <ScrollArea className="flex-1 min-h-0 overflow-y-auto">
+            <ScrollArea className="flex-1 min-h-0 overflow-y-auto" ref={scrollAreaRef}
+                onScrollCapture={(e: any) => {
+                    const target = e.target as HTMLElement;
+                    setShowScrollTop(target.scrollTop > 400);
+                }}
+            >
                 <div className="p-2 sm:p-4">
                     {isLoading ? (
                         <div className="flex items-center justify-center h-full">
@@ -3268,6 +3298,25 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     )}
                 </div>
             </ScrollArea>
+
+            {/* Scroll to top button */}
+            <AnimatePresence>
+                {showScrollTop && (
+                    <motion.button
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        onClick={() => {
+                            const scrollEl = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+                            if (scrollEl) scrollEl.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="absolute right-4 bottom-24 z-30 w-10 h-10 rounded-full bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-500/30 flex items-center justify-center transition-colors"
+                        title="Remonter au début"
+                    >
+                        <ChevronsUp className="h-5 w-5" />
+                    </motion.button>
+                )}
+            </AnimatePresence>
 
             {/* Input Area — fixed at bottom, never scrolls */}
             <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/95 backdrop-blur-md shrink-0 z-20">

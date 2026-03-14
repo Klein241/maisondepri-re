@@ -71,7 +71,7 @@ export default function RootLayout({
         <meta name="msapplication-TileImage" content="/icon-192.png" />
       </head>
       <body
-        className={`${inter.variable} ${crimsonPro.variable} antialiased bg-[#0F172A] text-slate-50 overflow-x-hidden`}
+        className={`${inter.variable} ${crimsonPro.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"
@@ -84,7 +84,7 @@ export default function RootLayout({
           <PWAManager />
           <PushNotificationWrapper />
           {children}
-          <Toaster position="top-center" richColors theme="dark" />
+          <Toaster position="top-center" richColors />
         </ThemeProvider>
       </body>
     </html>
