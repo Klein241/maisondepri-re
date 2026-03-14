@@ -810,8 +810,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </TabsContent>
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
-                                <TabsContent value="chat" className="mt-0 flex flex-col -mx-4 h-full">
-                                    <div className="relative flex-1 h-full" style={{ height: 'calc(100dvh - 280px)', minHeight: '300px' }}>
+                                <TabsContent value="chat" className="mt-0 flex flex-col -mx-4" style={{ height: 'calc(100dvh - 140px)' }}>
+                                    <div className="flex-1 h-full overflow-hidden">
                                         <WhatsAppChat
                                             user={user ? {
                                                 id: user.id,

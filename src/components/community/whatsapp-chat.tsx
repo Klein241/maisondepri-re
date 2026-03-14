@@ -2811,7 +2811,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const currentGroup = view === 'group' ? selectedGroup : null;
 
     return (
-        <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-linear-to-b from-slate-900 to-slate-950">
+        <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-linear-to-b from-slate-900 to-slate-950 relative">
             {/* Chat Header — fixed, never scrolls */}
             <div className="p-2 sm:p-3 border-b border-white/10 flex items-center gap-2 sm:gap-3 bg-slate-900/95 backdrop-blur-md shrink-0 z-20">
                 <Button variant="ghost" size="icon" onClick={goBackToList} className="shrink-0 h-8 w-8 sm:h-9 sm:w-9">
@@ -3068,7 +3068,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             )}
 
             {/* Messages — only this area scrolls */}
-            <ScrollArea className="flex-1 min-h-0 overflow-y-auto" ref={scrollAreaRef}
+            <ScrollArea className="flex-1 min-h-0 overflow-hidden" ref={scrollAreaRef}
                 onScrollCapture={(e: any) => {
                     const target = e.target as HTMLElement;
                     setShowScrollTop(target.scrollTop > 400);
