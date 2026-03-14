@@ -34,7 +34,9 @@ export function NotificationListener() {
         let actionData: any = {};
         try {
             if (popup.action_data) {
-                actionData = JSON.parse(popup.action_data);
+                actionData = typeof popup.action_data === 'string'
+                    ? JSON.parse(popup.action_data)
+                    : popup.action_data;
             }
         } catch (e) {
             console.error('Failed to parse action_data:', e);

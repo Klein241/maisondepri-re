@@ -161,6 +161,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const [eventTime, setEventTime] = useState('');
     const [eventDescription, setEventDescription] = useState('');
 
+    // "Lire la suite" expanded messages tracker
+    const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+
     // Migrate members state
     const [showMigrateTool, setShowMigrateTool] = useState(false);
     const [migrateTargetName, setMigrateTargetName] = useState('');
@@ -522,7 +525,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const setupPresenceChannel = () => {
         if (!user) return;
 
-        const channel = supabase.channel(`online_users_${Date.now()}`);
+        // CRITICAL: All users MUST be on the SAME channel to see each other's presence
+        const channel = supabase.channel('global_presence');
         presenceChannelRef.current = channel;
 
         channel
@@ -539,10 +543,24 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             .subscribe(async (status) => {
                 if (status === 'SUBSCRIBED') {
                     await channel.track({ user_id: user.id });
+                    // Also update last_seen in profiles
+                    supabase.from('profiles')
+                        .update({ last_seen: new Date().toISOString() })
+                        .eq('id', user.id)
+                        .then(() => { });
                 }
             });
 
+        // Periodically update last_seen
+        const lastSeenInterval = setInterval(() => {
+            supabase.from('profiles')
+                .update({ last_seen: new Date().toISOString() })
+                .eq('id', user.id)
+                .then(() => { });
+        }, 60000); // Every minute
+
         return () => {
+            clearInterval(lastSeenInterval);
             channel.unsubscribe();
         };
     };
@@ -1580,13 +1598,34 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         }
     };
 
-    // URL regex for detecting links in messages
-    const urlRegex = /(https?:\/\/[^\s]+)/gi;
+    // Generate unique color per member (like Telegram)
+    const MEMBER_COLORS = [
+        '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6',
+        '#EF4444', '#06B6D4', '#F97316', '#84CC16', '#A855F7',
+        '#14B8A6', '#E11D48', '#0EA5E9', '#D946EF', '#22C55E',
+    ];
+    const getMemberColor = (senderId: string): string => {
+        let hash = 0;
+        for (let i = 0; i < senderId.length; i++) {
+            hash = ((hash << 5) - hash) + senderId.charCodeAt(i);
+            hash |= 0;
+        }
+        return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
+    };
 
-    // Render message content with clickable links and @mentions
-    const renderMessageContent = (content: string) => {
+    // Render message content with clickable links, @mentions, and "Lire la suite" for long texts
+    const renderMessageContent = (content: string, msgId?: string) => {
+        const WORD_LIMIT = 50;
+        const words = content.split(/\s+/);
+        const isLong = words.length > WORD_LIMIT;
+        const isExpanded = expandedMessages.has(msgId || '');
+        const displayContent = isLong && !isExpanded
+            ? words.slice(0, WORD_LIMIT).join(' ') + '...'
+            : content;
+
         // First handle URLs
-        const parts = content.split(urlRegex);
+        const urlRegexLocal = /(https?:\/\/[^\s]+)/gi;
+        const parts = displayContent.split(urlRegexLocal);
         const hasUrl = parts.length > 1;
 
         // Highlight @mentions and **bold**
@@ -1607,36 +1646,60 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             });
         };
 
-        if (!hasUrl) return <p className="text-sm whitespace-pre-wrap wrap-break-word">{renderWithFormatting(content)}</p>;
+        const readMoreBtn = isLong && !isExpanded ? (
+            <button
+                onClick={(e) => { e.stopPropagation(); setExpandedMessages(prev => new Set(prev).add(msgId || '')); }}
+                className="text-indigo-400 hover:text-indigo-300 text-xs font-medium mt-1 block transition-colors"
+            >
+                Lire la suite ▼
+            </button>
+        ) : isLong && isExpanded ? (
+            <button
+                onClick={(e) => { e.stopPropagation(); setExpandedMessages(prev => { const n = new Set(prev); n.delete(msgId || ''); return n; }); }}
+                className="text-indigo-400 hover:text-indigo-300 text-xs font-medium mt-1 block transition-colors"
+            >
+                Réduire ▲
+            </button>
+        ) : null;
+
+        if (!hasUrl) return (
+            <div>
+                <p className="text-sm whitespace-pre-wrap wrap-break-word">{renderWithFormatting(displayContent)}</p>
+                {readMoreBtn}
+            </div>
+        );
 
         return (
-            <div className="text-sm whitespace-pre-wrap wrap-break-word">
-                {parts.map((part, i) => {
-                    if (urlRegex.test(part)) {
-                        urlRegex.lastIndex = 0; // Reset regex
-                        // Extract domain for display
-                        let domain = '';
-                        try { domain = new URL(part).hostname; } catch { domain = part; }
-                        return (
-                            <span key={i}>
-                                <a
-                                    href={part}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="text-blue-300 underline hover:text-blue-200 transition-colors break-all"
-                                >
-                                    {part}
-                                </a>
-                                <div className="mt-1 rounded-lg bg-white/5 border border-white/10 p-2 max-w-full overflow-hidden">
-                                    <p className="text-[10px] text-slate-400 truncate">🔗 {domain}</p>
-                                    <p className="text-xs text-slate-300 truncate">{part.length > 60 ? part.slice(0, 60) + '...' : part}</p>
-                                </div>
-                            </span>
-                        );
-                    }
-                    urlRegex.lastIndex = 0;
-                    return <span key={i}>{renderWithFormatting(part)}</span>;
-                })}
+            <div>
+                <div className="text-sm whitespace-pre-wrap wrap-break-word">
+                    {parts.map((part, i) => {
+                        if (urlRegexLocal.test(part)) {
+                            urlRegexLocal.lastIndex = 0; // Reset regex
+                            // Extract domain for display
+                            let domain = '';
+                            try { domain = new URL(part).hostname; } catch { domain = part; }
+                            return (
+                                <span key={i}>
+                                    <a
+                                        href={part}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-blue-300 underline hover:text-blue-200 transition-colors break-all"
+                                    >
+                                        {part}
+                                    </a>
+                                    <div className="mt-1 rounded-lg bg-white/5 border border-white/10 p-2 max-w-full overflow-hidden">
+                                        <p className="text-[10px] text-slate-400 truncate">🔗 {domain}</p>
+                                        <p className="text-xs text-slate-300 truncate">{part.length > 60 ? part.slice(0, 60) + '...' : part}</p>
+                                    </div>
+                                </span>
+                            );
+                        }
+                        urlRegexLocal.lastIndex = 0;
+                        return <span key={i}>{renderWithFormatting(part)}</span>;
+                    })}
+                </div>
+                {readMoreBtn}
             </div>
         );
     };
@@ -3034,7 +3097,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 )}
                                             >
                                                 {!isOwn && view === 'group' && showAvatar && (
-                                                    <p className="text-xs text-indigo-400 font-medium mb-1">
+                                                    <p className="text-xs font-medium mb-1" style={{ color: getMemberColor(msg.sender_id) }}>
                                                         {msg.sender?.full_name}
                                                     </p>
                                                 )}
@@ -3065,7 +3128,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 ) : msg.type === 'image' && msg.image_url ? (
                                                     <img src={msg.image_url} alt="" className="max-w-full rounded-lg max-h-60 object-cover" />
                                                 ) : (
-                                                    renderMessageContent(msg.content)
+                                                    renderMessageContent(msg.content, msg.id)
                                                 )}
 
                                                 <div className="flex items-center justify-end gap-1 mt-1">
@@ -3087,13 +3150,30 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     <button
                                                         key={emoji}
                                                         onClick={() => {
+                                                            // Per-user emoji: each user can only have ONE emoji, can change or remove it
+                                                            const currentReactions: Record<string, string> = (() => {
+                                                                try {
+                                                                    const r = (msg as any).reactions;
+                                                                    if (typeof r === 'string') return JSON.parse(r || '{}');
+                                                                    if (typeof r === 'object' && r !== null) return r;
+                                                                    return {};
+                                                                } catch { return {}; }
+                                                            })();
+
+                                                            // Toggle: if same emoji, remove it. Otherwise set new one.
+                                                            if (currentReactions[user.id] === emoji) {
+                                                                delete currentReactions[user.id];
+                                                            } else {
+                                                                currentReactions[user.id] = emoji;
+                                                            }
+
                                                             const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
-                                                            const currentReactions = (msg as any).reactions || '';
-                                                            const newReactions = currentReactions.includes(emoji) ? currentReactions : currentReactions + emoji;
-                                                            supabase.from(table).update({ content: msg.content }).eq('id', msg.id).then(() => {
-                                                                setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: newReactions } : m));
-                                                            });
-                                                            toast.success(`${emoji}`);
+                                                            supabase.from(table)
+                                                                .update({ reactions: JSON.stringify(currentReactions) })
+                                                                .eq('id', msg.id)
+                                                                .then(() => {
+                                                                    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: currentReactions } : m));
+                                                                });
                                                         }}
                                                         className="text-sm hover:scale-125 transition-transform px-0.5"
                                                     >{emoji}</button>
@@ -3118,9 +3198,25 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                             {/* Show reactions below message */}
                                             {(msg as any).reactions && (
                                                 <div className="flex gap-0.5 mt-0.5">
-                                                    {[...(msg as any).reactions].map((r: string, i: number) => (
-                                                        <span key={i} className="text-xs bg-white/5 rounded-full px-1">{r}</span>
-                                                    ))}
+                                                    {(() => {
+                                                        const reactions: Record<string, string> = (() => {
+                                                            try {
+                                                                const r = (msg as any).reactions;
+                                                                if (typeof r === 'string') return JSON.parse(r || '{}');
+                                                                if (typeof r === 'object' && r !== null) return r;
+                                                                return {};
+                                                            } catch { return {}; }
+                                                        })();
+                                                        const emojiCounts: Record<string, number> = {};
+                                                        Object.values(reactions).forEach(emoji => {
+                                                            emojiCounts[emoji] = (emojiCounts[emoji] || 0) + 1;
+                                                        });
+                                                        return Object.entries(emojiCounts).map(([emoji, count]) => (
+                                                            <span key={emoji} className="inline-flex items-center gap-0.5 bg-white/10 rounded-full px-1.5 py-0.5 text-xs">
+                                                                {emoji}{count > 1 && <span className="text-[10px] text-slate-400">{count}</span>}
+                                                            </span>
+                                                        ));
+                                                    })()}
                                                 </div>
                                             )}
                                             {/* VISIBLE Reply button under every message */}
@@ -3135,10 +3231,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 <button
                                                     onClick={() => setThreadMessage(msg)}
                                                     className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
-                                                    title="Commenter en privé"
+                                                    title="Commenter"
                                                 >
                                                     <span>💬</span>
                                                     <span>Commenter</span>
+                                                    {(msg as any).comment_count > 0 && (
+                                                        <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1 min-w-[14px] text-center">
+                                                            {(msg as any).comment_count}
+                                                        </span>
+                                                    )}
                                                 </button>
                                             </div>
                                         </div>
