@@ -4,11 +4,10 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Send, ArrowLeft, Users, Search, MoreVertical, Phone, Video,
-    Mic, Image, Check,
+    Image, Check,
     Circle, MessageSquare, Plus, X, Loader2, User,
     Shield, UserPlus, UserMinus, Camera, Settings, Crown,
     BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar, ChevronsUp
-} from 'lucide-react';
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
