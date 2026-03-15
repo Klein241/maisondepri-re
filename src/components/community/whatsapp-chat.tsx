@@ -35,6 +35,8 @@ import { cacheMessages, getCachedGroupMessages, getCachedConversationMessages, e
 import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUser, WhatsAppChatProps, GameSession } from './chat-types';
 import { VoiceMessagePlayer } from './voice-message-player';
 import { BibleShareDialog } from './bible-share-dialog';
+import { ChatMessageBubble } from './chat-message-bubble';
+import { getInitials, formatTime, getMemberColor } from './chat-utils';
 
 export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
     // View State
@@ -1584,41 +1586,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         }
     };
 
-    const getInitials = (name: string | null) => {
-        if (!name) return '?';
-        return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
-    };
-
-    const formatTime = (date: string) => {
-        const d = new Date(date);
-        const now = new Date();
-        const diffDays = Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24));
-
-        if (diffDays === 0) {
-            return d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
-        } else if (diffDays === 1) {
-            return 'Hier';
-        } else if (diffDays < 7) {
-            return d.toLocaleDateString('fr-FR', { weekday: 'short' });
-        } else {
-            return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
-        }
-    };
-
-    // Generate unique color per member (like Telegram)
-    const MEMBER_COLORS = [
-        '#8B5CF6', '#EC4899', '#F59E0B', '#10B981', '#3B82F6',
-        '#EF4444', '#06B6D4', '#F97316', '#84CC16', '#A855F7',
-        '#14B8A6', '#E11D48', '#0EA5E9', '#D946EF', '#22C55E',
-    ];
-    const getMemberColor = (senderId: string): string => {
-        let hash = 0;
-        for (let i = 0; i < senderId.length; i++) {
-            hash = ((hash << 5) - hash) + senderId.charCodeAt(i);
-            hash |= 0;
-        }
-        return MEMBER_COLORS[Math.abs(hash) % MEMBER_COLORS.length];
-    };
 
     // Render message content with clickable links, @mentions, and "Lire la suite" for long texts
     const renderMessageContent = (content: string, msgId?: string) => {
@@ -3106,179 +3073,37 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             {messages.map((msg, idx) => {
                                 const isOwn = msg.sender_id === user.id;
                                 const showAvatar = !isOwn && (idx === 0 || messages[idx - 1].sender_id !== msg.sender_id);
-
                                 return (
-                                    <motion.div
+                                    <ChatMessageBubble
                                         key={msg.id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className={cn("flex", isOwn ? "justify-end" : "justify-start")}
-                                    >
-                                        {!isOwn && showAvatar && view === 'group' && (
-                                            <Avatar className="h-8 w-8 mr-2 mt-auto">
-                                                <AvatarImage src={msg.sender?.avatar_url || undefined} />
-                                                <AvatarFallback className="text-xs bg-slate-600">
-                                                    {getInitials(msg.sender?.full_name ?? null)}
-                                                </AvatarFallback>
-                                            </Avatar>
-                                        )}
-                                        <div className="group/msg relative">
-                                            <div
-                                                className={cn(
-                                                    "max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 sm:px-4 py-2",
-                                                    isOwn
-                                                        ? "bg-indigo-600 text-white rounded-br-sm"
-                                                        : "bg-white/10 text-white rounded-bl-sm"
-                                                )}
-                                            >
-                                                {!isOwn && view === 'group' && showAvatar && (
-                                                    <p className="text-xs font-medium mb-1" style={{ color: getMemberColor(msg.sender_id) }}>
-                                                        {msg.sender?.full_name}
-                                                    </p>
-                                                )}
-
-                                                {/* Reply reference */}
-                                                {msg.reply_to_content && (
-                                                    <div className="mb-1 px-2 py-1 rounded-lg bg-white/5 border-l-2 border-indigo-400 text-[10px] text-slate-400">
-                                                        <span className="font-semibold text-indigo-400">{msg.reply_to_sender || 'Message'}</span>
-                                                        <p className="truncate">{msg.reply_to_content}</p>
-                                                    </div>
-                                                )}
-
-                                                {/* Voice Message */}
-                                                {msg.type === 'voice' && msg.voice_url ? (
-                                                    <VoiceMessagePlayer
-                                                        voiceUrl={msg.voice_url}
-                                                        duration={msg.voice_duration}
-                                                    />
-                                                ) : msg.type === 'file' && msg.file_url ? (
-                                                    /* Feature 7: File message display */
-                                                    <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                                                        <Paperclip className="h-4 w-4 text-indigo-400 shrink-0" />
-                                                        <div className="min-w-0">
-                                                            <p className="text-xs font-medium truncate">{msg.file_name || 'Fichier'}</p>
-                                                            <p className="text-[10px] text-slate-400">{msg.file_type || 'Document'}</p>
-                                                        </div>
-                                                    </a>
-                                                ) : msg.type === 'image' && msg.image_url ? (
-                                                    <img src={msg.image_url} alt="" className="max-w-full rounded-lg max-h-60 object-cover" />
-                                                ) : (
-                                                    renderMessageContent(msg.content, msg.id)
-                                                )}
-
-                                                <div className="flex items-center justify-end gap-1 mt-1">
-                                                    <span className="text-[10px] opacity-70">
-                                                        {formatTime(msg.created_at)}
-                                                    </span>
-                                                    {isOwn && (
-                                                        msg.is_read ? (
-                                                            <CheckCheck className="h-3 w-3 text-blue-400" />
-                                                        ) : (
-                                                            <Check className="h-3 w-3 opacity-70" />
-                                                        )
-                                                    )}
-                                                </div>
-                                            </div>
-                                            {/* Emoji reactions bar (hover) */}
-                                            <div className="absolute -top-2 right-1 opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100 flex items-center gap-0.5 bg-slate-800/95 border border-white/10 rounded-full px-1 py-0.5 shadow-lg z-10 transition-all">
-                                                {['👍', '❤️', '😂', '🙏', '🔥'].map(emoji => (
-                                                    <button
-                                                        key={emoji}
-                                                        onClick={() => {
-                                                            // Per-user emoji: each user can only have ONE emoji, can change or remove it
-                                                            const currentReactions: Record<string, string> = (() => {
-                                                                try {
-                                                                    const r = (msg as any).reactions;
-                                                                    if (typeof r === 'string') return JSON.parse(r || '{}');
-                                                                    if (typeof r === 'object' && r !== null) return r;
-                                                                    return {};
-                                                                } catch { return {}; }
-                                                            })();
-
-                                                            // Toggle: if same emoji, remove it. Otherwise set new one.
-                                                            if (currentReactions[user.id] === emoji) {
-                                                                delete currentReactions[user.id];
-                                                            } else {
-                                                                currentReactions[user.id] = emoji;
-                                                            }
-
-                                                            const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
-                                                            supabase.from(table)
-                                                                .update({ reactions: JSON.stringify(currentReactions) })
-                                                                .eq('id', msg.id)
-                                                                .then(() => {
-                                                                    setMessages(prev => prev.map(m => m.id === msg.id ? { ...m, reactions: currentReactions } : m));
-                                                                });
-                                                        }}
-                                                        className="text-sm hover:scale-125 transition-transform px-0.5"
-                                                    >{emoji}</button>
-                                                ))}
-                                                {isOwn && (
-                                                    <>
-                                                        <span className="w-px h-4 bg-white/10 mx-0.5" />
-                                                        <button
-                                                            onClick={() => {
-                                                                if (window.confirm('Supprimer ce message ?')) {
-                                                                    deleteMessage(msg, true);
-                                                                }
-                                                            }}
-                                                            className="text-[10px] text-slate-400 hover:text-red-400 px-1"
-                                                            title="Supprimer"
-                                                        >
-                                                            🗑️
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                            {/* Show reactions below message */}
-                                            {(msg as any).reactions && (
-                                                <div className="flex gap-0.5 mt-0.5">
-                                                    {(() => {
-                                                        const reactions: Record<string, string> = (() => {
-                                                            try {
-                                                                const r = (msg as any).reactions;
-                                                                if (typeof r === 'string') return JSON.parse(r || '{}');
-                                                                if (typeof r === 'object' && r !== null) return r;
-                                                                return {};
-                                                            } catch { return {}; }
-                                                        })();
-                                                        const emojiCounts: Record<string, number> = {};
-                                                        Object.values(reactions).forEach(emoji => {
-                                                            emojiCounts[emoji] = (emojiCounts[emoji] || 0) + 1;
-                                                        });
-                                                        return Object.entries(emojiCounts).map(([emoji, count]) => (
-                                                            <span key={emoji} className="inline-flex items-center gap-0.5 bg-white/10 rounded-full px-1.5 py-0.5 text-xs">
-                                                                {emoji}{count > 1 && <span className="text-[10px] text-slate-400">{count}</span>}
-                                                            </span>
-                                                        ));
-                                                    })()}
-                                                </div>
-                                            )}
-                                            {/* VISIBLE Reply button under every message */}
-                                            <div className={cn("flex items-center gap-2 mt-1", isOwn ? "justify-end" : "justify-start")}>
-                                                <button
-                                                    onClick={() => setReplyingTo(msg)}
-                                                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-indigo-400 transition-colors"
-                                                >
-                                                    <span>↩</span>
-                                                    <span>Répondre</span>
-                                                </button>
-                                                <button
-                                                    onClick={() => setThreadMessage(msg)}
-                                                    className="flex items-center gap-1 text-[10px] text-slate-500 hover:text-slate-300 transition-colors"
-                                                    title="Commenter"
-                                                >
-                                                    <span>💬</span>
-                                                    <span>Commenter</span>
-                                                    {(msg as any).comment_count > 0 && (
-                                                        <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1 min-w-[14px] text-center">
-                                                            {(msg as any).comment_count}
-                                                        </span>
-                                                    )}
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </motion.div>
+                                        msg={msg}
+                                        isOwn={isOwn}
+                                        showAvatar={showAvatar}
+                                        view={view as 'conversation' | 'group'}
+                                        userId={user.id}
+                                        expandedMessages={expandedMessages}
+                                        onToggleExpand={(id, expand) => {
+                                            setExpandedMessages(prev => {
+                                                const n = new Set(prev);
+                                                if (expand) n.add(id); else n.delete(id);
+                                                return n;
+                                            });
+                                        }}
+                                        onReply={setReplyingTo}
+                                        onThread={setThreadMessage}
+                                        onDelete={deleteMessage}
+                                        onReaction={(msgId, _emoji, newReactions) => {
+                                            const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
+                                            supabase.from(table)
+                                                .update({ reactions: JSON.stringify(newReactions) })
+                                                .eq('id', msgId)
+                                                .then(() => {
+                                                    setMessages(prev => prev.map(m =>
+                                                        m.id === msgId ? { ...m, reactions: newReactions as any } : m
+                                                    ));
+                                                });
+                                        }}
+                                    />
                                 );
                             })}
                             <div ref={messagesEndRef} />
