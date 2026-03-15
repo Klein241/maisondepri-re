@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import dynamic from 'next/dynamic';
 import { BottomNav } from '@/components/bottom-nav';
 import { useAppStore } from '@/lib/store';
+import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
 import { AppTutorial, useTutorial } from '@/components/app-tutorial';
 
@@ -188,8 +189,11 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0E14] pb-safe overflow-y-auto overflow-x-hidden">
-      <div className="min-h-screen">
+    <main className={cn(
+      "bg-[#0B0E14] overflow-x-hidden",
+      hideNav ? "h-dvh overflow-hidden" : "min-h-screen pb-safe overflow-y-auto"
+    )}>
+      <div className={hideNav ? "h-full overflow-hidden" : "min-h-screen"}>
         {renderContent()}
       </div>
 

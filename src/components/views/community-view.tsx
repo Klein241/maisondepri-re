@@ -537,7 +537,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     }, [incomingCall, acceptCall, user]);
 
     return (
-        <div className="relative min-h-screen bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-0">
+        <div className="relative h-full overflow-hidden bg-linear-to-b from-[#0B0E14] to-[#0F1219] text-white pb-0">
             {/* Active WebRTC Call Overlay */}
             <AnimatePresence>
                 {activeGlobalCall && user && (
