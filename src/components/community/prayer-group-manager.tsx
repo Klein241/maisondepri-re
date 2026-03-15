@@ -405,6 +405,7 @@ export function PrayerGroupManager({
                     notifyGroupInvitation({
                         userId: uid,
                         inviterName: profile?.full_name || 'Un ami',
+                        inviterId: currentUserId!,
                         groupId: newGroup.id,
                         groupName: trimmedName,
                     }).catch(console.error);
@@ -464,6 +465,7 @@ export function PrayerGroupManager({
                     groupId: existingGroup.id,
                     groupName: existingGroup.name,
                     requesterName: profile?.full_name || 'Un utilisateur',
+                    requesterId: currentUserId!,
                 }).catch(console.error);
             }
 
@@ -563,6 +565,7 @@ export function PrayerGroupManager({
                 notifyGroupInvitation({
                     userId: friendId,
                     inviterName: profile?.full_name || 'Un ami',
+                    inviterId: currentUserId,
                     groupId: existingGroup.id,
                     groupName: existingGroup.name,
                 }).catch(console.error);

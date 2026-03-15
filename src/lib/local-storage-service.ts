@@ -118,6 +118,7 @@ export interface CachedMessage {
     group_id?: string;
     conversation_id?: string;
     user_id: string;
+    sender_id?: string;      // used by private messages (DM)
     content: string;
     type: string;
     voice_url?: string;

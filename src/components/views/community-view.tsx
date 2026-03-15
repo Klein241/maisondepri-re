@@ -608,7 +608,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 Se connecter
                                             </Button>
                                         )}
-                                        <NotificationBell friendRequestCount={pendingFriendCount} />
+                                        <NotificationBell />
                                     </div>
                                 </div>
                                 {/* Row 1: Social actions - 2 boutons pour le mobile */}

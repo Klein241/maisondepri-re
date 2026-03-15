@@ -220,6 +220,7 @@ export function useGroups(user: UserInfo | null) {
                     groupId,
                     groupName: group.name,
                     requesterName: user.name,
+                    requesterId: user.id,
                 }).catch(console.error);
             }
 

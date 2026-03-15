@@ -174,22 +174,18 @@ export function GamesView({ onBack }: GamesViewProps) {
                         onClick={() => setActiveGame(game.id)}
                         className={`w-full text-left rounded-2xl overflow-hidden relative shadow-xl ${game.glow}`}
                     >
-                        <div className={`bg-linear-to-r ${game.gradient} p-4 ${game.featured ? 'py-5' : ''}`}>
-                            {game.badge && (
-                                <span className={`absolute top-2 right-2 text-[9px] font-black px-2 py-0.5 rounded-full ${game.badgeColor} text-white animate-pulse`}>
-                                    {game.badge}
-                                </span>
-                            )}
+                        <div className={`bg-linear-to-r ${game.gradient} p-4`}>
+
                             <div className="flex items-center gap-3">
                                 <div className="flex-1 min-w-0">
-                                    <h3 className={`font-black text-white ${game.featured ? 'text-lg' : 'text-sm'}`}>
+                                    <h3 className="font-black text-white text-sm">
                                         {game.title}
                                     </h3>
                                     <p className="text-[10px] text-white/60 font-medium">{game.subtitle}</p>
                                     <p className="text-[11px] text-white/80 mt-1 line-clamp-1">{game.description}</p>
                                 </div>
-                                <div className={`shrink-0 ${game.featured ? 'w-12 h-12' : 'w-10 h-10'} rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center`}>
-                                    <Zap className={`${game.featured ? 'h-6 w-6' : 'h-5 w-5'} text-white`} />
+                                <div className="shrink-0 w-10 h-10 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                                    <Zap className="h-5 w-5 text-white" />
                                 </div>
                             </div>
                         </div>

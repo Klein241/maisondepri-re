@@ -283,13 +283,15 @@ export function WebRTCCall({
             const cancelChannel = supabase.channel(`call_signal_${remoteUser.id}_cancel_${Date.now()}`, {
                 config: { broadcast: { self: false } }
             });
-            cancelChannel.subscribe().then(() => {
-                cancelChannel.send({
-                    type: 'broadcast',
-                    event: 'call-cancelled',
-                    payload: { callerId: user.id }
-                });
-                setTimeout(() => supabase.removeChannel(cancelChannel), 2000);
+            cancelChannel.subscribe((status: string) => {
+                if (status === 'SUBSCRIBED') {
+                    cancelChannel.send({
+                        type: 'broadcast',
+                        event: 'call-cancelled',
+                        payload: { callerId: user.id }
+                    });
+                    setTimeout(() => supabase.removeChannel(cancelChannel), 2000);
+                }
             });
         }
 

@@ -661,7 +661,7 @@ export function ProfileView() {
                                                             onClick={() => {
                                                                 // Navigate to chat with this group
                                                                 const { setActiveTab } = useAppStore.getState();
-                                                                setActiveTab('chat');
+                                                                setActiveTab('community');
                                                             }}
                                                         >
                                                             <ExternalLink className="h-3 w-3 mr-0.5" />
@@ -775,7 +775,7 @@ export function ProfileView() {
                                                                 className="flex-1 h-7 text-[10px] text-pink-400 hover:bg-pink-500/10 px-1"
                                                                 onClick={() => {
                                                                     const { setActiveTab } = useAppStore.getState();
-                                                                    setActiveTab('chat');
+                                                                    setActiveTab('community');
                                                                 }}
                                                             >
                                                                 <MessageCircle className="h-3 w-3 mr-0.5" />

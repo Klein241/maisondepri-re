@@ -6,7 +6,8 @@ const nextConfig: NextConfig = {
     unoptimized: true, // Required for static export
   },
   typescript: {
-    ignoreBuildErrors: true, // Prevent build fails on type warnings
+    // TODO: Remove once all pre-existing TS errors are fixed project-wide
+    ignoreBuildErrors: true,
   },
   trailingSlash: true, // Better compatibility with static hosting
 };

@@ -286,7 +286,7 @@ export interface LeaderboardEntry {
     rank: number;
 }
 
-export type TabType = 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'library';
+export type TabType = 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'library' | 'games';
 
 export interface AppSettings {
     notifications: {

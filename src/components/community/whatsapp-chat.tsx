@@ -18,7 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { supabase } from '@/lib/supabase';
 import { WebRTCCall } from './webrtc-call';
-import { IncomingCallOverlay, initiateCall } from './call-system';
+import { IncomingCallOverlay, initiateCall, CallSignal } from './call-system';
 import { GroupToolsPanel } from './group-tools';
 import { GroupAdminDialogs } from './group-admin-dialogs';
 import { EventCalendarButton } from './event-calendar';
@@ -36,7 +36,9 @@ import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUse
 // VoiceMessagePlayer — now used inside ChatMessageBubble
 import { BibleShareDialog } from './bible-share-dialog';
 import { ChatMessageBubble } from './chat-message-bubble';
-import { getInitials, formatTime, getMemberColor } from './chat-utils';
+import { ChatInputBar } from './chat-input-bar';
+import { GroupGameDialog } from './group-game-dialog';
+import { getInitials, formatTime, getMemberColor, normalizeBibleBookName } from './chat-utils';
 
 export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
     // View State
@@ -125,12 +127,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         mode: 'private' | 'group';
         isIncoming?: boolean;
     } | null>(null);
-    const [incomingCall, setIncomingCall] = useState<{
-        callerName: string;
-        callerAvatar?: string | null;
-        callType: 'audio' | 'video';
-        callerId: string;
-    } | null>(null);
+    const [incomingCall, setIncomingCall] = useState<CallSignal | null>(null);
 
     // Announcement state
     const [showAnnouncementTool, setShowAnnouncementTool] = useState(false);
@@ -154,7 +151,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Feature 7: File sharing state
     const [isUploadingFile, setIsUploadingFile] = useState(false);
-    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Event planning state
     const [showEventTool, setShowEventTool] = useState(false);
@@ -810,6 +806,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 const toCacheDM: CachedMessage[] = messagesWithSenders.map((m: any) => ({
                     id: m.id,
                     conversation_id: id,
+                    user_id: m.sender_id,
                     sender_id: m.sender_id,
                     content: m.content,
                     type: m.type,
@@ -1497,6 +1494,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 callerAvatar: payload.callerAvatar,
                 callType: payload.callType || 'audio',
                 callerId: payload.callerId,
+                mode: payload.mode || (payload.groupId ? 'group' : 'private'),
+                conversationId: payload.conversationId,
+                groupId: payload.groupId,
+                groupName: payload.groupName,
             });
         });
 
@@ -1719,82 +1720,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             const verseEnd = refMatch[4] ? parseInt(refMatch[4]) : verseStart;
 
             // Normalize book name for file lookup
-            const bookNormalized = bookRaw.toLowerCase()
-                .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // Remove accents
-                .replace(/\s+/g, '')
-                .replace(/^1er?\s*/i, '1').replace(/^2e?\s*/i, '2').replace(/^3e?\s*/i, '3');
-
-            // Common French book name mappings
-            const bookMap: Record<string, string> = {
-                'genese': 'genese', 'gen': 'genese', 'gn': 'genese',
-                'exode': 'exode', 'ex': 'exode',
-                'levitique': 'levitique', 'lv': 'levitique',
-                'nombres': 'nombres', 'nb': 'nombres',
-                'deuteronome': 'deuteronome', 'dt': 'deuteronome',
-                'josue': 'josue', 'jo': 'josue',
-                'juges': 'juges', 'jg': 'juges',
-                'ruth': 'ruth', 'rt': 'ruth',
-                '1samuel': '1samuel', '1sam': '1samuel', '1sm': '1samuel',
-                '2samuel': '2samuel', '2sam': '2samuel', '2sm': '2samuel',
-                '1rois': '1rois', '1r': '1rois',
-                '2rois': '2rois', '2r': '2rois',
-                '1chroniques': '1chroniques', '1chr': '1chroniques',
-                '2chroniques': '2chroniques', '2chr': '2chroniques',
-                'esdras': 'esdras', 'esd': 'esdras',
-                'nehemie': 'nehemie', 'ne': 'nehemie',
-                'esther': 'esther', 'est': 'esther',
-                'job': 'job', 'jb': 'job',
-                'psaumes': 'psaumes', 'psaume': 'psaumes', 'ps': 'psaumes',
-                'proverbes': 'proverbes', 'pr': 'proverbes', 'pro': 'proverbes',
-                'ecclesiaste': 'ecclesiaste', 'ecc': 'ecclesiaste',
-                'cantique': 'cantique', 'cantiques': 'cantique', 'ct': 'cantique',
-                'esaie': 'esaie', 'isaie': 'esaie', 'is': 'esaie',
-                'jeremie': 'jeremie', 'jer': 'jeremie', 'jr': 'jeremie',
-                'lamentations': 'lamentations', 'lam': 'lamentations',
-                'ezechiel': 'ezechiel', 'ez': 'ezechiel',
-                'daniel': 'daniel', 'dn': 'daniel', 'da': 'daniel',
-                'osee': 'osee', 'os': 'osee',
-                'joel': 'joel', 'jl': 'joel',
-                'amos': 'amos', 'am': 'amos',
-                'abdias': 'abdias', 'ab': 'abdias',
-                'jonas': 'jonas', 'jon': 'jonas',
-                'michee': 'michee', 'mi': 'michee',
-                'nahum': 'nahum', 'na': 'nahum',
-                'habacuc': 'habacuc', 'ha': 'habacuc',
-                'sophonie': 'sophonie', 'so': 'sophonie',
-                'aggee': 'aggee', 'ag': 'aggee',
-                'zacharie': 'zacharie', 'za': 'zacharie',
-                'malachie': 'malachie', 'ml': 'malachie', 'mal': 'malachie',
-                'matthieu': 'matthieu', 'mat': 'matthieu', 'mt': 'matthieu',
-                'marc': 'marc', 'mc': 'marc', 'mk': 'marc',
-                'luc': 'luc', 'lc': 'luc',
-                'jean': 'jean', 'jn': 'jean',
-                'actes': 'actes', 'ac': 'actes',
-                'romains': 'romains', 'ro': 'romains', 'rm': 'romains',
-                '1corinthiens': '1corinthiens', '1co': '1corinthiens', '1cor': '1corinthiens',
-                '2corinthiens': '2corinthiens', '2co': '2corinthiens', '2cor': '2corinthiens',
-                'galates': 'galates', 'ga': 'galates', 'gal': 'galates',
-                'ephesiens': 'ephesiens', 'ep': 'ephesiens', 'eph': 'ephesiens',
-                'philippiens': 'philippiens', 'ph': 'philippiens', 'phil': 'philippiens',
-                'colossiens': 'colossiens', 'col': 'colossiens',
-                '1thessaloniciens': '1thessaloniciens', '1th': '1thessaloniciens',
-                '2thessaloniciens': '2thessaloniciens', '2th': '2thessaloniciens',
-                '1timothee': '1timothee', '1tm': '1timothee', '1tim': '1timothee',
-                '2timothee': '2timothee', '2tm': '2timothee', '2tim': '2timothee',
-                'tite': 'tite', 'tt': 'tite',
-                'philemon': 'philemon', 'phm': 'philemon',
-                'hebreux': 'hebreux', 'he': 'hebreux', 'heb': 'hebreux',
-                'jacques': 'jacques', 'jc': 'jacques', 'jac': 'jacques',
-                '1pierre': '1pierre', '1pi': '1pierre', '1p': '1pierre',
-                '2pierre': '2pierre', '2pi': '2pierre', '2p': '2pierre',
-                '1jean': '1jean', '1jn': '1jean',
-                '2jean': '2jean', '2jn': '2jean',
-                '3jean': '3jean', '3jn': '3jean',
-                'jude': 'jude', 'jd': 'jude',
-                'apocalypse': 'apocalypse', 'ap': 'apocalypse', 'apo': 'apocalypse',
-            };
-
-            const bookKey = bookMap[bookNormalized] || bookNormalized;
+            const bookKey = normalizeBibleBookName(bookRaw);
             const fileName = `${bookKey}_${chapter}.txt`;
 
             const res = await fetch(`/bible/${fileName}`);
@@ -2205,6 +2131,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         );
     }
 
+    // Conversation/Group View — declare early to avoid 'used before declaration' errors
+    const currentRecipient = view === 'conversation' ? selectedConversation?.participant : null;
+    const currentGroup = view === 'group' ? selectedGroup : null;
+
     // List View (WhatsApp-style)
     // Call history view
     if (view === 'call_history') {
@@ -2216,11 +2146,9 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     onBack={() => setView('list')}
                     onCall={(type, contactId, contactName, contactAvatar) => {
                         // Find or create a conversation with this user, then start the call
-                        const conv = conversations.find(c => c.recipientId === contactId);
+                        const conv = conversations.find(c => c.participantId === contactId);
                         if (conv) {
                             setSelectedConversation(conv);
-                            const recipient = allUsers.find(u => u.id === contactId);
-                            if (recipient) setCurrentRecipient(recipient);
                         }
                         setActiveCall({ type, mode: 'private' });
                         setView('conversation');
@@ -2235,13 +2163,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                         mode={activeCall.mode}
                         remoteUser={activeCall.mode === 'private' && currentRecipient ? {
                             id: currentRecipient.id,
-                            name: currentRecipient.full_name,
-                            avatar: currentRecipient.avatar_url
+                            name: currentRecipient.full_name || 'Utilisateur',
+                            avatar: currentRecipient.avatar_url || undefined
                         } : undefined}
                         conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
                         groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
                         groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
-                        groupMembers={activeCall.mode === 'group' ? groupMembers : undefined}
+                        groupMembers={activeCall.mode === 'group' ? groupMembers.map(m => ({ id: m.id, full_name: m.full_name || 'Membre', avatar_url: m.avatar_url })) : undefined}
                         isIncoming={activeCall.isIncoming}
                         onEnd={() => setActiveCall(null)}
                     />
@@ -2250,9 +2178,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 {/* Incoming Call Notification */}
                 {incomingCall && !activeCall && (
                     <IncomingCallOverlay
-                        callerName={incomingCall.callerName}
-                        callerAvatar={incomingCall.callerAvatar}
-                        callType={incomingCall.callType}
+                        call={incomingCall}
                         onAccept={() => {
                             setActiveCall({
                                 type: incomingCall.callType,
@@ -2262,12 +2188,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             setIncomingCall(null);
                         }}
                         onReject={() => setIncomingCall(null)}
-
                     />
                 )}
             </div>
         );
     }
+
 
     if (view === 'list') {
         return (
@@ -2683,9 +2609,6 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         );
     }
 
-    // Conversation/Group View
-    const currentRecipient = view === 'conversation' ? selectedConversation?.participant : null;
-    const currentGroup = view === 'group' ? selectedGroup : null;
 
     return (
         <div className="flex flex-col h-full w-full max-w-full overflow-hidden bg-linear-to-b from-slate-900 to-slate-950 relative">
@@ -3446,106 +3369,16 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 </div>
             )}
 
-            {/* Group Game Dialog — with Sortir / Quitter */}
-            <Dialog open={showGroupGame} onOpenChange={(open) => { if (!open) setShowGroupGame(false); }}>
-                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
-                    <DialogHeader className="p-4 pb-2">
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            🎮 Jeu de Groupe Biblique
-                        </DialogTitle>
-                    </DialogHeader>
-                    <div className="p-4 pt-0 space-y-4">
-                        {activeGameSession ? (
-                            <>
-                                <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-xl p-3">
-                                    <p className="text-xs text-yellow-400 font-semibold">🎮 Session en cours</p>
-                                    <p className="text-sm text-white mt-1">Lancé par <strong>{activeGameSession.startedByName}</strong></p>
-                                    <p className="text-[10px] text-slate-400 mt-1">{activeGameSession.players.length} joueur(s) actif(s)</p>
-                                </div>
-                                <div className="bg-white/5 rounded-xl p-6 text-center">
-                                    <p className="text-4xl mb-4">📖</p>
-                                    <p className="text-lg font-bold text-white mb-2">Quiz Biblique</p>
-                                    <p className="text-sm text-slate-400 mb-4">Qui a construit l&apos;arche ?</p>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {['Noé', 'Abraham', 'Moïse', 'David'].map((answer, i) => (
-                                            <button
-                                                key={i}
-                                                onClick={() => {
-                                                    if (answer === 'Noé') {
-                                                        toast.success('✅ Bonne réponse !');
-                                                    } else {
-                                                        toast.error('❌ Mauvaise réponse. C\'était Noé !');
-                                                    }
-                                                }}
-                                                className="p-3 rounded-xl bg-white/5 hover:bg-indigo-500/20 border border-white/10 hover:border-indigo-500/40 text-sm text-white transition-all"
-                                            >
-                                                {answer}
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div className="flex gap-3">
-                                    <Button
-                                        variant="outline"
-                                        className="flex-1 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-                                        onClick={() => {
-                                            setShowGroupGame(false);
-                                            toast.info('Vous êtes sorti du jeu. Vous pouvez y retourner via le bouton 🎮');
-                                        }}
-                                    >
-                                        ← Sortir (retour au groupe)
-                                    </Button>
-                                    <Button
-                                        variant="outline"
-                                        className="flex-1 border-red-500/30 text-red-400 hover:bg-red-500/10"
-                                        onClick={() => {
-                                            setShowGroupGame(false);
-                                            setHasQuitGame(true);
-                                            setActiveGameSession(prev => {
-                                                if (!prev) return null;
-                                                const remaining = prev.players.filter(p => p !== user.id);
-                                                if (remaining.length === 0) return null;
-                                                return { ...prev, players: remaining };
-                                            });
-                                            toast.info('Vous avez quitté définitivement le jeu.');
-                                        }}
-                                    >
-                                        ✕ Quitter définitivement
-                                    </Button>
-                                </div>
-                            </>
-                        ) : (
-                            <div className="text-center py-8">
-                                <p className="text-5xl mb-4">🎮</p>
-                                <p className="text-lg font-bold text-white mb-2">Aucun jeu en cours</p>
-                                <p className="text-sm text-slate-400 mb-6">Lancez un jeu biblique pour tous les membres du groupe !</p>
-                                <Button
-                                    className="bg-linear-to-r from-yellow-600 to-orange-600 hover:from-yellow-700 hover:to-orange-700 text-white"
-                                    onClick={() => {
-                                        if (currentGroup && user) {
-                                            setActiveGameSession({
-                                                startedBy: user.id,
-                                                startedByName: user.name || 'Vous',
-                                                groupId: currentGroup.id,
-                                                players: [user.id],
-                                            });
-                                            supabase.from('prayer_group_messages').insert({
-                                                group_id: currentGroup.id,
-                                                user_id: user.id,
-                                                content: `🎮 **JEU DE GROUPE LANCÉ !** 🎮\n\n${user.name || 'Un membre'} a lancé un jeu biblique !\n\nCliquez sur le bouton 🎮 clignotant pour rejoindre !`,
-                                                type: 'text'
-                                            });
-                                            toast.success('Jeu lancé !');
-                                        }
-                                    }}
-                                >
-                                    🎮 Lancer un jeu
-                                </Button>
-                            </div>
-                        )}
-                    </div>
-                </DialogContent>
-            </Dialog>
+            <GroupGameDialog
+                open={showGroupGame}
+                onOpenChange={setShowGroupGame}
+                activeGameSession={activeGameSession}
+                setActiveGameSession={setActiveGameSession}
+                setHasQuitGame={setHasQuitGame}
+                userId={user.id}
+                userName={user.name || 'Utilisateur'}
+                currentGroup={currentGroup}
+            />
 
             {/* Bible Share Dialog — for sharing verses in private & group chats */}
             <BibleShareDialog

@@ -125,14 +125,16 @@ export function DayDetailView({ dayNumber: initialDay, onBack }: DayDetailViewPr
                 );
 
                 // Update the view with duration (fire and forget)
-                supabase.from('day_views')
-                    .update({ duration_seconds: durationSeconds })
-                    .eq('user_id', user.id)
-                    .eq('day_number', currentDayNum)
-                    .order('viewed_at', { ascending: false })
-                    .limit(1)
-                    .then(() => { })
-                    .catch(() => { }); // Silently ignore
+                void (async () => {
+                    try {
+                        await supabase.from('day_views')
+                            .update({ duration_seconds: durationSeconds })
+                            .eq('user_id', user.id)
+                            .eq('day_number', currentDayNum)
+                            .order('viewed_at', { ascending: false })
+                            .limit(1);
+                    } catch { /* Silently ignore */ }
+                })();
             }
         };
     }, [currentDayNum, user]);
