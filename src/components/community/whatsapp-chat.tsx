@@ -4,10 +4,11 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Send, ArrowLeft, Users, Search, MoreVertical, Phone, Video,
-    Smile, Mic, MicOff, Image, Paperclip, Check, CheckCheck,
-    Circle, MessageSquare, Plus, X, Loader2, User, Play, Pause, Trash2,
-    Shield, UserPlus, UserMinus, Camera, Settings, Crown, AtSign,
+    Mic, Image, Check,
+    Circle, MessageSquare, Plus, X, Loader2, User,
+    Shield, UserPlus, UserMinus, Camera, Settings, Crown,
     BookOpen, CalendarDays, Megaphone, Pin, ArrowRightLeft, Calendar, ChevronsUp
+} from 'lucide-react';
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -33,7 +34,7 @@ import { notifyDirectMessage, notifyGroupNewMessage } from '@/lib/notifications'
 import { useAppStore } from '@/lib/store';
 import { cacheMessages, getCachedGroupMessages, getCachedConversationMessages, evictOldMedia, CachedMessage } from '@/lib/local-storage-service';
 import type { ChatUser, Conversation, ChatGroup, GroupMember, Message, TypingUser, WhatsAppChatProps, GameSession } from './chat-types';
-import { VoiceMessagePlayer } from './voice-message-player';
+// VoiceMessagePlayer — now used inside ChatMessageBubble
 import { BibleShareDialog } from './bible-share-dialog';
 import { ChatMessageBubble } from './chat-message-bubble';
 import { getInitials, formatTime, getMemberColor } from './chat-utils';
@@ -1586,97 +1587,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         }
     };
 
-
-    // Render message content with clickable links, @mentions, and "Lire la suite" for long texts
-    const renderMessageContent = (content: string, msgId?: string) => {
-        const WORD_LIMIT = 50;
-        const words = content.split(/\s+/);
-        const isLong = words.length > WORD_LIMIT;
-        const isExpanded = expandedMessages.has(msgId || '');
-        const displayContent = isLong && !isExpanded
-            ? words.slice(0, WORD_LIMIT).join(' ') + '...'
-            : content;
-
-        // First handle URLs
-        const urlRegexLocal = /(https?:\/\/[^\s]+)/gi;
-        const parts = displayContent.split(urlRegexLocal);
-        const hasUrl = parts.length > 1;
-
-        // Highlight @mentions and **bold**
-        const renderWithFormatting = (text: string) => {
-            // Split by bold (**text**)
-            const boldParts = text.split(/(\*\*.*?\*\*)/g);
-            return boldParts.map((part, i) => {
-                if (part.startsWith('**') && part.endsWith('**') && part.length > 4) {
-                    return <strong key={i} className="font-bold">{part.slice(2, -2)}</strong>;
-                }
-
-                // Handle mentions within non-bold text
-                const mentionParts = part.split(/(@\w[\w\s]*?\s)/g);
-                if (mentionParts.length <= 1) return part;
-                return mentionParts.map((p, j) =>
-                    p.startsWith('@') ? <span key={`${i}-${j}`} className="text-indigo-400 font-semibold">{p}</span> : p
-                );
-            });
-        };
-
-        const readMoreBtn = isLong && !isExpanded ? (
-            <button
-                onClick={(e) => { e.stopPropagation(); setExpandedMessages(prev => new Set(prev).add(msgId || '')); }}
-                className="text-indigo-400 hover:text-indigo-300 text-xs font-medium mt-1 block transition-colors"
-            >
-                Lire la suite ▼
-            </button>
-        ) : isLong && isExpanded ? (
-            <button
-                onClick={(e) => { e.stopPropagation(); setExpandedMessages(prev => { const n = new Set(prev); n.delete(msgId || ''); return n; }); }}
-                className="text-indigo-400 hover:text-indigo-300 text-xs font-medium mt-1 block transition-colors"
-            >
-                Réduire ▲
-            </button>
-        ) : null;
-
-        if (!hasUrl) return (
-            <div>
-                <p className="text-sm whitespace-pre-wrap wrap-break-word">{renderWithFormatting(displayContent)}</p>
-                {readMoreBtn}
-            </div>
-        );
-
-        return (
-            <div>
-                <div className="text-sm whitespace-pre-wrap wrap-break-word">
-                    {parts.map((part, i) => {
-                        if (urlRegexLocal.test(part)) {
-                            urlRegexLocal.lastIndex = 0; // Reset regex
-                            // Extract domain for display
-                            let domain = '';
-                            try { domain = new URL(part).hostname; } catch { domain = part; }
-                            return (
-                                <span key={i}>
-                                    <a
-                                        href={part}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-blue-300 underline hover:text-blue-200 transition-colors break-all"
-                                    >
-                                        {part}
-                                    </a>
-                                    <div className="mt-1 rounded-lg bg-white/5 border border-white/10 p-2 max-w-full overflow-hidden">
-                                        <p className="text-[10px] text-slate-400 truncate">🔗 {domain}</p>
-                                        <p className="text-xs text-slate-300 truncate">{part.length > 60 ? part.slice(0, 60) + '...' : part}</p>
-                                    </div>
-                                </span>
-                            );
-                        }
-                        urlRegexLocal.lastIndex = 0;
-                        return <span key={i}>{renderWithFormatting(part)}</span>;
-                    })}
-                </div>
-                {readMoreBtn}
-            </div>
-        );
-    };
+    // renderMessageContent — now handled by ChatMessageBubble component
 
     // Count online members in current group
     const onlineMembersCount = groupMembers.filter(m => m.is_online || onlineUsers[m.id]).length;
@@ -3143,187 +3054,39 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 )}
             </AnimatePresence>
 
-            {/* Input Area — fixed at bottom, never scrolls */}
-            <div className="p-2 sm:p-3 border-t border-white/10 bg-slate-900/95 backdrop-blur-md shrink-0 z-20">
-                {/* @Mention suggestions */}
-                <AnimatePresence>
-                    {showMentions && view === 'group' && (
-                        <motion.div
-                            initial={{ opacity: 0, y: 10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0, y: 10 }}
-                            className="mb-2 bg-slate-800 rounded-lg border border-white/10 max-h-32 overflow-y-auto"
-                        >
-                            {groupMembers
-                                .filter(m => m.id !== user.id && (!mentionFilter || m.full_name?.toLowerCase().includes(mentionFilter)))
-                                .slice(0, 5)
-                                .map(m => (
-                                    <button
-                                        key={m.id}
-                                        onClick={() => insertMention(m.full_name || 'Utilisateur')}
-                                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-white/5 text-left"
-                                    >
-                                        <Avatar className="h-5 w-5">
-                                            <AvatarImage src={m.avatar_url || undefined} />
-                                            <AvatarFallback className="text-[8px] bg-slate-600">{getInitials(m.full_name)}</AvatarFallback>
-                                        </Avatar>
-                                        <span className="text-xs text-white">{m.full_name}</span>
-                                        {(m.is_online || onlineUsers[m.id]) && <span className="w-1.5 h-1.5 bg-green-500 rounded-full" />}
-                                    </button>
-                                ))
-                            }
-                        </motion.div>
-                    )}
-                </AnimatePresence>
-
-                {/* Emoji Picker */}
-                <div className="relative">
-                    <EmojiPicker
-                        isOpen={showEmojiPicker}
-                        onClose={() => setShowEmojiPicker(false)}
-                        onEmojiSelect={handleEmojiSelect}
-                    />
-                </div>
-
-                {/* Feature 4: Reply preview bar */}
-                {replyingTo && (
-                    <div className="flex items-center gap-2 mb-1 px-3 py-2 bg-slate-800/90 rounded-xl border-l-3 border-indigo-500">
-                        <div className="flex-1 min-w-0">
-                            <p className="text-[10px] text-indigo-400 font-semibold">↩ Répondre à {replyingTo.sender?.full_name || 'Message'}</p>
-                            <p className="text-[11px] text-slate-400 truncate">{replyingTo.content}</p>
-                        </div>
-                        <button onClick={() => setReplyingTo(null)} className="text-slate-500 hover:text-white p-1"><X className="h-3.5 w-3.5" /></button>
-                    </div>
-                )}
-
-                <div className="flex items-center gap-1 sm:gap-2">
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-                        className="text-slate-400 hover:text-white h-8 w-8 shrink-0"
-                    >
-                        <Smile className="h-4 w-4 sm:h-5 sm:w-5" />
-                    </Button>
-
-                    {/* Feature 7: File attachment button */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={isUploadingFile}
-                        className="text-slate-400 hover:text-white h-8 w-8 shrink-0"
-                        title="Partager un fichier"
-                    >
-                        {isUploadingFile ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4 sm:h-5 sm:w-5" />}
-                    </Button>
-                    <input
-                        ref={fileInputRef}
-                        type="file"
-                        className="hidden"
-                        accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.epub"
-                        onChange={handleFileUpload}
-                    />
-
-                    {view === 'group' && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => { setShowMentions(!showMentions); setMentionFilter(''); }}
-                            className="text-slate-400 hover:text-indigo-400 h-8 w-8 shrink-0"
-                            title="Tagger un membre"
-                        >
-                            <AtSign className="h-4 w-4" />
-                        </Button>
-                    )}
-
-                    {/* Bible share button — works for both private and group */}
-                    <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => setShowBibleShareDialog(true)}
-                        className="text-slate-400 hover:text-amber-400 h-8 w-8 shrink-0"
-                        title="Partager un verset biblique"
-                    >
-                        <BookOpen className="h-4 w-4" />
-                    </Button>
-
-                    {isRecording ? (
-                        <div className="flex-1 flex items-center gap-2 sm:gap-3 bg-red-500/20 rounded-full px-3 sm:px-4 py-2">
-                            <div className={cn("w-3 h-3 bg-red-500 rounded-full", !isPaused && "animate-pulse")} />
-                            <span className="text-red-400 font-mono flex-1 text-sm">
-                                {Math.floor(recordingTime / 60)}:{(recordingTime % 60).toString().padStart(2, '0')}
-                                {isPaused && <span className="text-yellow-400 ml-2 text-xs">⏸️ Pause</span>}
-                            </span>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={cancelRecording}
-                                className="text-red-400 hover:text-red-300 h-8 w-8"
-                                title="Supprimer"
-                            >
-                                <Trash2 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={isPaused ? resumeRecording : pauseRecording}
-                                className={cn("h-8 w-8", isPaused ? "text-green-400 hover:text-green-300" : "text-yellow-400 hover:text-yellow-300")}
-                                title={isPaused ? 'Reprendre' : 'Pause'}
-                            >
-                                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-                            </Button>
-                            <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={stopRecording}
-                                className="text-green-400 hover:text-green-300 h-8 w-8"
-                                title="Envoyer"
-                            >
-                                <Send className="h-4 w-4" />
-                            </Button>
-                        </div>
-                    ) : isUploadingVoice ? (
-                        <div className="flex-1 flex items-center justify-center gap-2 bg-indigo-500/20 rounded-full px-3 sm:px-4 py-2">
-                            <Loader2 className="h-4 w-4 animate-spin text-indigo-400" />
-                            <span className="text-indigo-400 text-xs sm:text-sm">Envoi du message vocal...</span>
-                        </div>
-                    ) : (
-                        <Input
-                            ref={inputRef}
-                            placeholder={view === 'group' ? "Message... (@ pour tagger)" : "Écrire un message..."}
-                            value={newMessage}
-                            onChange={handleMessageChange}
-                            onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && sendMessage()}
-                            className="flex-1 bg-white/5 border-white/10 rounded-full text-sm min-w-0"
-                        />
-                    )}
-
-                    {newMessage.trim() ? (
-                        <Button
-                            size="icon"
-                            onClick={sendMessage}
-                            disabled={isSending}
-                            className="bg-indigo-600 hover:bg-indigo-500 rounded-full"
-                        >
-                            {isSending ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                                <Send className="h-4 w-4" />
-                            )}
-                        </Button>
-                    ) : !isRecording && !isUploadingVoice && (
-                        <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={startRecording}
-                            className="text-slate-400 hover:text-white"
-                        >
-                            <Mic className="h-5 w-5" />
-                        </Button>
-                    )}
-                </div>
-            </div>
+            {/* Input Area — ChatInputBar component */}
+            <ChatInputBar
+                view={view as 'conversation' | 'group'}
+                userId={user.id}
+                newMessage={newMessage}
+                isSending={isSending}
+                replyingTo={replyingTo}
+                showMentions={showMentions}
+                mentionFilter={mentionFilter}
+                groupMembers={groupMembers}
+                onlineUsers={onlineUsers}
+                showEmojiPicker={showEmojiPicker}
+                isRecording={isRecording}
+                isPaused={isPaused}
+                isUploadingVoice={isUploadingVoice}
+                recordingTime={recordingTime}
+                isUploadingFile={isUploadingFile}
+                onMessageChange={handleMessageChange}
+                onSendMessage={sendMessage}
+                onEmojiSelect={handleEmojiSelect}
+                onToggleEmojiPicker={() => setShowEmojiPicker(!showEmojiPicker)}
+                onToggleMentions={() => { setShowMentions(!showMentions); setMentionFilter(''); }}
+                onInsertMention={insertMention}
+                onFileUpload={handleFileUpload}
+                onStartRecording={startRecording}
+                onStopRecording={stopRecording}
+                onCancelRecording={cancelRecording}
+                onPauseRecording={pauseRecording}
+                onResumeRecording={resumeRecording}
+                onClearReply={() => setReplyingTo(null)}
+                onOpenBibleShare={() => setShowBibleShareDialog(true)}
+                inputRef={inputRef}
+            />
 
             {/* Group Tools Dialog - Full Integration */}
             <Dialog open={showGroupTools} onOpenChange={setShowGroupTools}>
