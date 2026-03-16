@@ -80,6 +80,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [activeTab, setActiveTab] = useState<'prayers' | 'testimonials' | 'chat'>('prayers');
     const [selectedCategory, setSelectedCategory] = useState<PrayerCategory | 'all'>('all');
     const [showAnsweredOnly, setShowAnsweredOnly] = useState(false);
+    const [groupSearchQuery, setGroupSearchQuery] = useState('');
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [dialogType, setDialogType] = useState<'prayer' | 'testimonial'>('prayer');
     const [isChatFullScreen, setIsChatFullScreen] = useState(false);
@@ -1083,7 +1084,24 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             </div>
                         </header>
 
-
+                        {/* Group Search */}
+                        <div className="px-4 sm:px-6 mb-3">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-500" />
+                                <input
+                                    type="text"
+                                    placeholder="Rechercher un groupe..."
+                                    value={groupSearchQuery}
+                                    className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-emerald-500/50"
+                                    onChange={(e) => setGroupSearchQuery(e.target.value)}
+                                />
+                                {groupSearchQuery && (
+                                    <button onClick={() => setGroupSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2">
+                                        <X className="h-4 w-4 text-slate-500 hover:text-white" />
+                                    </button>
+                                )}
+                            </div>
+                        </div>
 
                         <ScrollArea className="flex-1 overflow-x-hidden">
                             <div className="space-y-6 pb-32 px-3 sm:px-6 max-w-full overflow-hidden">
@@ -1146,16 +1164,16 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 <div>
                                     <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-3 flex items-center gap-2">
                                         <Globe className="h-3.5 w-3.5" />
-                                        Communautés à découvrir ({groups.filter(g => !userGroups.includes(g.id)).length})
+                                        Communautés à découvrir ({groups.filter(g => !userGroups.includes(g.id) && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).length})
                                     </h3>
-                                    {groups.filter(g => !userGroups.includes(g.id)).length === 0 ? (
+                                    {groups.filter(g => !userGroups.includes(g.id) && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).length === 0 ? (
                                         <div className="text-center py-8 bg-white/5 rounded-2xl">
                                             <Sparkles className="h-8 w-8 text-slate-600 mx-auto mb-2" />
                                             <p className="text-slate-500 text-sm">Vous avez rejoint tous les groupes !</p>
                                         </div>
                                     ) : (
                                         <div className="space-y-3">
-                                            {groups.filter(g => !userGroups.includes(g.id)).map((group) => (
+                                            {groups.filter(g => !userGroups.includes(g.id) && (!groupSearchQuery || g.name.toLowerCase().includes(groupSearchQuery.toLowerCase()))).map((group) => (
                                                 <Card
                                                     key={group.id}
                                                     className="bg-white/5 border-white/5 rounded-2xl overflow-hidden hover:bg-white/10 transition-all"
