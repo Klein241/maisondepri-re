@@ -82,6 +82,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     const [showAnsweredOnly, setShowAnsweredOnly] = useState(false);
     const [isDialogOpen, setIsDialogOpen] = useState(false);
     const [dialogType, setDialogType] = useState<'prayer' | 'testimonial'>('prayer');
+    const [isChatFullScreen, setIsChatFullScreen] = useState(false);
 
     // Form State
     const [newContent, setNewContent] = useState('');
@@ -585,11 +586,11 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="relative z-10 min-h-screen pb-24 max-w-4xl mx-auto w-full"
+                        className={`relative z-10 min-h-screen max-w-4xl mx-auto w-full ${isChatFullScreen ? '' : 'pb-24'}`}
                     >
                         <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="flex flex-col min-h-screen">
-                            {/* Header - Sticky on scroll for PC & mobile */}
-                            <header className="px-4 pt-10 pb-3 sticky top-0 z-30 bg-linear-to-b from-[#0B0E14] via-[#0B0E14] to-[#0B0E14]/95 backdrop-blur-xl">
+                            {/* Header - Sticky on scroll for PC & mobile — hidden when chat is full-screen */}
+                            <header className={`px-4 pt-10 pb-3 sticky top-0 z-30 bg-linear-to-b from-[#0B0E14] via-[#0B0E14] to-[#0B0E14]/95 backdrop-blur-xl ${isChatFullScreen ? 'hidden' : ''}`}>
                                 <div className="flex items-center justify-between mb-3">
                                     <div className="shrink-0">
                                         <h1 className="text-2xl font-black tracking-tight bg-linear-to-r from-white via-pink-200 to-purple-200 bg-clip-text text-transparent">
@@ -810,7 +811,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 </TabsContent>
 
                                 {/* ===== CHAT TAB - WhatsApp Style ===== */}
-                                <TabsContent value="chat" className="mt-0 flex flex-col -mx-4" style={{ height: 'calc(100dvh - 140px)' }}>
+                                <TabsContent value="chat" className={isChatFullScreen ? 'fixed inset-0 z-[100] bg-slate-950 mt-0' : 'mt-0 flex flex-col -mx-4'} style={isChatFullScreen ? undefined : { height: 'calc(100dvh - 140px)' }}>
                                     <div className="flex-1 h-full overflow-hidden">
                                         <WhatsAppChat
                                             user={user ? {
@@ -818,7 +819,10 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                                 name: user.name || 'Utilisateur',
                                                 avatar: user.avatar
                                             } : null}
-                                            onHideNav={onHideNav}
+                                            onHideNav={(hide) => {
+                                                setIsChatFullScreen(hide);
+                                                onHideNav?.(hide);
+                                            }}
                                             activeGroupId={openChatGroupId}
                                             activeConversationId={openChatConversationId}
                                         />
@@ -834,7 +838,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                         <Button
-                                            className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-linear-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                            className={`fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-linear-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50 ${isChatFullScreen ? 'hidden' : ''}`}
                                             onClick={() => {
                                                 if (!user) { setShowAuthPrompt(true); }
                                             }}
@@ -870,7 +874,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                 /* Other tabs: direct dialog trigger */
                                 <DialogTrigger asChild>
                                     <Button
-                                        className="fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-linear-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50"
+                                        className={`fixed bottom-24 right-6 h-14 w-14 rounded-2xl bg-linear-to-br from-indigo-600 to-purple-600 shadow-lg shadow-indigo-600/30 z-50 ${isChatFullScreen ? 'hidden' : ''}`}
                                         onClick={() => {
                                             if (!user) { setShowAuthPrompt(true); return; }
                                             setDialogType(activeTab === 'testimonials' ? 'testimonial' : 'prayer');
