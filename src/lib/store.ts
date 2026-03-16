@@ -120,9 +120,9 @@ interface AppState {
     setBibleViewTarget: (target: 'home' | 'read' | 'study' | 'search' | 'favorites' | 'games' | null) => void;
 
     // UI State
-    activeTab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games' | 'library';
+    activeTab: 'home' | 'marketplace' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games' | 'library';
     selectedDay: number | null;
-    setActiveTab: (tab: 'home' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games' | 'library') => void;
+    setActiveTab: (tab: 'home' | 'marketplace' | 'program' | 'bible' | 'journal' | 'community' | 'profile' | 'games' | 'library') => void;
     setSelectedDay: (day: number | null) => void;
 
     // Navigation from notifications (deep-link)
@@ -746,7 +746,7 @@ export const useAppStore = create<AppState>()(
             setBibleViewTarget: (target) => set({ bibleViewTarget: target }),
 
             // UI State
-            activeTab: 'home',
+            activeTab: 'marketplace',
             selectedDay: null,
             setActiveTab: (tab) => set({ activeTab: tab }),
             setSelectedDay: (day) => set({ selectedDay: day }),

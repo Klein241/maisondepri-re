@@ -18,6 +18,7 @@ const JournalView = dynamic(() => import('@/components/views/journal-view').then
 const CommunityView = dynamic(() => import('@/components/views/community-view').then(m => ({ default: m.CommunityView })), { ssr: false });
 const ProfileView = dynamic(() => import('@/components/views/profile-view').then(m => ({ default: m.ProfileView })), { ssr: false });
 const LibraryView = dynamic(() => import('@/components/views/library-view').then(m => ({ default: m.LibraryView })), { ssr: false });
+const MarketplaceView = dynamic(() => import('@/components/views/marketplace-view').then(m => ({ default: m.MarketplaceView })), { ssr: false });
 const AuthView = dynamic(() => import('@/components/views/auth-view').then(m => ({ default: m.AuthView })), { ssr: false });
 
 // Splash screen component
@@ -159,6 +160,8 @@ export default function Home() {
 
     // Otherwise, show the active tab content
     switch (activeTab) {
+      case 'marketplace':
+        return <MarketplaceView />;
       case 'home':
         return (
           <HomeView
@@ -179,12 +182,7 @@ export default function Home() {
       case 'profile':
         return <ProfileView />;
       default:
-        return (
-          <HomeView
-            onNavigateToDay={handleNavigateToDay}
-            onNavigateTo={handleNavigateTo}
-          />
-        );
+        return <MarketplaceView />;
     }
   };
 

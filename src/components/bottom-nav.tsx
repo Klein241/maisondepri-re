@@ -1,6 +1,6 @@
 'use client';
 
-import { Home, BookOpen, User, MessageSquare, BookMarked } from 'lucide-react';
+import { ShoppingBag, BookOpen, User, MessageSquare, BookMarked } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
 
@@ -11,7 +11,7 @@ interface BottomNavProps {
 
 export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
     const navItems: { id: TabType; icon: any; label: string; color?: string }[] = [
-        { id: 'home', icon: Home, label: 'Accueil' },
+        { id: 'marketplace', icon: ShoppingBag, label: 'Marketplace', color: 'teal' },
         { id: 'community', icon: MessageSquare, label: 'Messages', color: 'indigo' },
         { id: 'library', icon: BookMarked, label: 'Livres', color: 'emerald' },
         { id: 'bible', icon: BookOpen, label: 'Bible' },
@@ -25,6 +25,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                     const isActive = activeTab === item.id;
                     const isGames = item.color === 'emerald';
                     const isMessages = item.color === 'indigo';
+                    const isMarketplace = item.color === 'teal';
                     const hasHighlight = !!item.color;
 
                     return (
@@ -36,6 +37,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                                 isActive ? "text-primary" : "text-slate-500 hover:text-slate-300",
                                 isMessages && !isActive && "text-indigo-400",
                                 isGames && !isActive && "text-emerald-400",
+                                isMarketplace && !isActive && "text-teal-400",
                             )}
                         >
                             {/* Pulsing dot for highlighted tabs */}
@@ -44,11 +46,11 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                                     <span className="relative flex h-2.5 w-2.5">
                                         <span className={cn(
                                             "animate-ping absolute inline-flex h-full w-full rounded-full opacity-75",
-                                            isGames ? "bg-emerald-400" : "bg-indigo-400"
+                                            isMarketplace ? "bg-teal-400" : isGames ? "bg-emerald-400" : "bg-indigo-400"
                                         )} />
                                         <span className={cn(
                                             "relative inline-flex rounded-full h-2.5 w-2.5",
-                                            isGames ? "bg-emerald-500" : "bg-indigo-500"
+                                            isMarketplace ? "bg-teal-500" : isGames ? "bg-emerald-500" : "bg-indigo-500"
                                         )} />
                                     </span>
                                 </div>
@@ -58,6 +60,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                                 isActive && "translate-y-[-2px]",
                                 isActive && isGames && "bg-emerald-500/20",
                                 isActive && isMessages && "bg-indigo-500/20",
+                                isActive && isMarketplace && "bg-teal-500/20",
                                 isActive && !item.color && "bg-primary/10",
                             )}>
                                 <item.icon
@@ -70,6 +73,7 @@ export function BottomNav({ activeTab, onTabChange }: BottomNavProps) {
                                 isActive ? "opacity-100 font-semibold" : "opacity-70",
                                 isMessages && !isActive && "text-indigo-400 font-semibold opacity-100",
                                 isGames && !isActive && "text-emerald-400 font-semibold opacity-100",
+                                isMarketplace && !isActive && "text-teal-400 font-semibold opacity-100",
                             )}>
                                 {item.label}
                             </span>
