@@ -22,6 +22,7 @@ import {
     Product, SellerProfile, ProductCategory, ProductStatus,
     PRODUCT_CATEGORIES, SELLER_PLANS, CURRENCIES, formatPrice, Order
 } from '@/lib/marketplace-types';
+import { ChatMarketplace } from './chat-marketplace';
 
 interface SellerDashboardProps {
     userId: string;
@@ -532,6 +533,23 @@ export function SellerDashboard({ userId, userName, userAvatar }: SellerDashboar
         );
     }
 
+    // ═══════════ MESSAGES ═══════════
+    if (view === 'messages') {
+        return (
+            <div className="space-y-3">
+                <div className="flex items-center gap-3 mb-2">
+                    <Button variant="ghost" size="icon" onClick={() => setView('dashboard')}>
+                        <ArrowLeft className="h-5 w-5" />
+                    </Button>
+                    <h3 className="text-lg font-bold text-white">Messages clients</h3>
+                </div>
+                <div className="h-[60vh] rounded-xl overflow-hidden border border-white/10">
+                    <ChatMarketplace userId={userId} userName={userName} userAvatar={userAvatar} />
+                </div>
+            </div>
+        );
+    }
+
     // ═══════════ ORDERS ═══════════
     if (view === 'orders') {
         return (
@@ -708,6 +726,13 @@ export function SellerDashboard({ userId, userName, userAvatar }: SellerDashboar
                 <Button variant="outline" className="h-12 border-white/10 text-white hover:bg-white/5 justify-start"
                     onClick={() => setView('orders')}>
                     <ShoppingCart className="h-4 w-4 mr-2 text-amber-400" /> Commandes
+                </Button>
+                <Button variant="outline" className="h-12 border-white/10 text-white hover:bg-white/5 justify-start col-span-2"
+                    onClick={() => setView('messages')}>
+                    <MessageCircle className="h-4 w-4 mr-2 text-purple-400" /> Messages clients
+                    {conversations.length > 0 && (
+                        <Badge className="ml-auto bg-purple-500/20 text-purple-400 text-[9px]">{conversations.length}</Badge>
+                    )}
                 </Button>
                 <Button variant="outline" className="h-12 border-white/10 text-white hover:bg-white/5 justify-start col-span-2"
                     onClick={() => { resetProductForm(); setView('add_product'); }}

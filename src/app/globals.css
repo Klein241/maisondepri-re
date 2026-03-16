@@ -219,3 +219,163 @@
     background: rgba(255, 255, 255, 0.25);
   }
 }
+
+/* ═══════════════════════════════════════════════════ */
+/* LIGHT MODE OVERRIDES                               */
+/* Fix hardcoded dark-mode colors across all views    */
+/* ═══════════════════════════════════════════════════ */
+
+/* When NOT in .dark mode, remap all hardcoded dark backgrounds */
+:root:not(.dark) body,
+html:not(.dark) body {
+  --tw-bg-opacity: 1;
+}
+
+/* Fix hardcoded dark backgrounds in light mode */
+:root:not(.dark) [class*="bg-[#0B0E14]"],
+:root:not(.dark) [class*="bg-[#0F1219]"],
+:root:not(.dark) [class*="bg-[#161B26]"],
+:root:not(.dark) [class*="bg-[#0F172A]"],
+:root:not(.dark) [class*="bg-[#1a1f2e]"],
+html:not(.dark) [class*="bg-[#0B0E14]"],
+html:not(.dark) [class*="bg-[#0F1219]"],
+html:not(.dark) [class*="bg-[#161B26]"],
+html:not(.dark) [class*="bg-[#0F172A]"],
+html:not(.dark) [class*="bg-[#1a1f2e]"] {
+  background-color: hsl(var(--background)) !important;
+}
+
+/* Fix text colors: white text → dark in light mode */
+:root:not(.dark) .text-white,
+html:not(.dark) .text-white {
+  color: hsl(222.2, 47.4%, 11.2%) !important;
+}
+
+/* Fix slate text in light mode: make them darker/more readable */
+:root:not(.dark) .text-slate-400,
+html:not(.dark) .text-slate-400 {
+  color: hsl(215, 20%, 45%) !important;
+}
+
+:root:not(.dark) .text-slate-500,
+html:not(.dark) .text-slate-500 {
+  color: hsl(215, 16%, 40%) !important;
+}
+
+:root:not(.dark) .text-slate-300,
+html:not(.dark) .text-slate-300 {
+  color: hsl(215, 20%, 30%) !important;
+}
+
+:root:not(.dark) .text-slate-200,
+html:not(.dark) .text-slate-200 {
+  color: hsl(215, 20%, 25%) !important;
+}
+
+/* Fix white/5, white/10 backgrounds → use subtle gray instead */
+:root:not(.dark) [class*="bg-white/5"],
+html:not(.dark) [class*="bg-white/5"] {
+  background-color: rgba(0, 0, 0, 0.03) !important;
+}
+
+:root:not(.dark) [class*="bg-white/10"],
+html:not(.dark) [class*="bg-white/10"] {
+  background-color: rgba(0, 0, 0, 0.05) !important;
+}
+
+/* Fix border-white/10 → darker border */
+:root:not(.dark) [class*="border-white/10"],
+html:not(.dark) [class*="border-white/10"] {
+  border-color: rgba(0, 0, 0, 0.1) !important;
+}
+
+:root:not(.dark) [class*="border-white/5"],
+html:not(.dark) [class*="border-white/5"] {
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Fix glass-card for light mode */
+:root:not(.dark) .glass-card,
+html:not(.dark) .glass-card {
+  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08) !important;
+}
+
+:root:not(.dark) .glass-panel,
+html:not(.dark) .glass-panel {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-color: rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Fix main bg gradient in light mode */
+:root:not(.dark) [class*="from-[#0B0E14]"],
+html:not(.dark) [class*="from-[#0B0E14]"] {
+  --tw-gradient-from: hsl(var(--background)) !important;
+}
+
+:root:not(.dark) [class*="via-[#0B0E14]"],
+html:not(.dark) [class*="via-[#0B0E14]"] {
+  --tw-gradient-via: hsl(var(--background)) !important;
+}
+
+:root:not(.dark) [class*="to-[#0B0E14]"],
+html:not(.dark) [class*="to-[#0B0E14]"] {
+  --tw-gradient-to: hsl(var(--background)) !important;
+}
+
+:root:not(.dark) [class*="to-[#0F1219]"],
+html:not(.dark) [class*="to-[#0F1219]"] {
+  --tw-gradient-to: hsl(210, 40%, 96%) !important;
+}
+
+/* Fix placeholder text */
+:root:not(.dark) ::placeholder,
+html:not(.dark) ::placeholder {
+  color: hsl(215, 16%, 55%) !important;
+}
+
+/* Fix bg-slate-950, bg-slate-900 etc in light mode */
+:root:not(.dark) [class*="bg-slate-950"],
+:root:not(.dark) [class*="bg-slate-900"],
+html:not(.dark) [class*="bg-slate-950"],
+html:not(.dark) [class*="bg-slate-900"] {
+  background-color: hsl(var(--background)) !important;
+}
+
+:root:not(.dark) [class*="bg-slate-800"],
+html:not(.dark) [class*="bg-slate-800"] {
+  background-color: hsl(210, 40%, 93%) !important;
+}
+
+/* Fix scrollbar in light mode */
+@media (min-width: 768px) {
+
+  :root:not(.dark) ::-webkit-scrollbar-track,
+  html:not(.dark) ::-webkit-scrollbar-track {
+    background: rgba(0, 0, 0, 0.02);
+  }
+
+  :root:not(.dark) ::-webkit-scrollbar-thumb,
+  html:not(.dark) ::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+  }
+
+  :root:not(.dark) ::-webkit-scrollbar-thumb:hover,
+  html:not(.dark) ::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.2);
+  }
+}
+
+/* Fix gradient text: ensure it stays visible in light mode */
+:root:not(.dark) [class*="bg-clip-text"][class*="text-transparent"],
+html:not(.dark) [class*="bg-clip-text"][class*="text-transparent"] {
+  -webkit-text-fill-color: transparent;
+  filter: brightness(0.7) saturate(1.3);
+}
+
+/* Fix bottom nav background in light mode */
+:root:not(.dark) [class*="from-[#0B0E14]"][class*="pt-3"],
+html:not(.dark) [class*="from-[#0B0E14]"][class*="pt-3"] {
+  background: linear-gradient(to top, hsl(var(--background)), transparent) !important;
+}
