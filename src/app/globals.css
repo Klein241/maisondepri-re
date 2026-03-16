@@ -156,7 +156,7 @@
 }
 
 .text-gradient-primary {
-  @apply bg-clip-text text-transparent bg-gradient-to-r from-purple-400 to-blue-400;
+  @apply bg-clip-text text-transparent bg-linear-to-r from-purple-400 to-blue-400;
 }
 
 /* Custom Scrollbar Utilities */

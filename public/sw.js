@@ -28,19 +28,21 @@ self.addEventListener('push', (event) => {
             actions.push({ action: 'pray', title: '🙏 Prier' });
         } else if (data.data?.bookId) {
             actions.push({ action: 'read', title: '📖 Lire' });
+        } else if (data.data?.orderId) {
+            actions.push({ action: 'view', title: '📦 Voir' });
         }
         actions.push({ action: 'open', title: 'Ouvrir' });
 
         const options = {
             body: data.body || data.message || '',
-            icon: data.icon || '/icons/icon-192x192.png',
-            badge: data.badge || '/icons/icon-72x72.png',
+            icon: data.icon || '/icon-192.png',
+            badge: data.badge || '/icon-192.png',
             vibrate: [100, 50, 100],
             data: data.data || { url: '/' },
             actions,
             tag: data.tag || `mdp-${Date.now()}`,
             renotify: true,
-            requireInteraction: !!data.data?.conversationId, // Keep DM notifs visible
+            requireInteraction: !!(data.data?.conversationId || data.data?.orderId),
         };
 
         event.waitUntil(
@@ -70,6 +72,10 @@ self.addEventListener('notificationclick', (event) => {
         url = `/?nav=prayer&id=${data.prayerId}`;
     } else if (data.bookId) {
         url = `/?tab=library&book=${data.bookId}`;
+    } else if (data.orderId) {
+        url = `/?tab=marketplace&order=${data.orderId}`;
+    } else if (data.type === 'marketplace_message') {
+        url = `/?tab=marketplace`;
     }
 
     event.waitUntil(

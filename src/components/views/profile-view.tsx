@@ -55,6 +55,7 @@ import { formatDistanceToNow } from "date-fns"
 import { fr } from "date-fns/locale"
 import { useTheme } from "next-themes"
 import { SellerDashboard } from "@/components/marketplace/seller-dashboard"
+import { StorageManager } from "@/components/storage-manager"
 
 export function ProfileView() {
     const { user, streak, totalDaysCompleted, achievements, unlockedAchievements, signOut, theme, setTheme, setUser, prayerRequests } = useAppStore()
@@ -591,6 +592,20 @@ export function ProfileView() {
                                 userName={user.name || 'Vendeur'}
                                 userAvatar={user.avatar}
                             />
+                        </CardContent>
+                    </Card>
+                </motion.div>
+
+                {/* ═══════ STORAGE & BACKUP ═══════ */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.27 }}
+                    className="mb-8"
+                >
+                    <Card className="bg-linear-to-br from-blue-500/10 to-indigo-500/5 border-blue-500/20 backdrop-blur-sm overflow-hidden">
+                        <CardContent className="p-4">
+                            <StorageManager userId={user.id} />
                         </CardContent>
                     </Card>
                 </motion.div>
