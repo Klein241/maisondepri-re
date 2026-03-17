@@ -116,6 +116,89 @@ export function GroupAdminDialogs(props: GroupAdminDialogsProps) {
     } = props;
 
     const [threadInput, setThreadInput] = useState('');
+    const [isLoadingComments, setIsLoadingComments] = useState(false);
+    const [isSendingComment, setIsSendingComment] = useState(false);
+
+    // Load comments from Supabase when thread opens
+    const loadThreadComments = async (messageId: string) => {
+        setIsLoadingComments(true);
+        try {
+            const { data, error } = await (await import('@/lib/supabase')).supabase
+                .from('prayer_group_message_comments')
+                .select('*')
+                .eq('message_id', messageId)
+                .order('created_at', { ascending: true });
+
+            if (!error && data) {
+                setThreadComments(data.map((c: any) => ({
+                    text: c.content,
+                    time: new Date(c.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+                    userId: c.user_id,
+                    senderName: c.sender_name || 'Membre',
+                })));
+            }
+        } catch (e) {
+            console.log('Comments table may not exist yet — using local comments');
+        }
+        setIsLoadingComments(false);
+    };
+
+    // Save a new comment to Supabase
+    const sendThreadComment = async () => {
+        if (!threadInput.trim() || !threadMessage) return;
+        setIsSendingComment(true);
+        const text = threadInput.trim();
+        setThreadInput('');
+
+        const newComment = {
+            text,
+            time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+            userId: user.id,
+            senderName: user.name || 'Membre',
+        };
+
+        // Optimistic update
+        setThreadComments(prev => [...prev, newComment]);
+
+        try {
+            const { supabase: sb } = await import('@/lib/supabase');
+            await sb.from('prayer_group_message_comments').insert({
+                message_id: threadMessage.id,
+                group_id: currentGroup?.id,
+                user_id: user.id,
+                sender_name: user.name || 'Membre',
+                content: text,
+            });
+
+            // Update comment_count on the message
+            const newCount = threadComments.length + 1;
+            const table = currentGroup ? 'prayer_group_messages' : 'direct_messages';
+            await sb.from(table).update({ comment_count: newCount }).eq('id', threadMessage.id);
+        } catch (e) {
+            console.error('Error saving comment:', e);
+        }
+        setIsSendingComment(false);
+    };
+
+    // Load comments when thread message changes
+    const handleThreadOpen = (open: boolean) => {
+        if (!open) {
+            setThreadMessage(null);
+            setThreadComments([]);
+            setThreadInput('');
+        }
+    };
+
+    // Auto-load comments when threadMessage is set
+    if (threadMessage && threadComments.length === 0 && !isLoadingComments) {
+        loadThreadComments(threadMessage.id);
+    }
+
+    const getMemberName = (uid: string) => {
+        if (uid === user.id) return user.name || 'Moi';
+        const member = groupMembers.find(m => m.user_id === uid);
+        return member?.profiles?.full_name || 'Membre';
+    };
 
     return (
         <>
@@ -463,72 +546,85 @@ export function GroupAdminDialogs(props: GroupAdminDialogsProps) {
                 </DialogContent>
             </Dialog>
 
-            {/* Thread/Comment Dialog */}
-            <Dialog open={!!threadMessage} onOpenChange={(open) => { if (!open) { setThreadMessage(null); setThreadComments([]); setThreadInput(''); } }}>
+            {/* Thread/Comment Dialog — PUBLIC: visible by all group members */}
+            <Dialog open={!!threadMessage} onOpenChange={handleThreadOpen}>
                 <DialogContent className="max-w-md max-h-[80vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
                     <DialogHeader className="p-4 pb-2">
                         <DialogTitle className="flex items-center gap-2 text-white text-sm">
-                            💬 Fil de commentaire privé
+                            💬 Fil de commentaire
+                            {threadComments.length > 0 && (
+                                <span className="inline-flex items-center justify-center bg-indigo-500 text-white text-[10px] font-bold rounded-full h-5 min-w-[20px] px-1">
+                                    {threadComments.length}
+                                </span>
+                            )}
                         </DialogTitle>
                     </DialogHeader>
                     {threadMessage && (
                         <div className="space-y-3 p-4 pt-0">
                             <div className="p-3 rounded-xl bg-white/5 border border-white/10">
                                 <p className="text-[10px] text-indigo-400 font-semibold mb-1">{threadMessage.sender?.full_name || 'Message'}</p>
+                                {/* Show image thumbnail if message is an image */}
+                                {threadMessage.type === 'image' && threadMessage.image_url ? (
+                                    <img src={threadMessage.image_url} alt="" className="w-20 h-20 rounded-lg object-cover mb-1" />
+                                ) : null}
                                 <p className="text-sm text-white whitespace-pre-wrap">{threadMessage.content}</p>
                                 <p className="text-[10px] text-slate-500 mt-1">{formatTime(threadMessage.created_at)}</p>
                             </div>
-                            <div className="text-[10px] text-slate-500 bg-slate-800/50 rounded-lg px-3 py-2 text-center">
-                                🔒 Ces commentaires sont <strong className="text-slate-400">privés</strong> — ils n&apos;apparaissent pas dans le groupe
+                            <div className="text-[10px] text-slate-500 bg-indigo-500/10 rounded-lg px-3 py-2 text-center">
+                                👁️ Ces commentaires sont <strong className="text-indigo-400">publics</strong> — visibles par tous les membres du groupe
                             </div>
-                            <div className="space-y-2 max-h-48 overflow-y-auto">
-                                {threadComments.map((c, i) => (
-                                    <div key={i} className="flex gap-2 items-start">
-                                        <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
-                                            {user.name?.charAt(0) || '?'}
+
+                            {isLoadingComments ? (
+                                <div className="text-center py-4">
+                                    <Loader2 className="h-5 w-5 animate-spin text-indigo-400 mx-auto" />
+                                    <p className="text-xs text-slate-500 mt-1">Chargement...</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {threadComments.map((c, i) => (
+                                        <div key={i} className="flex gap-2 items-start">
+                                            {/* Numbered badge */}
+                                            <div className="w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                                                {i + 1}
+                                            </div>
+                                            <div className="bg-white/5 rounded-xl px-3 py-1.5 flex-1">
+                                                <p className="text-[10px] text-indigo-400 font-semibold">
+                                                    {(c as any).senderName || getMemberName(c.userId)}
+                                                </p>
+                                                <p className="text-xs text-white">{c.text}</p>
+                                                <p className="text-[9px] text-slate-500 mt-0.5">{c.time}</p>
+                                            </div>
                                         </div>
-                                        <div className="bg-white/5 rounded-xl px-3 py-1.5 flex-1">
-                                            <p className="text-xs text-white">{c.text}</p>
-                                            <p className="text-[9px] text-slate-500 mt-0.5">{c.time}</p>
-                                        </div>
-                                    </div>
-                                ))}
-                                {threadComments.length === 0 && (
-                                    <p className="text-xs text-slate-500 text-center py-4">Aucun commentaire. Ajoutez une note privée sur ce message.</p>
-                                )}
-                            </div>
+                                    ))}
+                                    {threadComments.length === 0 && (
+                                        <p className="text-xs text-slate-500 text-center py-4">Aucun commentaire. Soyez le premier à commenter !</p>
+                                    )}
+                                </div>
+                            )}
+
                             <div className="flex items-center gap-2">
                                 <Input
-                                    placeholder="Votre commentaire privé..."
+                                    placeholder="Votre commentaire..."
                                     value={threadInput}
                                     onChange={(e) => setThreadInput(e.target.value)}
                                     onKeyPress={(e) => {
                                         if (e.key === 'Enter' && threadInput.trim()) {
-                                            setThreadComments(prev => [...prev, {
-                                                text: threadInput.trim(),
-                                                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                                                userId: user.id,
-                                            }]);
-                                            setThreadInput('');
+                                            sendThreadComment();
                                         }
                                     }}
                                     className="flex-1 bg-white/5 border-white/10 rounded-full text-sm"
                                 />
                                 <Button
                                     size="icon"
-                                    onClick={() => {
-                                        if (threadInput.trim()) {
-                                            setThreadComments(prev => [...prev, {
-                                                text: threadInput.trim(),
-                                                time: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-                                                userId: user.id,
-                                            }]);
-                                            setThreadInput('');
-                                        }
-                                    }}
+                                    onClick={sendThreadComment}
+                                    disabled={isSendingComment || !threadInput.trim()}
                                     className="bg-indigo-600 hover:bg-indigo-500 rounded-full shrink-0"
                                 >
-                                    <Send className="h-4 w-4" />
+                                    {isSendingComment ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                    ) : (
+                                        <Send className="h-4 w-4" />
+                                    )}
                                 </Button>
                             </div>
                         </div>
@@ -538,3 +634,4 @@ export function GroupAdminDialogs(props: GroupAdminDialogsProps) {
         </>
     );
 }
+

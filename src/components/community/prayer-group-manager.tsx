@@ -801,8 +801,12 @@ export function PrayerGroupManager({
                         <div className="flex items-center gap-2 min-w-0">
                             {isOpen ? <Unlock className="h-4 w-4 text-green-500 shrink-0" /> : <Lock className="h-4 w-4 text-orange-500 shrink-0" />}
                             <div className="min-w-0">
-                                <Label className="text-sm">Groupe ouvert</Label>
-                                <p className="text-[10px] text-slate-400 truncate">{isOpen ? "Tout le monde peut rejoindre" : "Approbation requise"}</p>
+                                <Label className="text-sm font-bold">{isOpen ? "🌍 Groupe public" : "🔒 Groupe privé"}</Label>
+                                <p className="text-[10px] text-slate-400">
+                                    {isOpen
+                                        ? "Tous les membres peuvent rejoindre librement"
+                                        : "Les membres doivent demander l'accès (approbation requise)"}
+                                </p>
                             </div>
                         </div>
                         <Switch checked={isOpen} onCheckedChange={setIsOpen} />
