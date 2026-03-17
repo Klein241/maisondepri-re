@@ -167,7 +167,6 @@ export default function AdminMarketplacePage() {
                     .insert({
                         user_id: user.id,
                         shop_name: 'Boutique Admin',
-                        description: 'Boutique officielle',
                         is_verified: true,
                         plan: 'premium',
                     })
@@ -513,7 +512,7 @@ export default function AdminMarketplacePage() {
                                 <select
                                     value={currency}
                                     onChange={e => setCurrency(e.target.value)}
-                                    className="w-full h-10 rounded-md bg-white/5 border border-white/10 px-3 text-sm"
+                                    className="w-full h-10 rounded-md bg-slate-800 border border-white/10 px-3 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
                                 >
                                     {CURRENCIES.map(c => (
                                         <option key={c.code} value={c.code}>{c.code} ({c.symbol})</option>
@@ -528,7 +527,7 @@ export default function AdminMarketplacePage() {
                                 <select
                                     value={category}
                                     onChange={e => setCategory(e.target.value as ProductCategory)}
-                                    className="w-full h-10 rounded-md bg-white/5 border border-white/10 px-3 text-sm"
+                                    className="w-full h-10 rounded-md bg-slate-800 border border-white/10 px-3 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
                                 >
                                     {PRODUCT_CATEGORIES.map(c => (
                                         <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
@@ -540,7 +539,7 @@ export default function AdminMarketplacePage() {
                                 <select
                                     value={condition}
                                     onChange={e => setCondition(e.target.value as any)}
-                                    className="w-full h-10 rounded-md bg-white/5 border border-white/10 px-3 text-sm"
+                                    className="w-full h-10 rounded-md bg-slate-800 border border-white/10 px-3 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
                                 >
                                     <option value="new">Neuf</option>
                                     <option value="like_new">Comme neuf</option>

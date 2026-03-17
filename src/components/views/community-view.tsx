@@ -184,6 +184,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
     // Create group with prayer request
     const [createGroupWithPrayer, setCreateGroupWithPrayer] = useState(false);
+    const [groupPrivacy, setGroupPrivacy] = useState<'public' | 'private'>('public');
 
     // Pinned prayer
     const [showPinnedPrayer, setShowPinnedPrayer] = useState(false);
@@ -440,7 +441,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                             name: groupName,
                             description: newContent.substring(0, 200),
                             created_by: user.id,
-                            is_open: true,
+                            is_open: groupPrivacy === 'public',
                             prayer_request_id: newPrayerId,
                             slug: groupSlug,
                             avatar_url: groupAvatar,
@@ -506,6 +507,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
             setNewCategory('other');
             setIsAnonymous(false);
             setCreateGroupWithPrayer(false);
+            setGroupPrivacy('public');
             setIsDialogOpen(false);
         } catch (e) {
             toast.error('Erreur lors de la publication');
@@ -1010,29 +1012,70 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
 
                                     {/* Create Group Toggle (Prayer only) */}
                                     {dialogType === 'prayer' && (
-                                        <div
-                                            className={cn(
-                                                "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border",
-                                                createGroupWithPrayer ? "bg-emerald-600/20 border-emerald-500/30" : "bg-white/5 border-white/10"
+                                        <>
+                                            <div
+                                                className={cn(
+                                                    "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border",
+                                                    createGroupWithPrayer ? "bg-emerald-600/20 border-emerald-500/30" : "bg-white/5 border-white/10"
+                                                )}
+                                                onClick={() => setCreateGroupWithPrayer(!createGroupWithPrayer)}
+                                            >
+                                                <div className="flex items-center gap-3">
+                                                    <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-600/30 to-teal-600/30 flex items-center justify-center">
+                                                        <Users className="h-5 w-5 text-emerald-400" />
+                                                    </div>
+                                                    <div>
+                                                        <p className="font-bold text-sm">🚪 Créer une chambre haute</p>
+                                                        <p className="text-xs text-slate-500">D'autres pourront rejoindre pour prier ensemble</p>
+                                                    </div>
+                                                </div>
+                                                <div className={cn(
+                                                    "w-6 h-6 rounded-lg flex items-center justify-center transition-all",
+                                                    createGroupWithPrayer ? "bg-emerald-600" : "bg-white/10"
+                                                )}>
+                                                    {createGroupWithPrayer && <Check className="h-4 w-4" />}
+                                                </div>
+                                            </div>
+
+                                            {/* Public/Private choice when group is being created */}
+                                            {createGroupWithPrayer && (
+                                                <div className="ml-4 p-3 bg-white/5 rounded-xl border border-white/10 space-y-2">
+                                                    <p className="text-xs font-semibold text-slate-400">Type de groupe :</p>
+                                                    <div className="flex gap-2">
+                                                        <button
+                                                            onClick={() => setGroupPrivacy('public')}
+                                                            className={cn(
+                                                                "flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all",
+                                                                groupPrivacy === 'public'
+                                                                    ? "bg-emerald-600/20 border-emerald-500/40 text-emerald-400"
+                                                                    : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20"
+                                                            )}
+                                                        >
+                                                            <span className="text-lg">🌍</span>
+                                                            <div className="text-left">
+                                                                <p>Public</p>
+                                                                <p className="text-[10px] font-normal opacity-70">Tous peuvent rejoindre</p>
+                                                            </div>
+                                                        </button>
+                                                        <button
+                                                            onClick={() => setGroupPrivacy('private')}
+                                                            className={cn(
+                                                                "flex-1 flex items-center gap-2 px-3 py-2.5 rounded-xl border text-xs font-semibold transition-all",
+                                                                groupPrivacy === 'private'
+                                                                    ? "bg-amber-600/20 border-amber-500/40 text-amber-400"
+                                                                    : "bg-white/5 border-white/10 text-slate-400 hover:border-white/20"
+                                                            )}
+                                                        >
+                                                            <span className="text-lg">🔒</span>
+                                                            <div className="text-left">
+                                                                <p>Privé</p>
+                                                                <p className="text-[10px] font-normal opacity-70">Accès par approbation</p>
+                                                            </div>
+                                                        </button>
+                                                    </div>
+                                                </div>
                                             )}
-                                            onClick={() => setCreateGroupWithPrayer(!createGroupWithPrayer)}
-                                        >
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-linear-to-br from-emerald-600/30 to-teal-600/30 flex items-center justify-center">
-                                                    <Users className="h-5 w-5 text-emerald-400" />
-                                                </div>
-                                                <div>
-                                                    <p className="font-bold text-sm">🚪 Créer une chambre haute</p>
-                                                    <p className="text-xs text-slate-500">D'autres pourront rejoindre pour prier ensemble</p>
-                                                </div>
-                                            </div>
-                                            <div className={cn(
-                                                "w-6 h-6 rounded-lg flex items-center justify-center transition-all",
-                                                createGroupWithPrayer ? "bg-emerald-600" : "bg-white/10"
-                                            )}>
-                                                {createGroupWithPrayer && <Check className="h-4 w-4" />}
-                                            </div>
-                                        </div>
+                                        </>
                                     )}
 
                                     {/* Submit Button */}
