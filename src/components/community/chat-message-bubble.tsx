@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { motion } from 'framer-motion';
-import { Check, CheckCheck, Paperclip } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, CheckCheck, Paperclip, X, Download, ZoomIn, Maximize2 } from 'lucide-react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { supabase } from '@/lib/supabase';
@@ -135,6 +135,9 @@ export function ChatMessageBubble({
         } catch { return {}; }
     })();
 
+    const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+    const [lightboxType, setLightboxType] = useState<'image' | 'file'>('image');
+
     const emojiCounts: Record<string, number> = {};
     Object.values(reactions).forEach(emoji => {
         emojiCounts[emoji] = (emojiCounts[emoji] || 0) + 1;
@@ -182,15 +185,32 @@ export function ChatMessageBubble({
                     {msg.type === 'voice' && msg.voice_url ? (
                         <VoiceMessagePlayer voiceUrl={msg.voice_url} duration={msg.voice_duration} />
                     ) : msg.type === 'file' && msg.file_url ? (
-                        <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
-                            <Paperclip className="h-4 w-4 text-indigo-400 shrink-0" />
-                            <div className="min-w-0">
-                                <p className="text-xs font-medium truncate">{msg.file_name || 'Fichier'}</p>
-                                <p className="text-[10px] text-slate-400">{msg.file_type || 'Document'}</p>
-                            </div>
-                        </a>
+                        <div className="space-y-1">
+                            <a href={msg.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 p-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                                <Paperclip className="h-4 w-4 text-indigo-400 shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-xs font-medium truncate">{msg.file_name || 'Fichier'}</p>
+                                    <p className="text-[10px] text-slate-400">{msg.file_type || 'Document'}</p>
+                                </div>
+                                <button
+                                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); setLightboxUrl(msg.file_url!); setLightboxType(msg.file_type?.startsWith('image') ? 'image' : 'file'); }}
+                                    className="p-1 rounded hover:bg-white/10"
+                                    title="Plein écran"
+                                >
+                                    <Maximize2 className="h-3.5 w-3.5 text-slate-400" />
+                                </button>
+                            </a>
+                        </div>
                     ) : msg.type === 'image' && msg.image_url ? (
-                        <img src={msg.image_url} alt="" className="max-w-full rounded-lg max-h-60 object-cover" />
+                        <button
+                            onClick={() => { setLightboxUrl(msg.image_url!); setLightboxType('image'); }}
+                            className="block cursor-zoom-in relative group/img"
+                        >
+                            <img src={msg.image_url} alt="" className="max-w-full rounded-lg max-h-60 object-cover" />
+                            <div className="absolute inset-0 bg-black/0 group-hover/img:bg-black/30 transition-colors rounded-lg flex items-center justify-center">
+                                <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover/img:opacity-100 transition-opacity" />
+                            </div>
+                        </button>
                     ) : (
                         <RenderMessageContent
                             content={msg.content}
@@ -278,6 +298,66 @@ export function ChatMessageBubble({
                     </button>
                 </div>
             </div>
+
+            {/* ═══ FULLSCREEN LIGHTBOX ═══ */}
+            <AnimatePresence>
+                {lightboxUrl && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-9999 bg-black/95 backdrop-blur-md flex items-center justify-center"
+                        onClick={() => setLightboxUrl(null)}
+                    >
+                        {/* Close button */}
+                        <button
+                            onClick={() => setLightboxUrl(null)}
+                            className="absolute top-4 right-4 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                        >
+                            <X className="h-6 w-6 text-white" />
+                        </button>
+
+                        {/* Download button */}
+                        <a
+                            href={lightboxUrl}
+                            download
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="absolute top-4 left-4 z-10 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                            title="Télécharger"
+                        >
+                            <Download className="h-6 w-6 text-white" />
+                        </a>
+
+                        {/* Content */}
+                        <div onClick={e => e.stopPropagation()} className="max-w-[95vw] max-h-[90vh]">
+                            {lightboxType === 'image' ? (
+                                <motion.img
+                                    initial={{ scale: 0.8, opacity: 0 }}
+                                    animate={{ scale: 1, opacity: 1 }}
+                                    src={lightboxUrl}
+                                    alt=""
+                                    className="max-w-full max-h-[90vh] object-contain rounded-lg shadow-2xl"
+                                />
+                            ) : (
+                                <div className="bg-slate-900 rounded-2xl p-8 text-center space-y-4 min-w-[300px]">
+                                    <Paperclip className="h-12 w-12 text-indigo-400 mx-auto" />
+                                    <p className="text-white font-medium">Fichier</p>
+                                    <a
+                                        href={lightboxUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl transition-colors"
+                                    >
+                                        <Download className="h-4 w-4" /> Ouvrir / Télécharger
+                                    </a>
+                                </div>
+                            )}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 }

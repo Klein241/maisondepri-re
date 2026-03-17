@@ -167,6 +167,21 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
         }
     };
 
+    // Helper: post Meet link as a message in the group chat
+    const postMeetLinkToGroupChat = async (title: string, meetLink: string) => {
+        if (!user || meetLink === 'webrtc') return;
+        try {
+            await supabase.from('prayer_group_messages').insert({
+                group_id: groupId,
+                user_id: user.id,
+                content: `📹 **${title}**\n\n🔗 Lien de l'appel : ${meetLink}\n\nℹ️ Ce lien est réservé aux membres du groupe.`,
+                type: 'text',
+            });
+        } catch (e) {
+            console.error('Error posting meet link to chat:', e);
+        }
+    };
+
     // Create an instant meeting using WebRTC
     const createInstantMeeting = async () => {
         if (!user) return;
@@ -218,6 +233,8 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
                 onStartCall('video');
             }
             toast.success('📹 Appel de groupe démarré !');
+            // Post the call info in the group chat
+            await postMeetLinkToGroupChat(`🙏 Appel de prière - ${groupName}`, 'webrtc');
         } catch (e) {
             console.error('Error creating instant meeting:', e);
             toast.error('Erreur lors de la création de l\'appel');
@@ -314,6 +331,11 @@ export function GroupCallManager({ user, groupId, groupName, groupMembers, onSta
                 setScheduleDate('');
                 setScheduleTime('');
                 loadScheduledCalls();
+
+                // Post the Meet link in the group chat (only for group members)
+                if (meetLink && meetLink !== 'webrtc') {
+                    await postMeetLinkToGroupChat(scheduleTitle, meetLink);
+                }
             }
         } catch (e) {
             console.error('Error scheduling call:', e);

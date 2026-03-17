@@ -53,6 +53,7 @@ const FriendSystem = dynamic(() => import("@/components/community/friend-system"
 const GroupToolsPanel = dynamic(() => import("@/components/community/group-tools").then(m => ({ default: m.GroupToolsPanel })), { ssr: false });
 const LiveStreamButton = dynamic(() => import("@/components/community/livestream-salon").then(m => ({ default: m.LiveStreamButton })), { ssr: false });
 const LiveStreamSalon = dynamic(() => import("@/components/community/livestream-salon").then(m => ({ default: m.LiveStreamSalon })), { ssr: false });
+const FloatingBubbles = dynamic(() => import("@/components/community/floating-bubbles").then(m => ({ default: m.FloatingBubbles })), { ssr: false });
 
 type ViewState = 'main' | 'chat' | 'groups' | 'group-detail' | 'group-call' | 'livestream' | 'global-live' | 'friends' | 'conversation' | 'messages';
 
@@ -78,6 +79,8 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
     // UI State
     const [viewState, setViewState] = useState<ViewState>('main');
     const [activeTab, setActiveTab] = useState<'prayers' | 'testimonials' | 'chat'>('prayers');
+    // Floating bubbles for published prayers/tools
+    const [floatingBubbles, setFloatingBubbles] = useState<Array<{ id: string; type: 'prayer' | 'tool' | 'group' | 'bible'; title: string; icon?: string; onClick?: () => void }>>([]);
     const [selectedCategory, setSelectedCategory] = useState<PrayerCategory | 'all'>('all');
     const [showAnsweredOnly, setShowAnsweredOnly] = useState(false);
     const [groupSearchQuery, setGroupSearchQuery] = useState('');
@@ -471,6 +474,13 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                     toast.success('Demande publiée! (groupe non créé - ID manquant)');
                 } else {
                     toast.success('Demande de prière publiée!');
+                    // Add floating bubble
+                    setFloatingBubbles(prev => [...prev, {
+                        id: newPrayerId || Date.now().toString(),
+                        type: 'prayer',
+                        title: newContent.slice(0, 50) + (newContent.length > 50 ? '...' : ''),
+                        icon: '🙏',
+                    }]);
                 }
 
 
@@ -1908,6 +1918,12 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                     </div>
                 </DialogContent>
             </Dialog>
+
+            {/* Floating bubbles for published prayers/tools */}
+            <FloatingBubbles
+                items={floatingBubbles}
+                onRemove={(id) => setFloatingBubbles(prev => prev.filter(b => b.id !== id))}
+            />
         </div >
     );
 }
