@@ -440,7 +440,7 @@ export function NotificationBell() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-9998"
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
                             onClick={() => setIsOpen(false)}
                         />
                         {/* Panel */}
@@ -449,7 +449,7 @@ export function NotificationBell() {
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -20, scale: 0.95 }}
                             transition={{ duration: 0.25 }}
-                            className="fixed top-16 left-3 right-3 sm:left-auto sm:right-4 sm:w-96 max-h-[75vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-9999"
+                            className="fixed top-14 left-1 right-1 sm:left-auto sm:right-4 sm:w-96 max-h-[80vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-[9999]"
                         >
                             {/* Header */}
                             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
@@ -506,7 +506,7 @@ export function NotificationBell() {
                             )}
 
                             {/* Notification List */}
-                            <ScrollArea className="h-[60vh]">
+                            <ScrollArea className="max-h-[55vh] overflow-y-auto">
                                 {notifications.length === 0 ? (
                                     <div className="text-center py-12 px-4">
                                         <Bell className="h-10 w-10 text-slate-700 mx-auto mb-3" />

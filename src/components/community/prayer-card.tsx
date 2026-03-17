@@ -430,9 +430,25 @@ export function PrayerCard({
                         )}
                     </div>
 
-                    {/* Photos */}
+                    {/* Photos — blurred for guests */}
                     {prayer.photos && prayer.photos.length > 0 && (
-                        <PhotoGallery photos={prayer.photos} size="md" />
+                        isGuest ? (
+                            <div className="relative mb-4 rounded-2xl overflow-hidden">
+                                <div className="blur-lg pointer-events-none select-none opacity-60">
+                                    <PhotoGallery photos={prayer.photos} size="md" />
+                                </div>
+                                <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-2xl">
+                                    <div className="text-center p-4">
+                                        <Lock className="h-6 w-6 text-indigo-400 mx-auto mb-2" />
+                                        <p className="text-xs text-white font-semibold">Connectez-vous pour voir les photos</p>
+                                    </div>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="mb-4">
+                                <PhotoGallery photos={prayer.photos} size="md" />
+                            </div>
+                        )
                     )}
 
                     {/* Owner Controls - Exaucée/Non Exaucée Buttons */}
@@ -500,7 +516,13 @@ export function PrayerCard({
                                         ? "text-emerald-400 hover:text-emerald-300"
                                         : "text-slate-400 hover:text-emerald-400"
                                 )}
-                                onClick={() => setShowGroupDialog(true)}
+                                onClick={() => {
+                                    if (isGuest) {
+                                        toast.error("Connectez-vous ou créez un compte pour accéder aux groupes de prière 🙏");
+                                        return;
+                                    }
+                                    setShowGroupDialog(true);
+                                }}
                             >
                                 <Users className="h-4 w-4 mr-1" />
                                 <span className="text-xs">🚪 Chambre</span>
