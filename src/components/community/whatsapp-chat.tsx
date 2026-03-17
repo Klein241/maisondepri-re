@@ -1024,52 +1024,93 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         setIsSending(false);
     };
 
-    // Feature 7: File upload handler
+    // Feature 7: Multi-file upload handler with progress
+    const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || !user) return;
+        const files = e.target.files;
+        if (!files || files.length === 0 || !user) return;
         e.target.value = ''; // Reset input
 
-        // 20MB limit
-        if (file.size > 20 * 1024 * 1024) {
-            toast.error('Fichier trop volumineux (max 20 Mo)');
-            return;
-        }
+        const fileArray = Array.from(files);
+
+        // Validate all files
+        const validFiles = fileArray.filter(file => {
+            if (file.size > 20 * 1024 * 1024) {
+                toast.error(`${file.name} trop volumineux (max 20 Mo)`);
+                return false;
+            }
+            return true;
+        });
+
+        if (validFiles.length === 0) return;
 
         setIsUploadingFile(true);
-        try {
-            const ext = file.name.split('.').pop();
-            const isImage = file.type.startsWith('image/');
-            const isVideo = file.type.startsWith('video/');
-            const timestamp = Date.now();
-            const bucket = 'chat-files';
-            const path = `${user.id}/${timestamp}.${ext}`;
 
-            const { error: uploadErr } = await supabase.storage.from(bucket).upload(path, file, {
-                cacheControl: '3600',
-                upsert: false,
-            });
+        // Initialize progress for all files
+        const initialProgress: Record<string, number> = {};
+        validFiles.forEach(f => { initialProgress[f.name] = 0; });
+        setUploadProgress(initialProgress);
 
-            if (uploadErr) {
-                // Fallback: try 'avatars' bucket if chat-files doesn't exist
-                const fallbackPath = `chat_files/${user.id}_${timestamp}.${ext}`;
-                const { error: fallbackErr } = await supabase.storage.from('avatars').upload(fallbackPath, file, {
+        // Upload all files simultaneously
+        const uploadPromises = validFiles.map(async (file) => {
+            try {
+                const ext = file.name.split('.').pop();
+                const isImage = file.type.startsWith('image/');
+                const timestamp = Date.now();
+                const bucket = 'chat-files';
+                const path = `${user.id}/${timestamp}_${Math.random().toString(36).slice(2)}.${ext}`;
+
+                // Simulate progress via chunked tracking
+                const progressInterval = setInterval(() => {
+                    setUploadProgress(prev => {
+                        const current = prev[file.name] || 0;
+                        if (current < 90) {
+                            return { ...prev, [file.name]: current + Math.random() * 15 };
+                        }
+                        return prev;
+                    });
+                }, 200);
+
+                const { error: uploadErr } = await supabase.storage.from(bucket).upload(path, file, {
                     cacheControl: '3600',
                     upsert: false,
                 });
-                if (fallbackErr) throw fallbackErr;
-                const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fallbackPath);
-                await sendFileMessage(urlData.publicUrl, file.name, file.type, isImage);
-            } else {
-                const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
-                await sendFileMessage(urlData.publicUrl, file.name, file.type, isImage);
-            }
 
-            toast.success('Fichier envoyé !');
-        } catch (err) {
-            console.error('Error uploading file:', err);
-            toast.error('Erreur lors de l\'envoi du fichier');
+                clearInterval(progressInterval);
+
+                if (uploadErr) {
+                    // Fallback to avatars bucket
+                    const fallbackPath = `chat_files/${user.id}_${timestamp}_${Math.random().toString(36).slice(2)}.${ext}`;
+                    const { error: fallbackErr } = await supabase.storage.from('avatars').upload(fallbackPath, file, {
+                        cacheControl: '3600',
+                        upsert: false,
+                    });
+                    if (fallbackErr) throw fallbackErr;
+                    const { data: urlData } = supabase.storage.from('avatars').getPublicUrl(fallbackPath);
+                    setUploadProgress(prev => ({ ...prev, [file.name]: 100 }));
+                    await sendFileMessage(urlData.publicUrl, file.name, file.type, isImage);
+                } else {
+                    const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(path);
+                    setUploadProgress(prev => ({ ...prev, [file.name]: 100 }));
+                    await sendFileMessage(urlData.publicUrl, file.name, file.type, isImage);
+                }
+            } catch (err) {
+                console.error(`Error uploading ${file.name}:`, err);
+                setUploadProgress(prev => ({ ...prev, [file.name]: -1 })); // -1 = error
+                toast.error(`Erreur: ${file.name}`);
+            }
+        });
+
+        await Promise.all(uploadPromises);
+
+        const successCount = Object.values(uploadProgress).filter(v => v === 100).length;
+        if (successCount > 0) {
+            toast.success(`${validFiles.length} fichier(s) envoyé(s) !`);
         }
+
+        // Clear progress after a delay
+        setTimeout(() => setUploadProgress({}), 2000);
         setIsUploadingFile(false);
     };
 
@@ -2993,6 +3034,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 isUploadingVoice={isUploadingVoice}
                 recordingTime={recordingTime}
                 isUploadingFile={isUploadingFile}
+                uploadProgress={uploadProgress}
                 onMessageChange={handleMessageChange}
                 onSendMessage={sendMessage}
                 onEmojiSelect={handleEmojiSelect}

@@ -35,6 +35,7 @@ export interface ChatInputBarProps {
     recordingTime: number;
     // File upload
     isUploadingFile: boolean;
+    uploadProgress?: Record<string, number>;
     // Handlers
     onMessageChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onSendMessage: () => void;
@@ -60,6 +61,7 @@ export function ChatInputBar({
     showEmojiPicker,
     isRecording, isPaused, isUploadingVoice, recordingTime,
     isUploadingFile,
+    uploadProgress = {},
     onMessageChange, onSendMessage,
     onEmojiSelect, onToggleEmojiPicker,
     onToggleMentions, onInsertMention,
@@ -143,8 +145,32 @@ export function ChatInputBar({
                 </Button>
                 <input ref={fileInputRef} type="file" className="hidden"
                     accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.epub"
+                    multiple
                     onChange={onFileUpload}
                 />
+
+                {/* Multi-file upload progress */}
+                {Object.keys(uploadProgress).length > 0 && (
+                    <div className="absolute bottom-full left-0 right-0 mb-1 px-2 space-y-1">
+                        {Object.entries(uploadProgress).map(([name, pct]) => (
+                            <div key={name} className="bg-slate-800/95 backdrop-blur-sm rounded-lg px-3 py-1.5 border border-white/10">
+                                <div className="flex items-center justify-between text-[10px] mb-0.5">
+                                    <span className="text-white truncate max-w-[180px]">{name}</span>
+                                    <span className={pct === -1 ? 'text-red-400' : pct >= 100 ? 'text-green-400' : 'text-indigo-400'}>
+                                        {pct === -1 ? '❌ Erreur' : pct >= 100 ? '✅ Envoyé' : `${Math.round(pct)}%`}
+                                    </span>
+                                </div>
+                                <div className="h-1 bg-white/10 rounded-full overflow-hidden">
+                                    <div
+                                        className={`h-full rounded-full transition-all duration-300 ${pct === -1 ? 'bg-red-500' : pct >= 100 ? 'bg-green-500' : 'bg-indigo-500'
+                                            }`}
+                                        style={{ width: `${Math.max(0, Math.min(100, pct))}%` }}
+                                    />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
 
                 {view === 'group' && (
                     <Button variant="ghost" size="icon"
