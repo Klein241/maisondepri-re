@@ -57,7 +57,7 @@ export default function AdminMarketplacePage() {
     // Load all books
     const loadBooks = useCallback(async () => {
         const { data } = await supabase
-            .from('books')
+            .from('library_books')
             .select('*')
             .order('created_at', { ascending: false });
         if (data) setBooks(data);
@@ -108,7 +108,7 @@ export default function AdminMarketplacePage() {
     const togglePinBook = async (book: any) => {
         const newVal = !book.is_pinned;
         const { error } = await supabase
-            .from('books')
+            .from('library_books')
             .update({ is_pinned: newVal })
             .eq('id', book.id);
         if (!error) {

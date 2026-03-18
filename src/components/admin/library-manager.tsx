@@ -18,7 +18,8 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
     Loader2, Plus, Edit, Trash2, BookOpen, Upload, Star,
-    Eye, EyeOff, Download, Image, FileText, Search, X
+    Eye, EyeOff, Download, Image, FileText, Search, X,
+    FolderUp, Clock, CheckCircle2, AlertCircle, Pause, Play
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notifyNewBook } from '@/lib/notifications';
@@ -98,6 +99,8 @@ export function LibraryManager() {
     const [editingBook, setEditingBook] = useState<Book | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [filterCategory, setFilterCategory] = useState('all');
+    const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
+    const [isBulkUploading, setIsBulkUploading] = useState(false);
 
     useEffect(() => {
         fetchBooks();
@@ -234,6 +237,13 @@ export function LibraryManager() {
                     <Button onClick={() => { setEditingBook(null); setIsDialogOpen(true); }}>
                         <Plus className="w-4 h-4 mr-2" /> Ajouter un livre
                     </Button>
+                    <Button
+                        variant="outline"
+                        className="border-violet-500/30 text-violet-400 hover:bg-violet-500/10"
+                        onClick={() => setIsBulkDialogOpen(true)}
+                    >
+                        <FolderUp className="w-4 h-4 mr-2" /> Upload massif
+                    </Button>
                 </div>
 
                 {/* Stats */}
@@ -351,6 +361,23 @@ export function LibraryManager() {
                             initialData={editingBook}
                             onSave={() => { setIsDialogOpen(false); setEditingBook(null); fetchBooks(); }}
                             onCancel={() => { setIsDialogOpen(false); setEditingBook(null); }}
+                        />
+                    </DialogContent>
+                </Dialog>
+
+                {/* Bulk Upload Dialog */}
+                <Dialog open={isBulkDialogOpen} onOpenChange={(open) => { if (!isBulkUploading) setIsBulkDialogOpen(open); }}>
+                    <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                            <DialogTitle className="flex items-center gap-2">
+                                <FolderUp className="w-5 h-5 text-violet-400" />
+                                Upload massif de livres
+                            </DialogTitle>
+                        </DialogHeader>
+                        <BulkUploadForm
+                            onComplete={() => { setIsBulkDialogOpen(false); fetchBooks(); }}
+                            onCancel={() => { if (!isBulkUploading) setIsBulkDialogOpen(false); }}
+                            onUploadingChange={setIsBulkUploading}
                         />
                     </DialogContent>
                 </Dialog>
@@ -675,6 +702,446 @@ function BookForm({ initialData, onSave, onCancel }: { initialData: Book | null;
                     {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
                     {initialData ? 'Mettre à jour' : 'Publier le livre'}
                 </Button>
+            </DialogFooter>
+        </div>
+    );
+}
+
+// =====================================================
+// BULK UPLOAD FORM — Upload 100-1000+ books at once
+// =====================================================
+interface BulkFileEntry {
+    file: File;
+    title: string;
+    author: string;
+    status: 'pending' | 'uploading' | 'done' | 'error';
+    progress: string;
+    error?: string;
+}
+
+function BulkUploadForm({
+    onComplete,
+    onCancel,
+    onUploadingChange,
+}: {
+    onComplete: () => void;
+    onCancel: () => void;
+    onUploadingChange: (uploading: boolean) => void;
+}) {
+    const [files, setFiles] = useState<BulkFileEntry[]>([]);
+    const [bulkCategory, setBulkCategory] = useState('other');
+    const [isUploading, setIsUploading] = useState(false);
+    const [isPaused, setIsPaused] = useState(false);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [scheduleEnabled, setScheduleEnabled] = useState(false);
+    const [scheduleDate, setScheduleDate] = useState('');
+    const [scheduleTime, setScheduleTime] = useState('');
+    const pauseRef = useRef(false);
+    const cancelRef = useRef(false);
+    const folderInputRef = useRef<HTMLInputElement>(null);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+    const doneCount = files.filter(f => f.status === 'done').length;
+    const errorCount = files.filter(f => f.status === 'error').length;
+    const totalCount = files.length;
+    const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+
+    // Parse title and author from filename
+    const parseFilename = (name: string): { title: string; author: string } => {
+        const clean = name.replace(/\.(pdf|epub)$/i, '');
+        if (clean.includes(' - ')) {
+            const parts = clean.split(' - ');
+            return { author: parts[0].trim(), title: parts.slice(1).join(' - ').trim() };
+        }
+        return { title: clean.replace(/_/g, ' '), author: 'Auteur inconnu' };
+    };
+
+    // Handle file selection (supports both folder and multi-file)
+    const handleFilesSelected = (selectedFiles: FileList | null) => {
+        if (!selectedFiles || selectedFiles.length === 0) return;
+
+        const validFiles: BulkFileEntry[] = [];
+        for (let i = 0; i < selectedFiles.length; i++) {
+            const file = selectedFiles[i];
+            const ext = file.name.split('.').pop()?.toLowerCase();
+            if (['pdf', 'epub'].includes(ext || '')) {
+                const { title, author } = parseFilename(file.name);
+                validFiles.push({
+                    file,
+                    title,
+                    author,
+                    status: 'pending',
+                    progress: '',
+                });
+            }
+        }
+
+        if (validFiles.length === 0) {
+            toast.error('Aucun fichier PDF ou EPUB trouvé');
+            return;
+        }
+
+        setFiles(prev => [...prev, ...validFiles]);
+        toast.success(`${validFiles.length} fichier(s) ajouté(s)`);
+    };
+
+    // Remove a file from the queue
+    const removeFile = (index: number) => {
+        if (files[index].status === 'uploading') return;
+        setFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    // Clear all pending files
+    const clearPending = () => {
+        setFiles(prev => prev.filter(f => f.status !== 'pending'));
+    };
+
+    // Start bulk upload
+    const startUpload = async () => {
+        if (files.length === 0) return toast.error('Aucun fichier à uploader');
+
+        setIsUploading(true);
+        onUploadingChange(true);
+        cancelRef.current = false;
+        pauseRef.current = false;
+
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) {
+            toast.error('Non connecté');
+            setIsUploading(false);
+            onUploadingChange(false);
+            return;
+        }
+
+        // Determine if scheduled
+        let scheduledAt: string | null = null;
+        let publishNow = true;
+        if (scheduleEnabled && scheduleDate && scheduleTime) {
+            scheduledAt = new Date(`${scheduleDate}T${scheduleTime}`).toISOString();
+            publishNow = false;
+        }
+
+        for (let i = 0; i < files.length; i++) {
+            // Skip already processed
+            if (files[i].status === 'done' || files[i].status === 'error') continue;
+            if (cancelRef.current) break;
+
+            // Wait while paused
+            while (pauseRef.current) {
+                await new Promise(r => setTimeout(r, 500));
+                if (cancelRef.current) break;
+            }
+            if (cancelRef.current) break;
+
+            setCurrentIndex(i);
+
+            // Update status to uploading
+            setFiles(prev => prev.map((f, idx) =>
+                idx === i ? { ...f, status: 'uploading', progress: 'Upload vers R2...' } : f
+            ));
+
+            try {
+                // 1. Upload file to R2
+                const result = await uploadToR2(files[i].file, 'books');
+                const ext = files[i].file.name.split('.').pop()?.toLowerCase();
+
+                setFiles(prev => prev.map((f, idx) =>
+                    idx === i ? { ...f, progress: 'Enregistrement en base...' } : f
+                ));
+
+                // 2. Generate slug
+                const slug = files[i].title
+                    .toLowerCase()
+                    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                    .replace(/[^a-z0-9\s-]/g, '')
+                    .replace(/\s+/g, '-')
+                    .replace(/-+/g, '-')
+                    .slice(0, 80) + '-' + Date.now().toString(36);
+
+                // 3. Insert into Supabase
+                const bookData: Record<string, any> = {
+                    title: files[i].title,
+                    author: files[i].author,
+                    description: '',
+                    category: bulkCategory,
+                    cover_url: null,
+                    file_url: result.url,
+                    file_name: files[i].file.name,
+                    file_size: files[i].file.size,
+                    file_type: ext || 'pdf',
+                    page_count: 0,
+                    is_published: publishNow,
+                    slug,
+                    uploaded_by: user.id,
+                    updated_at: new Date().toISOString(),
+                };
+                if (scheduledAt) {
+                    bookData.scheduled_at = scheduledAt;
+                }
+
+                const { error } = await supabase.from('library_books').insert(bookData);
+                if (error) throw error;
+
+                // Done!
+                setFiles(prev => prev.map((f, idx) =>
+                    idx === i ? { ...f, status: 'done', progress: '✅ Publié' } : f
+                ));
+            } catch (err: any) {
+                setFiles(prev => prev.map((f, idx) =>
+                    idx === i ? { ...f, status: 'error', progress: '', error: err.message || 'Erreur' } : f
+                ));
+            }
+
+            // Small delay between uploads to avoid rate limiting
+            await new Promise(r => setTimeout(r, 200));
+        }
+
+        setIsUploading(false);
+        onUploadingChange(false);
+        toast.success(`Upload terminé ! ${doneCount + 1}/${totalCount} livres publiés`);
+    };
+
+    const togglePause = () => {
+        pauseRef.current = !pauseRef.current;
+        setIsPaused(!isPaused);
+    };
+
+    const cancelUpload = () => {
+        cancelRef.current = true;
+        pauseRef.current = false;
+        setIsPaused(false);
+        setTimeout(() => {
+            setIsUploading(false);
+            onUploadingChange(false);
+        }, 600);
+    };
+
+    const formatSize = (bytes: number) => {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    };
+
+    return (
+        <div className="space-y-4">
+            {/* File selection area */}
+            {!isUploading && (
+                <div className="space-y-3">
+                    {/* Hidden inputs */}
+                    <input
+                        ref={folderInputRef}
+                        type="file"
+                        accept=".pdf,.epub"
+                        multiple
+                        // @ts-ignore – webkitdirectory is non-standard but widely supported
+                        webkitdirectory=""
+                        onChange={e => handleFilesSelected(e.target.files)}
+                        className="hidden"
+                    />
+                    <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.epub"
+                        multiple
+                        onChange={e => handleFilesSelected(e.target.files)}
+                        className="hidden"
+                    />
+
+                    {/* Drop zone */}
+                    <div
+                        className="border-2 border-dashed border-violet-500/30 rounded-xl p-8 text-center hover:border-violet-500/50 transition-colors cursor-pointer bg-violet-500/5"
+                        onClick={() => folderInputRef.current?.click()}
+                    >
+                        <FolderUp className="w-12 h-12 mx-auto mb-3 text-violet-400" />
+                        <p className="text-lg font-bold text-white">📂 Sélectionner un dossier complet</p>
+                        <p className="text-sm text-slate-400 mt-1">
+                            Sélectionnez un dossier contenant vos livres PDF/EPUB
+                        </p>
+                        <p className="text-xs text-slate-500 mt-2">
+                            Supporte 100, 500, 1000+ fichiers à la fois
+                        </p>
+                    </div>
+
+                    <div className="flex gap-2">
+                        <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => fileInputRef.current?.click()}
+                        >
+                            <Upload className="w-4 h-4 mr-2" />
+                            Ou sélectionner des fichiers individuels
+                        </Button>
+                        {files.length > 0 && (
+                            <Button variant="destructive" size="sm" onClick={clearPending}>
+                                <X className="w-4 h-4 mr-1" /> Tout retirer
+                            </Button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Settings */}
+            {files.length > 0 && !isUploading && (
+                <div className="bg-slate-800/50 rounded-xl p-4 space-y-3 border border-white/10">
+                    <p className="text-sm font-bold text-white">⚙️ Paramètres d'upload</p>
+
+                    {/* Category */}
+                    <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                            <Label className="text-xs">Catégorie par défaut</Label>
+                            <Select value={bulkCategory} onValueChange={setBulkCategory}>
+                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                    {CATEGORIES.map(cat => (
+                                        <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+
+                        {/* Scheduled publication */}
+                        <div className="space-y-1">
+                            <Label className="text-xs flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Programmer la publication
+                            </Label>
+                            <div className="flex items-center gap-2 pt-1">
+                                <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
+                                <span className="text-xs text-slate-400">
+                                    {scheduleEnabled ? 'Programmé' : 'Instantané'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {scheduleEnabled && (
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="space-y-1">
+                                <Label className="text-xs">Date</Label>
+                                <Input
+                                    type="date"
+                                    value={scheduleDate}
+                                    onChange={e => setScheduleDate(e.target.value)}
+                                    min={new Date().toISOString().split('T')[0]}
+                                />
+                            </div>
+                            <div className="space-y-1">
+                                <Label className="text-xs">Heure</Label>
+                                <Input
+                                    type="time"
+                                    value={scheduleTime}
+                                    onChange={e => setScheduleTime(e.target.value)}
+                                />
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* File list */}
+            {files.length > 0 && (
+                <div className="space-y-2">
+                    {/* Progress bar */}
+                    <div className="flex items-center justify-between text-sm">
+                        <span className="font-bold text-white">
+                            {isUploading ? `Upload en cours: ${doneCount}/${totalCount}` : `${totalCount} fichier(s) prêts`}
+                        </span>
+                        <div className="flex items-center gap-2">
+                            {errorCount > 0 && (
+                                <Badge className="bg-red-500/10 text-red-400 border-red-500/20">
+                                    {errorCount} erreur(s)
+                                </Badge>
+                            )}
+                            <span className="text-slate-400 text-xs">
+                                {formatSize(files.reduce((s, f) => s + f.file.size, 0))} total
+                            </span>
+                        </div>
+                    </div>
+
+                    {isUploading && (
+                        <div className="w-full bg-slate-700 rounded-full h-2">
+                            <div
+                                className="bg-violet-500 h-2 rounded-full transition-all duration-300"
+                                style={{ width: `${progressPercent}%` }}
+                            />
+                        </div>
+                    )}
+
+                    {/* File entries — scrollable */}
+                    <div className="max-h-[40vh] overflow-y-auto space-y-1 pr-1">
+                        {files.map((entry, idx) => (
+                            <div
+                                key={idx}
+                                className={`flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${entry.status === 'done'
+                                        ? 'bg-green-500/10 border border-green-500/20'
+                                        : entry.status === 'error'
+                                            ? 'bg-red-500/10 border border-red-500/20'
+                                            : entry.status === 'uploading'
+                                                ? 'bg-blue-500/10 border border-blue-500/20'
+                                                : 'bg-white/5 border border-white/5'
+                                    }`}
+                            >
+                                {/* Status icon */}
+                                <div className="shrink-0">
+                                    {entry.status === 'done' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
+                                    {entry.status === 'error' && <AlertCircle className="w-4 h-4 text-red-400" />}
+                                    {entry.status === 'uploading' && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
+                                    {entry.status === 'pending' && <FileText className="w-4 h-4 text-slate-500" />}
+                                </div>
+
+                                {/* Info */}
+                                <div className="flex-1 min-w-0">
+                                    <p className="font-medium truncate text-white">{entry.title}</p>
+                                    <p className="text-xs text-slate-400 truncate">
+                                        {entry.author} · {formatSize(entry.file.size)}
+                                        {entry.progress && <span className="ml-2 text-blue-400">{entry.progress}</span>}
+                                        {entry.error && <span className="ml-2 text-red-400">{entry.error}</span>}
+                                    </p>
+                                </div>
+
+                                {/* Remove (only if pending) */}
+                                {entry.status === 'pending' && !isUploading && (
+                                    <button onClick={() => removeFile(idx)} className="shrink-0 text-slate-500 hover:text-red-400">
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Actions */}
+            <DialogFooter className="flex gap-2">
+                {isUploading ? (
+                    <>
+                        <Button variant="outline" onClick={togglePause}>
+                            {isPaused ? <Play className="w-4 h-4 mr-1" /> : <Pause className="w-4 h-4 mr-1" />}
+                            {isPaused ? 'Reprendre' : 'Pause'}
+                        </Button>
+                        <Button variant="destructive" onClick={cancelUpload}>
+                            <X className="w-4 h-4 mr-1" /> Annuler
+                        </Button>
+                    </>
+                ) : (
+                    <>
+                        <Button variant="outline" onClick={onCancel}>Fermer</Button>
+                        {files.length > 0 && files.some(f => f.status === 'pending') && (
+                            <Button
+                                className="bg-violet-600 hover:bg-violet-700"
+                                onClick={startUpload}
+                            >
+                                <Upload className="w-4 h-4 mr-2" />
+                                Lancer l'upload ({files.filter(f => f.status === 'pending').length} fichiers)
+                            </Button>
+                        )}
+                        {files.length > 0 && !files.some(f => f.status === 'pending') && (
+                            <Button onClick={onComplete}>
+                                <CheckCircle2 className="w-4 h-4 mr-2" /> Terminé
+                            </Button>
+                        )}
+                    </>
+                )}
             </DialogFooter>
         </div>
     );
