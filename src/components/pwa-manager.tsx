@@ -183,29 +183,9 @@ export function PWAManager() {
             if (permission === 'granted') {
                 toast.success('🔔 Notifications activées !');
 
-                if (VAPID_PUBLIC_KEY && swRegistration) {
-                    try {
-                        const subscription = await swRegistration.pushManager.subscribe({
-                            userVisibleOnly: true,
-                            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
-                        });
-
-                        // Register subscription with the worker
-                        const userId = user?.id;
-                        if (userId && WORKER_URL) {
-                            await fetch(`${WORKER_URL}/api/push/register`, {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
-                                body: JSON.stringify({ subscription: subscription.toJSON() }),
-                            });
-                            console.log('[PWA] Push subscription registered with worker');
-                        }
-                    } catch (e) {
-                        console.warn('[PWA] Push subscription failed:', e);
-                    }
-                } else if (!VAPID_PUBLIC_KEY) {
-                    console.warn('[PWA] VAPID key not yet loaded, push will register on next reload');
-                }
+                // NOTE: Push subscription (VAPID + registration with Worker) is handled
+                // exclusively by PushNotificationManager (via PushNotificationWrapper)
+                // to avoid double-registration bugs. Do NOT subscribe here.
 
                 if (swRegistration) {
                     swRegistration.showNotification('Maison de Prière', {

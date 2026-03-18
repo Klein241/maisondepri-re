@@ -12,6 +12,17 @@ CREATE TABLE IF NOT EXISTS library_ads (
     display_order INTEGER DEFAULT 0,
     click_count INTEGER DEFAULT 0,
     view_count INTEGER DEFAULT 0,
+    -- 6 placements disponibles dans l'application:
+    -- 'book_detail'    → Page détail d'un livre (entre suggestions)
+    -- 'home_feed'      → Flux d'accueil (entre les sections)
+    -- 'marketplace'    → Boutique (produit sponsorisé en haut)
+    -- 'reader_end'     → Fin de lecture d'un livre PDF/EPUB
+    -- 'search_results' → Page de résultats de recherche
+    -- 'sidebar'        → Barre latérale des groupes/salons
+    placement TEXT DEFAULT 'book_detail' CHECK (placement IN (
+        'book_detail', 'home_feed', 'marketplace',
+        'reader_end', 'search_results', 'sidebar'
+    )),
     starts_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ DEFAULT NULL,
     created_at TIMESTAMPTZ DEFAULT NOW(),

@@ -101,8 +101,8 @@ self.addEventListener('message', (event) => {
     if (event.data.type === 'SHOW_NOTIFICATION') {
         self.registration.showNotification(event.data.title || 'Maison de Prière', {
             body: event.data.body || '',
-            icon: '/icons/icon-192x192.png',
-            badge: '/icons/icon-72x72.png',
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
             tag: event.data.tag || `msg_${Date.now()}`,
             data: { url: event.data.url || '/' },
             vibrate: [100, 50, 100],

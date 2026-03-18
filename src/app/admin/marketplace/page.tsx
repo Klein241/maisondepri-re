@@ -27,7 +27,7 @@ export default function AdminMarketplacePage() {
     const [books, setBooks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [tab, setTab] = useState<'products' | 'books' | 'post'>('products');
+    const [tab, setTab] = useState<'products' | 'post'>('products');
 
     // Post product form
     const [title, setTitle] = useState('');
@@ -48,25 +48,19 @@ export default function AdminMarketplacePage() {
         setLoading(true);
         const { data, error } = await supabase
             .from('marketplace_products')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (!error && data) setProducts(data);
+        try {
+            const { data, error } = await supabase
+                .from('marketplace_products')
+                .select('*')
+                .order('created_at', { ascending: false });
+            if (!error) setProducts(data || []);
+        } catch (e: any) { }
         setLoading(false);
-    }, []);
-
-    // Load all books
-    const loadBooks = useCallback(async () => {
-        const { data } = await supabase
-            .from('library_books')
-            .select('*')
-            .order('created_at', { ascending: false });
-        if (data) setBooks(data);
     }, []);
 
     useEffect(() => {
         loadProducts();
-        loadBooks();
-    }, [loadProducts, loadBooks]);
+    }, [loadProducts]);
 
     // Toggle product pin (featured)
     const togglePinProduct = async (product: Product) => {
@@ -105,17 +99,8 @@ export default function AdminMarketplacePage() {
     };
 
     // Toggle book pin
-    const togglePinBook = async (book: any) => {
-        const newVal = !book.is_pinned;
-        const { error } = await supabase
-            .from('library_books')
-            .update({ is_pinned: newVal })
-            .eq('id', book.id);
-        if (!error) {
-            setBooks(prev => prev.map(b => b.id === book.id ? { ...b, is_pinned: newVal } : b));
-            toast.success(newVal ? '📌 Livre épinglé !' : 'Livre désépinglé');
-        }
-    };
+    // Toggle book pin
+    // Function moved to library manager
 
     // Image upload
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -238,7 +223,6 @@ export default function AdminMarketplacePage() {
     );
 
     const pinnedProducts = products.filter(p => (p as any).is_featured);
-    const pinnedBooks = books.filter(b => b.is_pinned);
 
     return (
         <div className="space-y-6">
@@ -250,7 +234,7 @@ export default function AdminMarketplacePage() {
                         Gestion Marketplace
                     </h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        {products.length} produits · {pinnedProducts.length} épinglés · {pinnedBooks.length} livres épinglés
+                        {products.length} produits · {pinnedProducts.length} épinglés
                     </p>
                 </div>
                 <Button onClick={() => { resetForm(); setTab('post'); }} className="bg-orange-600 hover:bg-orange-700">
@@ -267,14 +251,6 @@ export default function AdminMarketplacePage() {
                     className={tab === 'products' ? 'bg-orange-600' : ''}
                 >
                     <Package className="h-4 w-4 mr-1" /> Produits ({products.length})
-                </Button>
-                <Button
-                    variant={tab === 'books' ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setTab('books')}
-                    className={tab === 'books' ? 'bg-purple-600' : ''}
-                >
-                    <BookMarked className="h-4 w-4 mr-1" /> Livres ({books.length})
                 </Button>
                 <Button
                     variant={tab === 'post' ? 'default' : 'outline'}
@@ -391,76 +367,6 @@ export default function AdminMarketplacePage() {
                             ))}
                         </div>
                     )}
-                </div>
-            )}
-
-            {/* ═══ BOOKS TAB — Pin/Unpin multiple ═══ */}
-            {tab === 'books' && (
-                <div className="space-y-4">
-                    <Card className="border-purple-500/20 bg-purple-500/5">
-                        <CardHeader className="pb-2">
-                            <CardTitle className="text-sm flex items-center gap-2 text-purple-400">
-                                <BookMarked className="h-4 w-4" /> Livres épinglés ({pinnedBooks.length})
-                            </CardTitle>
-                            <CardDescription className="text-xs">
-                                Les livres épinglés apparaissent en premier dans la bibliothèque
-                            </CardDescription>
-                        </CardHeader>
-                        {pinnedBooks.length > 0 && (
-                            <CardContent>
-                                <div className="flex flex-wrap gap-2">
-                                    {pinnedBooks.map(b => (
-                                        <Badge key={b.id} className="bg-purple-600/20 text-purple-300 border-purple-500/30 gap-1">
-                                            📌 {b.title}
-                                            <button onClick={() => togglePinBook(b)} className="ml-1 hover:text-red-400">
-                                                <X className="h-3 w-3" />
-                                            </button>
-                                        </Badge>
-                                    ))}
-                                </div>
-                            </CardContent>
-                        )}
-                    </Card>
-
-                    <div className="grid gap-3">
-                        {books.map(book => (
-                            <Card key={book.id} className="bg-white/5 border-white/10">
-                                <CardContent className="p-4">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-12 h-16 rounded-lg overflow-hidden bg-white/5 shrink-0">
-                                            {book.cover_url ? (
-                                                <img src={book.cover_url} alt="" className="w-full h-full object-cover" />
-                                            ) : (
-                                                <div className="w-full h-full flex items-center justify-center">
-                                                    <BookMarked className="h-5 w-5 text-slate-600" />
-                                                </div>
-                                            )}
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2">
-                                                <h3 className="font-semibold text-sm truncate">{book.title}</h3>
-                                                {book.is_pinned && (
-                                                    <Badge className="bg-purple-600/20 text-purple-400 text-[9px] border-none">📌</Badge>
-                                                )}
-                                            </div>
-                                            <p className="text-xs text-slate-400">{book.author} · {book.category}</p>
-                                        </div>
-                                        <Button
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => togglePinBook(book)}
-                                            className={book.is_pinned
-                                                ? 'text-purple-400 hover:text-purple-300'
-                                                : 'text-slate-400 hover:text-purple-400'}
-                                        >
-                                            {book.is_pinned ? <PinOff className="h-4 w-4 mr-1" /> : <Pin className="h-4 w-4 mr-1" />}
-                                            {book.is_pinned ? 'Désépingler' : 'Épingler'}
-                                        </Button>
-                                    </div>
-                                </CardContent>
-                            </Card>
-                        ))}
-                    </div>
                 </div>
             )}
 

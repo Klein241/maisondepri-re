@@ -107,8 +107,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
             try {
                 new Notification(title, {
                     body,
-                    icon: '/icons/icon-192x192.png',
-                    badge: '/icons/icon-72x72.png',
+                    icon: '/icon-192.png',
+                    badge: '/icon-192.png',
                     tag: `notif_${Date.now()}`,
                 });
             } catch (e) { /* ignore */ }

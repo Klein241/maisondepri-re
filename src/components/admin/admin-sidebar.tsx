@@ -32,7 +32,8 @@ import {
     FolderOpen,
     Eye,
     BookMarked,
-    ShoppingBag
+    ShoppingBag,
+    Megaphone
 } from "lucide-react"
 
 const sidebarItems = [
@@ -75,6 +76,11 @@ const sidebarItems = [
         title: "🛒 Marketplace",
         href: "/admin/marketplace",
         icon: ShoppingBag,
+    },
+    {
+        title: "📢 Publicités",
+        href: "/admin/ads",
+        icon: Megaphone,
     },
     {
         title: "Modération",

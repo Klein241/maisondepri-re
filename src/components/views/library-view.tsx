@@ -124,7 +124,7 @@ function AuthGate({ onClose }: { onClose: () => void }) {
                 <Lock className="h-12 w-12 text-amber-400 mx-auto mb-4" />
                 <h3 className="text-lg font-bold text-white mb-2">Connexion requise</h3>
                 <p className="text-sm text-slate-400 mb-6">
-                    Connectez-vous pour lire, télécharger, noter les livres et gérer vos favoris.
+                    Connectez-vous pour télécharger, noter les livres et gérer vos favoris.
                 </p>
                 <Button
                     className="w-full bg-linear-to-r from-primary to-purple-600 text-white"
@@ -338,18 +338,18 @@ export function LibraryView() {
     }, [user?.id]);
 
     const openBook = useCallback(async (book: Book) => {
-        if (!user?.id) { setShowAuthGate(true); return; }
-
-        // Track in reading history
-        try {
-            await supabase.from('library_reading_history')
-                .upsert({
-                    book_id: book.id,
-                    user_id: user.id,
-                    total_pages: book.page_count || 0,
-                    last_read_at: new Date().toISOString(),
-                }, { onConflict: 'book_id,user_id' });
-        } catch (e) { /* ignore */ }
+        // Allow guest reading! Only track history for logged-in users
+        if (user?.id) {
+            try {
+                await supabase.from('library_reading_history')
+                    .upsert({
+                        book_id: book.id,
+                        user_id: user.id,
+                        total_pages: book.page_count || 0,
+                        last_read_at: new Date().toISOString(),
+                    }, { onConflict: 'book_id,user_id' });
+            } catch (e) { /* ignore */ }
+        }
 
         if (book.file_url) {
             setReadingBook(book);
@@ -467,7 +467,7 @@ export function LibraryView() {
                         <p className="text-[10px] text-slate-400 truncate">{readingBook.author}</p>
                     </div>
                     <Button size="sm" variant="ghost" className="text-white hover:bg-white/10"
-                        onClick={() => downloadBook(readingBook)}>
+                        onClick={() => requireAuth(() => downloadBook(readingBook))}>
                         <Download className="h-4 w-4" />
                     </Button>
                 </div>
@@ -577,8 +577,8 @@ export function LibraryView() {
 
                     <div className="flex gap-3 mb-3">
                         <Button className="flex-1 bg-linear-to-r from-primary to-purple-600 text-white shadow-lg shadow-primary/30"
-                            onClick={() => requireAuth(() => openBook(selectedBook))}>
-                            {isLoggedIn ? <Eye className="h-4 w-4 mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+                            onClick={() => openBook(selectedBook)}>
+                            <Eye className="h-4 w-4 mr-2" />
                             Lire
                         </Button>
                         <Button variant="outline" className="border-white/10 text-white hover:bg-white/5"
@@ -621,7 +621,7 @@ export function LibraryView() {
                                 <Lock className="h-5 w-5 text-amber-400 shrink-0" />
                                 <div className="flex-1">
                                     <p className="text-xs text-amber-300 font-medium">Connexion requise</p>
-                                    <p className="text-[10px] text-amber-300/70">pour lire, télécharger, noter et ajouter en favoris</p>
+                                    <p className="text-[10px] text-amber-300/70">pour télécharger, noter et ajouter en favoris</p>
                                 </div>
                             </CardContent>
                         </Card>

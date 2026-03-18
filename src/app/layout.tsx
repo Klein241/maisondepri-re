@@ -6,6 +6,7 @@ import { AuthListener } from "@/components/auth-listener";
 import { NotificationListener } from "@/components/notification-listener";
 import { PWAManager } from "@/components/pwa-manager";
 import { PushNotificationWrapper } from "@/components/push-wrapper";
+import NotificationProvider from "@/components/NotificationContext";
 import "./globals.css";
 
 const inter = Inter({
@@ -79,14 +80,17 @@ export default function RootLayout({
           enableSystem={true}
           disableTransitionOnChange
         >
-          <AuthListener />
-          <NotificationListener />
-          <PWAManager />
-          <PushNotificationWrapper />
-          {children}
-          <Toaster position="top-center" richColors />
+          <NotificationProvider>
+            <AuthListener />
+            <NotificationListener />
+            <PWAManager />
+            <PushNotificationWrapper />
+            {children}
+            <Toaster position="top-center" richColors />
+          </NotificationProvider>
         </ThemeProvider>
       </body>
     </html>
   );
 }
+

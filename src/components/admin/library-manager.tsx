@@ -19,7 +19,8 @@ import { Switch } from '@/components/ui/switch';
 import {
     Loader2, Plus, Edit, Trash2, BookOpen, Upload, Star,
     Eye, EyeOff, Download, Image, FileText, Search, X,
-    FolderUp, Clock, CheckCircle2, AlertCircle, Pause, Play
+    FolderUp, Clock, CheckCircle2, AlertCircle, Pause, Play,
+    Pin, PinOff, CheckSquare, Square, MinusSquare
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { notifyNewBook } from '@/lib/notifications';
@@ -130,19 +131,8 @@ interface Book {
     rating_count: number;
     download_count: number;
     is_published: boolean;
+    is_pinned: boolean;
     created_at: string;
-}
-
-interface LibraryAd {
-    id: string;
-    title: string;
-    description: string;
-    image_url: string;
-    link_url: string;
-    is_active: boolean;
-    display_order: number;
-    click_count: number;
-    view_count: number;
 }
 
 export function LibraryManager() {
@@ -154,62 +144,12 @@ export function LibraryManager() {
     const [filterCategory, setFilterCategory] = useState('all');
     const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
     const [isBulkUploading, setIsBulkUploading] = useState(false);
-
-    // Ads state
-    const [ads, setAds] = useState<LibraryAd[]>([]);
-    const [isAdDialogOpen, setIsAdDialogOpen] = useState(false);
-    const [editingAd, setEditingAd] = useState<LibraryAd | null>(null);
-    const [adForm, setAdForm] = useState({ title: '', description: '', image_url: '', link_url: '', is_active: true, display_order: 0 });
-    const [adSaving, setAdSaving] = useState(false);
+    const [selectedBooks, setSelectedBooks] = useState<Set<string>>(new Set());
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
     useEffect(() => {
         fetchBooks();
-        fetchAds();
     }, []);
-
-    const fetchAds = async () => {
-        try {
-            const { data } = await supabase.from('library_ads').select('*').order('display_order');
-            if (data) setAds(data);
-        } catch { /* table may not exist */ }
-    };
-
-    const saveAd = async () => {
-        setAdSaving(true);
-        try {
-            if (editingAd) {
-                await supabase.from('library_ads').update(adForm).eq('id', editingAd.id);
-            } else {
-                await supabase.from('library_ads').insert(adForm);
-            }
-            toast.success(editingAd ? 'Publicité modifiée' : 'Publicité créée');
-            setIsAdDialogOpen(false);
-            setEditingAd(null);
-            fetchAds();
-        } catch (e: any) {
-            toast.error('Erreur: ' + e.message);
-        } finally {
-            setAdSaving(false);
-        }
-    };
-
-    const deleteAd = async (id: string) => {
-        if (!confirm('Supprimer cette publicité ?')) return;
-        await supabase.from('library_ads').delete().eq('id', id);
-        toast.success('Publicité supprimée');
-        fetchAds();
-    };
-
-    const openAdForm = (ad?: LibraryAd) => {
-        if (ad) {
-            setEditingAd(ad);
-            setAdForm({ title: ad.title, description: ad.description, image_url: ad.image_url, link_url: ad.link_url, is_active: ad.is_active, display_order: ad.display_order });
-        } else {
-            setEditingAd(null);
-            setAdForm({ title: '', description: '', image_url: '', link_url: '', is_active: true, display_order: ads.length });
-        }
-        setIsAdDialogOpen(true);
-    };
 
     const fetchBooks = async () => {
         setIsLoading(true);
@@ -248,11 +188,92 @@ export function LibraryManager() {
             }
             // Delete book record
             const { error } = await supabase.from('library_books').delete().eq('id', book.id);
-            if (error) throw error;
-            toast.success("Livre supprimé");
-            fetchBooks();
+            await fetchBooks();
+            toast.success('Le livre a été supprimé.');
         } catch (e: any) {
-            toast.error(e.message);
+            toast.error('Erreur lors de la suppression');
+        }
+    };
+
+    // ── Bulk Selection Helpers ──────────────────────────────
+    const toggleSelectBook = (id: string) => {
+        setSelectedBooks(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedBooks.size === filteredBooks.length) {
+            setSelectedBooks(new Set());
+        } else {
+            setSelectedBooks(new Set(filteredBooks.map(b => b.id)));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        if (selectedBooks.size === 0) return;
+        const count = selectedBooks.size;
+        if (!confirm(`⚠️ Supprimer ${count} livre${count > 1 ? 's' : ''} ? Cette action est irréversible.`)) return;
+
+        setIsBulkDeleting(true);
+        let deleted = 0;
+        let errors = 0;
+
+        for (const bookId of selectedBooks) {
+            const book = books.find(b => b.id === bookId);
+            if (!book) continue;
+
+            try {
+                // Delete file from R2 (or legacy Supabase Storage)
+                if (book.file_url) {
+                    await deleteFromR2(book.file_url).catch(() => {
+                        const filePath = book.file_url.split('/library/')[1];
+                        if (filePath) supabase.storage.from('library').remove([filePath]);
+                    });
+                }
+                // Delete cover from R2 (or legacy Supabase Storage)
+                if (book.cover_url) {
+                    await deleteFromR2(book.cover_url).catch(() => {
+                        const coverPath = book.cover_url!.split('/library/')[1];
+                        if (coverPath) supabase.storage.from('library').remove([coverPath]);
+                    });
+                }
+                // Delete book record
+                const { error } = await supabase.from('library_books').delete().eq('id', book.id);
+                if (error) throw error;
+                deleted++;
+            } catch (e: any) {
+                errors++;
+                console.error(`Failed to delete book ${book.title}:`, e);
+            }
+        }
+
+        setSelectedBooks(new Set());
+        await fetchBooks();
+        setIsBulkDeleting(false);
+
+        if (errors === 0) {
+            toast.success(`🗑️ ${deleted} livre${deleted > 1 ? 's' : ''} supprimé${deleted > 1 ? 's' : ''} avec succès.`);
+        } else {
+            toast.warning(`${deleted} supprimé${deleted > 1 ? 's' : ''}, ${errors} erreur${errors > 1 ? 's' : ''}.`);
+        }
+    };
+
+    const handleTogglePin = async (book: Book) => {
+        const newVal = !book.is_pinned;
+        try {
+            const { error } = await supabase
+                .from('library_books')
+                .update({ is_pinned: newVal })
+                .eq('id', book.id);
+            if (error) throw error;
+            setBooks(prev => prev.map(b => b.id === book.id ? { ...b, is_pinned: newVal } : b));
+            toast.success(newVal ? '📌 Livre épinglé avec succès !' : 'Livre retiré de la sélection !');
+        } catch (e: any) {
+            toast.error('Erreur: ' + e.message);
         }
     };
 
@@ -375,6 +396,39 @@ export function LibraryManager() {
                     </div>
                 </div>
 
+                {/* Bulk Selection Bar */}
+                {selectedBooks.size > 0 && (
+                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                        <CheckSquare className="w-5 h-5 text-red-400 shrink-0" />
+                        <span className="text-sm font-medium text-red-300">
+                            {selectedBooks.size} livre{selectedBooks.size > 1 ? 's' : ''} sélectionné{selectedBooks.size > 1 ? 's' : ''}
+                        </span>
+                        <div className="flex-1" />
+                        <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-muted-foreground hover:text-white"
+                            onClick={() => setSelectedBooks(new Set())}
+                        >
+                            Tout désélectionner
+                        </Button>
+                        <Button
+                            variant="destructive"
+                            size="sm"
+                            disabled={isBulkDeleting}
+                            onClick={handleBulkDelete}
+                            className="gap-2"
+                        >
+                            {isBulkDeleting ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Trash2 className="w-4 h-4" />
+                            )}
+                            Supprimer ({selectedBooks.size})
+                        </Button>
+                    </div>
+                )}
+
                 {/* Table */}
                 {isLoading ? (
                     <div className="flex justify-center p-8"><Loader2 className="animate-spin" /></div>
@@ -383,6 +437,20 @@ export function LibraryManager() {
                         <Table>
                             <TableHeader>
                                 <TableRow>
+                                    <TableHead className="w-[40px]">
+                                        <button
+                                            onClick={toggleSelectAll}
+                                            className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-white transition-colors"
+                                        >
+                                            {filteredBooks.length > 0 && selectedBooks.size === filteredBooks.length ? (
+                                                <CheckSquare className="w-4 h-4 text-indigo-400" />
+                                            ) : selectedBooks.size > 0 ? (
+                                                <MinusSquare className="w-4 h-4 text-indigo-400" />
+                                            ) : (
+                                                <Square className="w-4 h-4" />
+                                            )}
+                                        </button>
+                                    </TableHead>
                                     <TableHead>Couverture</TableHead>
                                     <TableHead>Titre / Auteur</TableHead>
                                     <TableHead>Catégorie</TableHead>
@@ -395,13 +463,25 @@ export function LibraryManager() {
                             <TableBody>
                                 {filteredBooks.length === 0 && (
                                     <TableRow>
-                                        <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
                                             {searchQuery ? 'Aucun résultat' : 'Aucun livre dans la bibliothèque'}
                                         </TableCell>
                                     </TableRow>
                                 )}
                                 {filteredBooks.map(book => (
-                                    <TableRow key={book.id}>
+                                    <TableRow key={book.id} className={selectedBooks.has(book.id) ? 'bg-indigo-500/5' : ''}>
+                                        <TableCell>
+                                            <button
+                                                onClick={() => toggleSelectBook(book.id)}
+                                                className="flex items-center justify-center h-5 w-5 text-muted-foreground hover:text-white transition-colors"
+                                            >
+                                                {selectedBooks.has(book.id) ? (
+                                                    <CheckSquare className="w-4 h-4 text-indigo-400" />
+                                                ) : (
+                                                    <Square className="w-4 h-4" />
+                                                )}
+                                            </button>
+                                        </TableCell>
                                         <TableCell>
                                             {book.cover_url ? (
                                                 <img src={book.cover_url} alt="" className="w-10 h-14 rounded object-cover" />
@@ -438,13 +518,16 @@ export function LibraryManager() {
                                         </TableCell>
                                         <TableCell>
                                             <div className="flex gap-1">
+                                                <Button variant="ghost" size="icon" onClick={() => handleTogglePin(book)}>
+                                                    {book.is_pinned ? <PinOff className="w-4 h-4 text-purple-400" /> : <Pin className="w-4 h-4" />}
+                                                </Button>
                                                 <Button variant="ghost" size="icon" onClick={() => { setEditingBook(book); setIsDialogOpen(true); }}>
-                                                    <Edit className="w-4 h-4" />
+                                                    <Edit className="w-4 h-4 text-blue-400" />
                                                 </Button>
                                                 <Button variant="ghost" size="icon" onClick={() => handleTogglePublish(book)}>
-                                                    {book.is_published ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                                    {book.is_published ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4 text-green-400" />}
                                                 </Button>
-                                                <Button variant="ghost" size="icon" className="text-red-500" onClick={() => handleDelete(book)}>
+                                                <Button variant="ghost" size="icon" className="text-red-500 hover:text-red-400 hover:bg-red-500/10" onClick={() => handleDelete(book)}>
                                                     <Trash2 className="w-4 h-4" />
                                                 </Button>
                                             </div>
@@ -484,105 +567,6 @@ export function LibraryManager() {
                             onCancel={() => { if (!isBulkUploading) setIsBulkDialogOpen(false); }}
                             onUploadingChange={setIsBulkUploading}
                         />
-                    </DialogContent>
-                </Dialog>
-
-                {/* ═══════ ESPACE PUBLICITAIRE ═══════ */}
-                <div className="mt-8 pt-6 border-t border-white/10">
-                    <div className="flex items-center justify-between mb-4">
-                        <div>
-                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                📢 Espace Publicitaire
-                            </h3>
-                            <p className="text-xs text-slate-400">Gérez les publicités affichées dans la bibliothèque ({ads.length} actives)</p>
-                        </div>
-                        <Button onClick={() => openAdForm()} size="sm">
-                            <Plus className="w-4 h-4 mr-1" /> Nouvelle pub
-                        </Button>
-                    </div>
-
-                    {ads.length === 0 ? (
-                        <div className="text-center py-8 text-slate-500 border border-dashed border-white/10 rounded-xl">
-                            <p className="text-sm">Aucune publicité configurée</p>
-                            <p className="text-xs mt-1">Les pubs s'affichent dans la page détail des livres</p>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                            {ads.map(ad => (
-                                <div key={ad.id} className={`rounded-xl border p-3 transition-all ${ad.is_active ? 'bg-amber-500/10 border-amber-500/20' : 'bg-slate-800/50 border-white/5 opacity-60'}`}>
-                                    {ad.image_url && (
-                                        <div className="aspect-[3/4] rounded-lg overflow-hidden mb-2 bg-slate-800">
-                                            <img src={ad.image_url} alt={ad.title} className="w-full h-full object-cover" />
-                                        </div>
-                                    )}
-                                    <p className="text-xs font-semibold text-white truncate">{ad.title}</p>
-                                    <p className="text-[10px] text-slate-400 truncate">{ad.link_url || 'Pas de lien'}</p>
-                                    <div className="flex items-center justify-between mt-2">
-                                        <span className="text-[9px] text-slate-500">{ad.click_count} clics</span>
-                                        <div className="flex gap-1">
-                                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openAdForm(ad)}>
-                                                <Edit className="w-3 h-3" />
-                                            </Button>
-                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => deleteAd(ad.id)}>
-                                                <Trash2 className="w-3 h-3" />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                </div>
-
-                {/* Ad Edit Dialog */}
-                <Dialog open={isAdDialogOpen} onOpenChange={setIsAdDialogOpen}>
-                    <DialogContent className="max-w-md">
-                        <DialogHeader>
-                            <DialogTitle>{editingAd ? 'Modifier la publicité' : 'Nouvelle publicité'}</DialogTitle>
-                        </DialogHeader>
-                        <div className="space-y-4">
-                            <div className="space-y-2">
-                                <Label>Titre *</Label>
-                                <Input value={adForm.title} onChange={e => setAdForm(p => ({ ...p, title: e.target.value }))} placeholder="Ex: Promotion livre..." />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Description</Label>
-                                <Input value={adForm.description} onChange={e => setAdForm(p => ({ ...p, description: e.target.value }))} placeholder="Courte description" />
-                            </div>
-                            <div className="space-y-2">
-                                <Label>URL de l'image *</Label>
-                                <Input value={adForm.image_url} onChange={e => setAdForm(p => ({ ...p, image_url: e.target.value }))} placeholder="https://..." />
-                                {adForm.image_url && (
-                                    <div className="w-20 h-28 rounded-lg overflow-hidden bg-slate-800">
-                                        <img src={adForm.image_url} alt="Preview" className="w-full h-full object-cover" />
-                                    </div>
-                                )}
-                            </div>
-                            <div className="space-y-2">
-                                <Label>Lien de destination</Label>
-                                <Input value={adForm.link_url} onChange={e => setAdForm(p => ({ ...p, link_url: e.target.value }))} placeholder="https://..." />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="space-y-2">
-                                    <Label>Ordre d'affichage</Label>
-                                    <Input type="number" value={adForm.display_order} onChange={e => setAdForm(p => ({ ...p, display_order: parseInt(e.target.value) || 0 }))} />
-                                </div>
-                                <div className="space-y-2">
-                                    <Label>Statut</Label>
-                                    <div className="flex items-center gap-2 pt-2">
-                                        <Switch checked={adForm.is_active} onCheckedChange={v => setAdForm(p => ({ ...p, is_active: v }))} />
-                                        <span className="text-sm">{adForm.is_active ? '✅ Active' : '⏸️ Inactive'}</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <DialogFooter>
-                            <Button variant="outline" onClick={() => setIsAdDialogOpen(false)}>Annuler</Button>
-                            <Button onClick={saveAd} disabled={!adForm.title || !adForm.image_url || adSaving}>
-                                {adSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                                {editingAd ? 'Modifier' : 'Créer'}
-                            </Button>
-                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             </CardContent>

@@ -71,7 +71,7 @@ export function NotificationListener() {
                 (payload) => {
                     const { id, title, message, type, action_type, action_data } = payload.new;
 
-                    // Add to popup queue
+                    // Add to popup queue (in-app floating notification)
                     setPopups(prev => [...prev, { id, title, message, type, action_type, action_data }]);
 
                     // If this is a DM notification, trigger DM refresh signal
@@ -89,20 +89,10 @@ export function NotificationListener() {
                         dismissPopup(id);
                     }, 10000);
 
-                    // Browser Notification (no toast - the custom popup already handles it)
-                    if ("Notification" in window && Notification.permission === "granted") {
-                        const browserNotif = new Notification(title, {
-                            body: message,
-                            tag: id,
-                            requireInteraction: type === 'message',
-                        });
-
-                        browserNotif.onclick = () => {
-                            window.focus();
-                            navigateToContent({ id, title, message, type, action_type, action_data });
-                            browserNotif.close();
-                        };
-                    }
+                    // NOTE: Browser/system notifications are handled by:
+                    // - PushNotificationManager (background Web Push via Worker)
+                    // - notification-bell.tsx (foreground Notification API)
+                    // Do NOT create duplicate Notification() here.
                 })
             .subscribe()
 

@@ -56,6 +56,7 @@ type NotificationActionType =
     | 'dm_new_message'
     | 'friend_request_received'
     | 'friend_request_accepted'
+    | 'new_book_published'
     | 'general';
 
 type Priority = 'high' | 'medium' | 'low';
@@ -110,6 +111,7 @@ const DEFAULT_PREFERENCES: Record<NotificationActionType, { in_app: boolean; pus
     dm_new_message: { in_app: true, push: true },
     friend_request_received: { in_app: true, push: true },
     friend_request_accepted: { in_app: true, push: false },
+    new_book_published: { in_app: true, push: true },
     general: { in_app: true, push: false },
 };
 
@@ -128,6 +130,7 @@ const PRIORITY_MAP: Record<NotificationActionType, Priority> = {
     dm_new_message: 'high',
     friend_request_received: 'high',
     friend_request_accepted: 'high',
+    new_book_published: 'medium',
     general: 'low',
 };
 
@@ -381,6 +384,12 @@ function buildNotificationMessage(
                 message: `${first} a accepté votre demande d'ami`,
             };
 
+        case 'new_book_published':
+            return {
+                title: '📚 Nouveau livre disponible',
+                message: `"${targetName}" vient d'être ajouté à la bibliothèque`,
+            };
+
         default:
             return {
                 title: 'Notification',
@@ -481,6 +490,13 @@ function buildActionData(actionType: NotificationActionType, payload: NotifyPayl
                 communityTab: 'chat',
                 viewState: 'conversation',
                 conversationId: payload.extra_data?.conversationId,
+            };
+
+        case 'new_book_published':
+            return {
+                ...base,
+                tab: 'library',
+                bookId: payload.target_id,
             };
 
         default:
@@ -933,6 +949,8 @@ function mapActionTypeToLegacyType(actionType: NotificationActionType): string {
         case 'friend_request_received':
         case 'friend_request_accepted':
             return 'friend_request';
+        case 'new_book_published':
+            return 'info';
         default:
             return 'info';
     }
@@ -1166,8 +1184,8 @@ async function sendPushDirect(
         const pushPayload = {
             title,
             body,
-            icon: '/icons/icon-192x192.png',
-            badge: '/icons/icon-72x72.png',
+            icon: '/icon-192.png',
+            badge: '/icon-192.png',
             data: { url: '/', ...data },
             urgency: priority === 'high' ? 'high' : 'normal',
             tag: aggKey || undefined,
@@ -1273,8 +1291,8 @@ async function handlePushSend(request: Request, env: Env): Promise<Response> {
     const result = await sendWebPush(subscription, {
         title,
         body: message,
-        icon: '/icons/icon-192x192.png',
-        badge: '/icons/icon-72x72.png',
+        icon: '/icon-192.png',
+        badge: '/icon-192.png',
         data: data || {},
     }, env);
 

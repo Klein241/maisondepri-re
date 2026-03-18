@@ -247,8 +247,8 @@ export function NotificationBell() {
                 try {
                     new Notification(title, {
                         body,
-                        icon: '/icons/icon-192x192.png',
-                        badge: '/icons/icon-72x72.png',
+                        icon: '/icon-192.png',
+                        badge: '/icon-192.png',
                         tag: `notif_${Date.now()}`,
                     });
                 } catch (e) { }
@@ -440,7 +440,7 @@ export function NotificationBell() {
                             initial={{ opacity: 0 }}
                             animate={{ opacity: 1 }}
                             exit={{ opacity: 0 }}
-                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998]"
+                            className="fixed inset-0 bg-black/60 backdrop-blur-sm z-9998"
                             onClick={() => setIsOpen(false)}
                         />
                         {/* Panel */}
@@ -449,7 +449,7 @@ export function NotificationBell() {
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -20, scale: 0.95 }}
                             transition={{ duration: 0.25 }}
-                            className="fixed top-14 left-1 right-1 sm:left-auto sm:right-4 sm:w-96 max-h-[80vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-[9999]"
+                            className="fixed top-14 left-1 right-1 sm:left-auto sm:right-4 sm:w-96 max-h-[80vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-9999"
                         >
                             {/* Header */}
                             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
