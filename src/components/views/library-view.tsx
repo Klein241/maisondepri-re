@@ -46,6 +46,15 @@ interface Book {
     slug: string | null;
 }
 
+interface LibraryAd {
+    id: string;
+    title: string;
+    description: string;
+    image_url: string;
+    link_url: string;
+    is_active: boolean;
+}
+
 function slugify(text: string): string {
     return text
         .toLowerCase()
@@ -156,6 +165,9 @@ export function LibraryView() {
     const [cachedBookUrls, setCachedBookUrls] = useState<Set<string>>(new Set());
     const [cachingBookId, setCachingBookId] = useState<string | null>(null);
 
+    // Ads state
+    const [ads, setAds] = useState<LibraryAd[]>([]);
+
     const isLoggedIn = !!user?.id;
 
     // Require auth helper
@@ -167,9 +179,10 @@ export function LibraryView() {
         action();
     }, [isLoggedIn]);
 
-    // Load books (public - no auth required)
+    // Load books + ads (public - no auth required)
     useEffect(() => {
         loadBooks();
+        loadAds();
     }, []);
 
     // Load user data only when logged in
@@ -257,6 +270,25 @@ export function LibraryView() {
             if (data) setReadHistory(data);
         } catch (e) { /* table may not exist yet */ }
     };
+
+    const loadAds = async () => {
+        try {
+            const { data } = await supabase
+                .from('library_ads')
+                .select('*')
+                .eq('is_active', true)
+                .order('display_order', { ascending: true })
+                .limit(6);
+            if (data) setAds(data);
+        } catch (e) { /* table may not exist yet */ }
+    };
+
+    // Get suggested books (same category, different book)
+    const getSuggestions = useCallback((book: Book): Book[] => {
+        return books
+            .filter(b => b.id !== book.id && b.category === book.category)
+            .slice(0, 6);
+    }, [books]);
 
     const toggleFavorite = useCallback(async (bookId: string) => {
         if (!user?.id) { setShowAuthGate(true); return; }
@@ -594,6 +626,86 @@ export function LibraryView() {
                             </CardContent>
                         </Card>
                     )}
+
+                    {/* ─── Suggestions + Ads ─── */}
+                    {(() => {
+                        const suggestions = getSuggestions(selectedBook);
+                        const items: Array<{ type: 'book'; data: Book } | { type: 'ad'; data: LibraryAd }> = [];
+                        suggestions.forEach(b => items.push({ type: 'book', data: b }));
+                        // Interleave ads after every 2 suggestions
+                        ads.forEach((ad, i) => {
+                            const pos = Math.min((i + 1) * 2, items.length);
+                            items.splice(pos + i, 0, { type: 'ad', data: ad });
+                        });
+
+                        if (items.length === 0) return null;
+                        return (
+                            <div className="mt-6 mb-4">
+                                <h3 className="text-sm font-bold text-white mb-3 flex items-center gap-2">
+                                    <BookOpen className="h-4 w-4 text-primary" />
+                                    Suggestions & Découvertes
+                                </h3>
+                                <div className="grid grid-cols-3 gap-2.5">
+                                    {items.map((item, i) => {
+                                        if (item.type === 'book') {
+                                            const b = item.data as Book;
+                                            return (
+                                                <div
+                                                    key={`s-${b.id}`}
+                                                    className="rounded-xl bg-white/5 border border-white/10 overflow-hidden cursor-pointer hover:border-primary/30 hover:bg-white/8 transition-all group"
+                                                    onClick={() => setSelectedBook(b)}
+                                                >
+                                                    <div className="aspect-[3/4] bg-slate-800 overflow-hidden">
+                                                        {b.cover_url ? (
+                                                            <img src={b.cover_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                        ) : (
+                                                            <BookCover title={b.title} category={b.category} />
+                                                        )}
+                                                    </div>
+                                                    <div className="p-2">
+                                                        <p className="text-[10px] font-semibold text-white truncate">{b.title}</p>
+                                                        <p className="text-[9px] text-slate-400 truncate">{b.author}</p>
+                                                        {Number(b.avg_rating) > 0 && (
+                                                            <div className="flex items-center gap-0.5 mt-0.5">
+                                                                <Star className="h-2 w-2 text-amber-400 fill-amber-400" />
+                                                                <span className="text-[8px] text-amber-400">{Number(b.avg_rating).toFixed(1)}</span>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            );
+                                        } else {
+                                            const ad = item.data as LibraryAd;
+                                            return (
+                                                <a
+                                                    key={`a-${ad.id}`}
+                                                    href={ad.link_url || '#'}
+                                                    target={ad.link_url ? '_blank' : undefined}
+                                                    rel="noopener noreferrer"
+                                                    className="rounded-xl overflow-hidden border border-amber-500/20 bg-gradient-to-br from-amber-500/10 to-orange-500/10 hover:border-amber-400/40 transition-all group relative"
+                                                    onClick={() => {
+                                                        // Track click
+                                                        supabase.from('library_ads').update({ click_count: (ad as any).click_count + 1 }).eq('id', ad.id).then(() => { });
+                                                    }}
+                                                >
+                                                    <div className="aspect-[3/4] overflow-hidden">
+                                                        <img src={ad.image_url} alt={ad.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                                                    </div>
+                                                    <div className="p-2">
+                                                        <p className="text-[10px] font-semibold text-amber-300 truncate">{ad.title}</p>
+                                                        {ad.description && (
+                                                            <p className="text-[9px] text-amber-400/60 truncate">{ad.description}</p>
+                                                        )}
+                                                    </div>
+                                                    <div className="absolute top-1 right-1 bg-amber-500/80 text-[7px] text-white px-1 py-0.5 rounded font-bold">AD</div>
+                                                </a>
+                                            );
+                                        }
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             </div>
         );

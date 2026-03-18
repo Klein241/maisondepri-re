@@ -6,9 +6,17 @@ import { useAppStore } from '@/lib/store';
 import { Download, X, Smartphone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-// VAPID public key - In production, generate your own pair:
-// npx web-push generate-vapid-keys
-const VAPID_PUBLIC_KEY = '';
+// VAPID public key — fetched from worker at runtime
+const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || process.env.NEXT_PUBLIC_NOTIFICATION_WORKER_URL || '';
+let VAPID_PUBLIC_KEY = '';
+
+// Fetch VAPID key once at startup
+if (typeof window !== 'undefined' && WORKER_URL) {
+    fetch(`${WORKER_URL}/api/push/vapid-key`)
+        .then(r => r.json())
+        .then(d => { if (d.publicKey) VAPID_PUBLIC_KEY = d.publicKey; })
+        .catch(() => console.warn('[PWA] Could not fetch VAPID key'));
+}
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
     const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -178,13 +186,25 @@ export function PWAManager() {
                 if (VAPID_PUBLIC_KEY && swRegistration) {
                     try {
                         const subscription = await swRegistration.pushManager.subscribe({
-                            userVisuallyPrompts: true,
-                            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
-                        } as any);
-                        console.log('[PWA] Push subscription:', JSON.stringify(subscription));
+                            userVisibleOnly: true,
+                            applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY).buffer as ArrayBuffer,
+                        });
+
+                        // Register subscription with the worker
+                        const userId = user?.id;
+                        if (userId && WORKER_URL) {
+                            await fetch(`${WORKER_URL}/api/push/register`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json', 'X-User-Id': userId },
+                                body: JSON.stringify({ subscription: subscription.toJSON() }),
+                            });
+                            console.log('[PWA] Push subscription registered with worker');
+                        }
                     } catch (e) {
                         console.warn('[PWA] Push subscription failed:', e);
                     }
+                } else if (!VAPID_PUBLIC_KEY) {
+                    console.warn('[PWA] VAPID key not yet loaded, push will register on next reload');
                 }
 
                 if (swRegistration) {

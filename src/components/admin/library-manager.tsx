@@ -29,7 +29,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 // Set worker source for pdf.js
 if (typeof window !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 }
 
 // Upload helper — sends files to Cloudflare R2 via Worker
@@ -133,6 +133,18 @@ interface Book {
     created_at: string;
 }
 
+interface LibraryAd {
+    id: string;
+    title: string;
+    description: string;
+    image_url: string;
+    link_url: string;
+    is_active: boolean;
+    display_order: number;
+    click_count: number;
+    view_count: number;
+}
+
 export function LibraryManager() {
     const [books, setBooks] = useState<Book[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -143,9 +155,61 @@ export function LibraryManager() {
     const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
     const [isBulkUploading, setIsBulkUploading] = useState(false);
 
+    // Ads state
+    const [ads, setAds] = useState<LibraryAd[]>([]);
+    const [isAdDialogOpen, setIsAdDialogOpen] = useState(false);
+    const [editingAd, setEditingAd] = useState<LibraryAd | null>(null);
+    const [adForm, setAdForm] = useState({ title: '', description: '', image_url: '', link_url: '', is_active: true, display_order: 0 });
+    const [adSaving, setAdSaving] = useState(false);
+
     useEffect(() => {
         fetchBooks();
+        fetchAds();
     }, []);
+
+    const fetchAds = async () => {
+        try {
+            const { data } = await supabase.from('library_ads').select('*').order('display_order');
+            if (data) setAds(data);
+        } catch { /* table may not exist */ }
+    };
+
+    const saveAd = async () => {
+        setAdSaving(true);
+        try {
+            if (editingAd) {
+                await supabase.from('library_ads').update(adForm).eq('id', editingAd.id);
+            } else {
+                await supabase.from('library_ads').insert(adForm);
+            }
+            toast.success(editingAd ? 'Publicité modifiée' : 'Publicité créée');
+            setIsAdDialogOpen(false);
+            setEditingAd(null);
+            fetchAds();
+        } catch (e: any) {
+            toast.error('Erreur: ' + e.message);
+        } finally {
+            setAdSaving(false);
+        }
+    };
+
+    const deleteAd = async (id: string) => {
+        if (!confirm('Supprimer cette publicité ?')) return;
+        await supabase.from('library_ads').delete().eq('id', id);
+        toast.success('Publicité supprimée');
+        fetchAds();
+    };
+
+    const openAdForm = (ad?: LibraryAd) => {
+        if (ad) {
+            setEditingAd(ad);
+            setAdForm({ title: ad.title, description: ad.description, image_url: ad.image_url, link_url: ad.link_url, is_active: ad.is_active, display_order: ad.display_order });
+        } else {
+            setEditingAd(null);
+            setAdForm({ title: '', description: '', image_url: '', link_url: '', is_active: true, display_order: ads.length });
+        }
+        setIsAdDialogOpen(true);
+    };
 
     const fetchBooks = async () => {
         setIsLoading(true);
@@ -420,6 +484,105 @@ export function LibraryManager() {
                             onCancel={() => { if (!isBulkUploading) setIsBulkDialogOpen(false); }}
                             onUploadingChange={setIsBulkUploading}
                         />
+                    </DialogContent>
+                </Dialog>
+
+                {/* ═══════ ESPACE PUBLICITAIRE ═══════ */}
+                <div className="mt-8 pt-6 border-t border-white/10">
+                    <div className="flex items-center justify-between mb-4">
+                        <div>
+                            <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                                📢 Espace Publicitaire
+                            </h3>
+                            <p className="text-xs text-slate-400">Gérez les publicités affichées dans la bibliothèque ({ads.length} actives)</p>
+                        </div>
+                        <Button onClick={() => openAdForm()} size="sm">
+                            <Plus className="w-4 h-4 mr-1" /> Nouvelle pub
+                        </Button>
+                    </div>
+
+                    {ads.length === 0 ? (
+                        <div className="text-center py-8 text-slate-500 border border-dashed border-white/10 rounded-xl">
+                            <p className="text-sm">Aucune publicité configurée</p>
+                            <p className="text-xs mt-1">Les pubs s'affichent dans la page détail des livres</p>
+                        </div>
+                    ) : (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {ads.map(ad => (
+                                <div key={ad.id} className={`rounded-xl border p-3 transition-all ${ad.is_active ? 'bg-amber-500/10 border-amber-500/20' : 'bg-slate-800/50 border-white/5 opacity-60'}`}>
+                                    {ad.image_url && (
+                                        <div className="aspect-[3/4] rounded-lg overflow-hidden mb-2 bg-slate-800">
+                                            <img src={ad.image_url} alt={ad.title} className="w-full h-full object-cover" />
+                                        </div>
+                                    )}
+                                    <p className="text-xs font-semibold text-white truncate">{ad.title}</p>
+                                    <p className="text-[10px] text-slate-400 truncate">{ad.link_url || 'Pas de lien'}</p>
+                                    <div className="flex items-center justify-between mt-2">
+                                        <span className="text-[9px] text-slate-500">{ad.click_count} clics</span>
+                                        <div className="flex gap-1">
+                                            <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => openAdForm(ad)}>
+                                                <Edit className="w-3 h-3" />
+                                            </Button>
+                                            <Button variant="ghost" size="icon" className="h-6 w-6 text-red-400" onClick={() => deleteAd(ad.id)}>
+                                                <Trash2 className="w-3 h-3" />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                {/* Ad Edit Dialog */}
+                <Dialog open={isAdDialogOpen} onOpenChange={setIsAdDialogOpen}>
+                    <DialogContent className="max-w-md">
+                        <DialogHeader>
+                            <DialogTitle>{editingAd ? 'Modifier la publicité' : 'Nouvelle publicité'}</DialogTitle>
+                        </DialogHeader>
+                        <div className="space-y-4">
+                            <div className="space-y-2">
+                                <Label>Titre *</Label>
+                                <Input value={adForm.title} onChange={e => setAdForm(p => ({ ...p, title: e.target.value }))} placeholder="Ex: Promotion livre..." />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Description</Label>
+                                <Input value={adForm.description} onChange={e => setAdForm(p => ({ ...p, description: e.target.value }))} placeholder="Courte description" />
+                            </div>
+                            <div className="space-y-2">
+                                <Label>URL de l'image *</Label>
+                                <Input value={adForm.image_url} onChange={e => setAdForm(p => ({ ...p, image_url: e.target.value }))} placeholder="https://..." />
+                                {adForm.image_url && (
+                                    <div className="w-20 h-28 rounded-lg overflow-hidden bg-slate-800">
+                                        <img src={adForm.image_url} alt="Preview" className="w-full h-full object-cover" />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Lien de destination</Label>
+                                <Input value={adForm.link_url} onChange={e => setAdForm(p => ({ ...p, link_url: e.target.value }))} placeholder="https://..." />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label>Ordre d'affichage</Label>
+                                    <Input type="number" value={adForm.display_order} onChange={e => setAdForm(p => ({ ...p, display_order: parseInt(e.target.value) || 0 }))} />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label>Statut</Label>
+                                    <div className="flex items-center gap-2 pt-2">
+                                        <Switch checked={adForm.is_active} onCheckedChange={v => setAdForm(p => ({ ...p, is_active: v }))} />
+                                        <span className="text-sm">{adForm.is_active ? '✅ Active' : '⏸️ Inactive'}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <DialogFooter>
+                            <Button variant="outline" onClick={() => setIsAdDialogOpen(false)}>Annuler</Button>
+                            <Button onClick={saveAd} disabled={!adForm.title || !adForm.image_url || adSaving}>
+                                {adSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                                {editingAd ? 'Modifier' : 'Créer'}
+                            </Button>
+                        </DialogFooter>
                     </DialogContent>
                 </Dialog>
             </CardContent>
