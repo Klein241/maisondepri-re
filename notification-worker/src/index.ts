@@ -24,6 +24,8 @@ export interface Env {
     PUSH_TOKEN_CACHE: KVNamespace;
     UNREAD_COUNTERS: KVNamespace;
     USER_PREFERENCES: KVNamespace;
+    // R2 Storage (10GB free)
+    LIBRARY_BUCKET: R2Bucket;
     // Queue (optional — only if on Workers Paid plan)
     PUSH_QUEUE?: Queue;
     // Secrets
@@ -32,6 +34,7 @@ export interface Env {
     VAPID_PUBLIC_KEY: string;
     VAPID_PRIVATE_KEY: string;
     VAPID_EMAIL: string;
+    ADMIN_KEY: string;
     // Vars
     RATE_LIMIT_PUSH_INTERVAL_MS: string;
     RATE_LIMIT_HOURLY_MAX: string;
@@ -1302,6 +1305,85 @@ function handleHealth(env: Env): Response {
 }
 
 // ══════════════════════════════════════════════════════════
+// R2 FILE STORAGE HANDLERS
+// ══════════════════════════════════════════════════════════
+
+function checkAdminAuth(request: Request, env: Env): boolean {
+    const auth = request.headers.get('Authorization') || '';
+    const token = auth.replace('Bearer ', '');
+    return token === env.ADMIN_KEY && !!token;
+}
+
+async function handleR2Upload(request: Request, env: Env): Promise<Response> {
+    if (!checkAdminAuth(request, env)) {
+        return json({ error: 'Unauthorized' }, 401);
+    }
+
+    const formData = await request.formData();
+    const file = formData.get('file') as File | null;
+    const folder = (formData.get('folder') as string) || 'books';
+
+    if (!file) {
+        return json({ error: 'No file provided' }, 400);
+    }
+
+    // Generate unique key
+    const timestamp = Date.now();
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const key = `${folder}/${timestamp}_${safeName}`;
+
+    // Upload to R2
+    await env.LIBRARY_BUCKET.put(key, file.stream(), {
+        httpMetadata: {
+            contentType: file.type || 'application/octet-stream',
+        },
+        customMetadata: {
+            originalName: file.name,
+            uploadedAt: new Date().toISOString(),
+        },
+    });
+
+    // Build public URL
+    const workerUrl = new URL(request.url);
+    const url = `${workerUrl.protocol}//${workerUrl.host}/r2/${key}`;
+
+    return json({ url, key });
+}
+
+async function handleR2Delete(request: Request, env: Env): Promise<Response> {
+    if (!checkAdminAuth(request, env)) {
+        return json({ error: 'Unauthorized' }, 401);
+    }
+
+    const { key } = await request.json() as { key: string };
+    if (!key) {
+        return json({ error: 'key required' }, 400);
+    }
+
+    await env.LIBRARY_BUCKET.delete(key);
+    return json({ ok: true });
+}
+
+async function handleR2Serve(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const key = url.pathname.replace('/r2/', '');
+
+    const object = await env.LIBRARY_BUCKET.get(key);
+    if (!object) {
+        return json({ error: 'Not found' }, 404);
+    }
+
+    const headers = new Headers({
+        ...CORS_HEADERS,
+        'Content-Type': object.httpMetadata?.contentType || 'application/octet-stream',
+        'Cache-Control': 'public, max-age=31536000, immutable',
+        'ETag': object.httpEtag,
+    });
+
+    return new Response(object.body, { headers });
+}
+
+// ══════════════════════════════════════════════════════════
 // MAIN ROUTER
 // ══════════════════════════════════════════════════════════
 
@@ -1335,6 +1417,11 @@ export default {
             // ── Health ──
             if (pathname === '/health' || pathname === '/api/status') return handleHealth(env);
 
+            // ── R2 File Storage ──
+            if (pathname === '/api/r2/upload' && method === 'POST') return handleR2Upload(request, env);
+            if (pathname === '/api/r2/delete' && method === 'POST') return handleR2Delete(request, env);
+            if (pathname.startsWith('/r2/') && method === 'GET') return handleR2Serve(request, env);
+
             return json({
                 error: 'Not found',
                 routes: [
@@ -1348,6 +1435,9 @@ export default {
                     'POST   /api/push/register      → register push token',
                     'GET    /api/push/vapid-key     → VAPID public key',
                     'POST   /api/push/send          → direct push',
+                    'POST   /api/r2/upload          → upload file to R2',
+                    'POST   /api/r2/delete          → delete file from R2',
+                    'GET    /r2/*                   → serve R2 file',
                     'GET    /health                 → health check',
                 ],
             }, 404);

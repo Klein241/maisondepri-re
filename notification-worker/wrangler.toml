@@ -51,3 +51,10 @@ BROADCAST_RATE_LIMIT_MS = "100"          # 10 req/s for broadcasts
 # npx wrangler secret put SUPABASE_SERVICE_KEY
 # npx wrangler secret put VAPID_PUBLIC_KEY
 # npx wrangler secret put VAPID_PRIVATE_KEY
+# npx wrangler secret put ADMIN_KEY
+
+# ── R2 Bucket (10GB free) ────────────────────────────────
+# Create with: npx wrangler r2 bucket create maisondepriere-library
+[[r2_buckets]]
+binding = "LIBRARY_BUCKET"
+bucket_name = "maisondepriere-library"

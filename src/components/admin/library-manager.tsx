@@ -32,7 +32,7 @@ if (typeof window !== 'undefined') {
     pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 }
 
-// R2 upload helper
+// Upload helper — sends files to Cloudflare R2 via Worker
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || process.env.NEXT_PUBLIC_NOTIFICATION_WORKER_URL || '';
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
 
@@ -49,16 +49,15 @@ async function uploadToR2(file: File, folder: 'books' | 'covers'): Promise<{ url
 
     if (!res.ok) {
         const err = await res.json().catch(() => ({ error: 'Upload failed' }));
-        throw new Error(err.error || 'Upload failed');
+        throw new Error(err.error || `Upload failed (${res.status})`);
     }
 
     return res.json();
 }
 
 async function deleteFromR2(url: string): Promise<void> {
-    // Extract R2 key from URL: https://worker.url/r2/books/123_file.pdf -> books/123_file.pdf
     const r2Match = url.match(/\/r2\/(.+)$/);
-    if (!r2Match) return; // Not an R2 URL (maybe old Supabase URL)
+    if (!r2Match) return;
 
     await fetch(`${WORKER_URL}/api/r2/delete`, {
         method: 'POST',
@@ -773,6 +772,7 @@ interface BulkFileEntry {
     status: 'pending' | 'uploading' | 'done' | 'error';
     progress: string;
     error?: string;
+    coverPreview?: string;
 }
 
 function BulkUploadForm({
@@ -792,6 +792,7 @@ function BulkUploadForm({
     const [scheduleEnabled, setScheduleEnabled] = useState(false);
     const [scheduleDate, setScheduleDate] = useState('');
     const [scheduleTime, setScheduleTime] = useState('');
+    const [isDragOver, setIsDragOver] = useState(false);
     const pauseRef = useRef(false);
     const cancelRef = useRef(false);
     const folderInputRef = useRef<HTMLInputElement>(null);
@@ -799,8 +800,10 @@ function BulkUploadForm({
 
     const doneCount = files.filter(f => f.status === 'done').length;
     const errorCount = files.filter(f => f.status === 'error').length;
+    const pendingCount = files.filter(f => f.status === 'pending').length;
     const totalCount = files.length;
     const progressPercent = totalCount > 0 ? Math.round((doneCount / totalCount) * 100) : 0;
+    const totalSize = files.reduce((s, f) => s + f.file.size, 0);
 
     // Parse title and author from filename
     const parseFilename = (name: string): { title: string; author: string } => {
@@ -812,8 +815,41 @@ function BulkUploadForm({
         return { title: clean.replace(/_/g, ' '), author: 'Auteur inconnu' };
     };
 
+    // Generate cover thumbnail preview
+    const generateCoverPreview = async (file: File): Promise<string | undefined> => {
+        if (!file.name.toLowerCase().endsWith('.pdf')) return undefined;
+        try {
+            const ab = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: ab }).promise;
+            const page = await pdf.getPage(1);
+            const vp = page.getViewport({ scale: 0.4 });
+            const canvas = document.createElement('canvas');
+            canvas.width = vp.width;
+            canvas.height = vp.height;
+            await page.render({ canvasContext: canvas.getContext('2d')!, viewport: vp }).promise;
+            return canvas.toDataURL('image/jpeg', 0.5);
+        } catch { return undefined; }
+    };
+
+    // Card style per status
+    const getCardStyle = (status: BulkFileEntry['status']) => {
+        switch (status) {
+            case 'done': return 'bg-gradient-to-br from-emerald-500/20 to-emerald-900/10 border-emerald-500/30 shadow-emerald-500/10';
+            case 'error': return 'bg-gradient-to-br from-red-500/20 to-red-900/10 border-red-500/30 shadow-red-500/10';
+            case 'uploading': return 'bg-gradient-to-br from-blue-500/20 to-violet-900/10 border-blue-500/30 shadow-blue-500/10 animate-pulse';
+            default: return 'bg-gradient-to-br from-slate-700/30 to-slate-800/30 border-white/10 hover:border-violet-500/30';
+        }
+    };
+
+    // Drag and drop
+    const handleDrop = (e: React.DragEvent) => {
+        e.preventDefault();
+        setIsDragOver(false);
+        handleFilesSelected(e.dataTransfer.files);
+    };
+
     // Handle file selection (supports both folder and multi-file)
-    const handleFilesSelected = (selectedFiles: FileList | null) => {
+    const handleFilesSelected = async (selectedFiles: FileList | null) => {
         if (!selectedFiles || selectedFiles.length === 0) return;
 
         const validFiles: BulkFileEntry[] = [];
@@ -837,8 +873,21 @@ function BulkUploadForm({
             return;
         }
 
+        const startIdx = files.length;
         setFiles(prev => [...prev, ...validFiles]);
         toast.success(`${validFiles.length} fichier(s) ajouté(s)`);
+
+        // Generate cover previews in background (first 50)
+        const limit = Math.min(validFiles.length, 50);
+        for (let i = 0; i < limit; i++) {
+            generateCoverPreview(validFiles[i].file).then(preview => {
+                if (preview) {
+                    setFiles(prev => prev.map((f, j) =>
+                        j === startIdx + i ? { ...f, coverPreview: preview } : f
+                    ));
+                }
+            });
+        }
     };
 
     // Remove a file from the queue
@@ -996,17 +1045,54 @@ function BulkUploadForm({
     };
 
     return (
-        <div className="space-y-4">
-            {/* File selection area */}
+        <div className="space-y-5 max-h-[80vh] overflow-y-auto">
+            {/* ─── Header Stats ─── */}
+            {files.length > 0 && (
+                <div className="grid grid-cols-4 gap-3">
+                    <div className="bg-gradient-to-br from-violet-500/20 to-violet-900/30 rounded-xl p-3 text-center border border-violet-500/20">
+                        <p className="text-2xl font-bold text-violet-300">{totalCount}</p>
+                        <p className="text-[10px] text-violet-400/70 uppercase tracking-wider">Total</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-emerald-500/20 to-emerald-900/30 rounded-xl p-3 text-center border border-emerald-500/20">
+                        <p className="text-2xl font-bold text-emerald-300">{doneCount}</p>
+                        <p className="text-[10px] text-emerald-400/70 uppercase tracking-wider">Publiés</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-amber-500/20 to-amber-900/30 rounded-xl p-3 text-center border border-amber-500/20">
+                        <p className="text-2xl font-bold text-amber-300">{pendingCount}</p>
+                        <p className="text-[10px] text-amber-400/70 uppercase tracking-wider">En attente</p>
+                    </div>
+                    <div className="bg-gradient-to-br from-red-500/20 to-red-900/30 rounded-xl p-3 text-center border border-red-500/20">
+                        <p className="text-2xl font-bold text-red-300">{errorCount}</p>
+                        <p className="text-[10px] text-red-400/70 uppercase tracking-wider">Erreurs</p>
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Progress Bar ─── */}
+            {isUploading && (
+                <div className="space-y-2">
+                    <div className="flex justify-between text-xs text-slate-400">
+                        <span>Progression globale</span>
+                        <span className="font-mono text-violet-300">{progressPercent}% · {formatSize(totalSize)}</span>
+                    </div>
+                    <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+                        <div
+                            className="h-3 rounded-full transition-all duration-500 ease-out bg-gradient-to-r from-violet-600 via-blue-500 to-emerald-500"
+                            style={{ width: `${progressPercent}%` }}
+                        />
+                    </div>
+                </div>
+            )}
+
+            {/* ─── Drop Zone ─── */}
             {!isUploading && (
                 <div className="space-y-3">
-                    {/* Hidden inputs */}
                     <input
                         ref={folderInputRef}
                         type="file"
                         accept=".pdf,.epub"
                         multiple
-                        // @ts-ignore – webkitdirectory is non-standard but widely supported
+                        // @ts-ignore
                         webkitdirectory=""
                         onChange={e => handleFilesSelected(e.target.files)}
                         className="hidden"
@@ -1020,50 +1106,68 @@ function BulkUploadForm({
                         className="hidden"
                     />
 
-                    {/* Drop zone */}
                     <div
-                        className="border-2 border-dashed border-violet-500/30 rounded-xl p-8 text-center hover:border-violet-500/50 transition-colors cursor-pointer bg-violet-500/5"
+                        className={`relative border-2 border-dashed rounded-2xl p-8 text-center transition-all duration-300 cursor-pointer group overflow-hidden ${isDragOver
+                            ? 'border-violet-400 bg-violet-500/20 scale-[1.01]'
+                            : 'border-violet-500/20 hover:border-violet-500/40 bg-gradient-to-br from-violet-500/5 to-blue-500/5'
+                            }`}
                         onClick={() => folderInputRef.current?.click()}
+                        onDragOver={e => { e.preventDefault(); setIsDragOver(true); }}
+                        onDragLeave={() => setIsDragOver(false)}
+                        onDrop={handleDrop}
                     >
-                        <FolderUp className="w-12 h-12 mx-auto mb-3 text-violet-400" />
-                        <p className="text-lg font-bold text-white">📂 Sélectionner un dossier complet</p>
-                        <p className="text-sm text-slate-400 mt-1">
-                            Sélectionnez un dossier contenant vos livres PDF/EPUB
-                        </p>
-                        <p className="text-xs text-slate-500 mt-2">
-                            Supporte 100, 500, 1000+ fichiers à la fois
-                        </p>
+                        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-violet-500/0 via-violet-500/20 to-violet-500/0 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        <div className="relative z-10">
+                            <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center">
+                                <FolderUp className="w-8 h-8 text-violet-300" />
+                            </div>
+                            <p className="text-lg font-bold text-white">
+                                {isDragOver ? '📂 Déposez vos fichiers ici' : '📂 Sélectionner un dossier complet'}
+                            </p>
+                            <p className="text-sm text-slate-400 mt-2">
+                                Glissez-déposez ou cliquez pour sélectionner vos livres PDF/EPUB
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                                Supporte 100, 500, 1000+ fichiers · Extraction automatique des couvertures
+                            </p>
+                        </div>
                     </div>
 
                     <div className="flex gap-2">
                         <Button
                             variant="outline"
-                            className="flex-1"
+                            className="flex-1 bg-white/5 border-white/10 hover:bg-white/10 hover:border-violet-500/30"
                             onClick={() => fileInputRef.current?.click()}
                         >
                             <Upload className="w-4 h-4 mr-2" />
-                            Ou sélectionner des fichiers individuels
+                            Fichiers individuels
                         </Button>
                         {files.length > 0 && (
-                            <Button variant="destructive" size="sm" onClick={clearPending}>
-                                <X className="w-4 h-4 mr-1" /> Tout retirer
+                            <Button variant="destructive" size="sm" onClick={clearPending} className="bg-red-500/20 text-red-300 hover:bg-red-500/30 border-red-500/20">
+                                <X className="w-4 h-4 mr-1" /> Tout vider
                             </Button>
                         )}
                     </div>
                 </div>
             )}
 
-            {/* Settings */}
+            {/* ─── Settings Panel ─── */}
             {files.length > 0 && !isUploading && (
-                <div className="bg-slate-800/50 rounded-xl p-4 space-y-3 border border-white/10">
-                    <p className="text-sm font-bold text-white">⚙️ Paramètres d'upload</p>
+                <div className="bg-gradient-to-br from-slate-800/80 to-slate-900/80 rounded-2xl p-5 space-y-4 border border-white/10 backdrop-blur-xl">
+                    <div className="flex items-center gap-2 mb-1">
+                        <div className="w-6 h-6 rounded-lg bg-violet-500/20 flex items-center justify-center">
+                            <BookOpen className="w-3.5 h-3.5 text-violet-300" />
+                        </div>
+                        <p className="text-sm font-bold text-white">Paramètres de publication</p>
+                    </div>
 
-                    {/* Category */}
-                    <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1">
-                            <Label className="text-xs">Catégorie par défaut</Label>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-slate-400">Catégorie pour tous les livres</Label>
                             <Select value={bulkCategory} onValueChange={setBulkCategory}>
-                                <SelectTrigger><SelectValue /></SelectTrigger>
+                                <SelectTrigger className="bg-slate-700/50 border-white/10">
+                                    <SelectValue />
+                                </SelectTrigger>
                                 <SelectContent>
                                     {CATEGORIES.map(cat => (
                                         <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
@@ -1072,38 +1176,39 @@ function BulkUploadForm({
                             </Select>
                         </div>
 
-                        {/* Scheduled publication */}
-                        <div className="space-y-1">
-                            <Label className="text-xs flex items-center gap-1">
+                        <div className="space-y-1.5">
+                            <Label className="text-xs text-slate-400 flex items-center gap-1.5">
                                 <Clock className="w-3 h-3" />
-                                Programmer la publication
+                                Publication programmée
                             </Label>
-                            <div className="flex items-center gap-2 pt-1">
+                            <div className="flex items-center gap-3 pt-1">
                                 <Switch checked={scheduleEnabled} onCheckedChange={setScheduleEnabled} />
-                                <span className="text-xs text-slate-400">
-                                    {scheduleEnabled ? 'Programmé' : 'Instantané'}
+                                <span className="text-xs text-slate-300">
+                                    {scheduleEnabled ? '⏰ Programmé' : '⚡ Instantané'}
                                 </span>
                             </div>
                         </div>
                     </div>
 
                     {scheduleEnabled && (
-                        <div className="grid grid-cols-2 gap-3">
-                            <div className="space-y-1">
-                                <Label className="text-xs">Date</Label>
+                        <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
+                            <div className="space-y-1.5">
+                                <Label className="text-xs text-slate-400">Date</Label>
                                 <Input
                                     type="date"
                                     value={scheduleDate}
                                     onChange={e => setScheduleDate(e.target.value)}
                                     min={new Date().toISOString().split('T')[0]}
+                                    className="bg-slate-700/50 border-white/10"
                                 />
                             </div>
-                            <div className="space-y-1">
-                                <Label className="text-xs">Heure</Label>
+                            <div className="space-y-1.5">
+                                <Label className="text-xs text-slate-400">Heure</Label>
                                 <Input
                                     type="time"
                                     value={scheduleTime}
                                     onChange={e => setScheduleTime(e.target.value)}
+                                    className="bg-slate-700/50 border-white/10"
                                 />
                             </div>
                         </div>
@@ -1111,105 +1216,108 @@ function BulkUploadForm({
                 </div>
             )}
 
-            {/* File list */}
+            {/* ─── Book Cards Grid ─── */}
             {files.length > 0 && (
-                <div className="space-y-2">
-                    {/* Progress bar */}
-                    <div className="flex items-center justify-between text-sm">
-                        <span className="font-bold text-white">
-                            {isUploading ? `Upload en cours: ${doneCount}/${totalCount}` : `${totalCount} fichier(s) prêts`}
-                        </span>
-                        <div className="flex items-center gap-2">
-                            {errorCount > 0 && (
-                                <Badge className="bg-red-500/10 text-red-400 border-red-500/20">
-                                    {errorCount} erreur(s)
-                                </Badge>
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 max-h-[45vh] overflow-y-auto pr-1 pb-2">
+                    {files.map((entry, idx) => (
+                        <div
+                            key={idx}
+                            className={`relative rounded-xl border p-3 transition-all duration-300 shadow-lg ${getCardStyle(entry.status)}`}
+                        >
+                            {/* Remove button */}
+                            {entry.status === 'pending' && !isUploading && (
+                                <button
+                                    onClick={() => removeFile(idx)}
+                                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500/80 text-white flex items-center justify-center text-xs hover:bg-red-500 transition-colors z-10 shadow"
+                                >
+                                    ×
+                                </button>
                             )}
-                            <span className="text-slate-400 text-xs">
-                                {formatSize(files.reduce((s, f) => s + f.file.size, 0))} total
-                            </span>
-                        </div>
-                    </div>
 
-                    {isUploading && (
-                        <div className="w-full bg-slate-700 rounded-full h-2">
-                            <div
-                                className="bg-violet-500 h-2 rounded-full transition-all duration-300"
-                                style={{ width: `${progressPercent}%` }}
-                            />
-                        </div>
-                    )}
-
-                    {/* File entries — scrollable */}
-                    <div className="max-h-[40vh] overflow-y-auto space-y-1 pr-1">
-                        {files.map((entry, idx) => (
-                            <div
-                                key={idx}
-                                className={`flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${entry.status === 'done'
-                                    ? 'bg-green-500/10 border border-green-500/20'
-                                    : entry.status === 'error'
-                                        ? 'bg-red-500/10 border border-red-500/20'
-                                        : entry.status === 'uploading'
-                                            ? 'bg-blue-500/10 border border-blue-500/20'
-                                            : 'bg-white/5 border border-white/5'
-                                    }`}
-                            >
-                                {/* Status icon */}
-                                <div className="shrink-0">
-                                    {entry.status === 'done' && <CheckCircle2 className="w-4 h-4 text-green-400" />}
-                                    {entry.status === 'error' && <AlertCircle className="w-4 h-4 text-red-400" />}
-                                    {entry.status === 'uploading' && <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />}
-                                    {entry.status === 'pending' && <FileText className="w-4 h-4 text-slate-500" />}
-                                </div>
-
-                                {/* Info */}
-                                <div className="flex-1 min-w-0">
-                                    <p className="font-medium truncate text-white">{entry.title}</p>
-                                    <p className="text-xs text-slate-400 truncate">
-                                        {entry.author} · {formatSize(entry.file.size)}
-                                        {entry.progress && <span className="ml-2 text-blue-400">{entry.progress}</span>}
-                                        {entry.error && <span className="ml-2 text-red-400">{entry.error}</span>}
-                                    </p>
-                                </div>
-
-                                {/* Remove (only if pending) */}
-                                {entry.status === 'pending' && !isUploading && (
-                                    <button onClick={() => removeFile(idx)} className="shrink-0 text-slate-500 hover:text-red-400">
-                                        <X className="w-4 h-4" />
-                                    </button>
+                            {/* Cover Thumbnail */}
+                            <div className="w-full aspect-[3/4] rounded-lg overflow-hidden mb-2 bg-slate-800/50 flex items-center justify-center">
+                                {entry.coverPreview ? (
+                                    <img
+                                        src={entry.coverPreview}
+                                        alt={entry.title}
+                                        className="w-full h-full object-cover"
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center gap-1 text-slate-500">
+                                        {entry.file.name.endsWith('.epub') ? (
+                                            <BookOpen className="w-8 h-8" />
+                                        ) : (
+                                            <FileText className="w-8 h-8" />
+                                        )}
+                                        <span className="text-[9px] uppercase">
+                                            {entry.file.name.split('.').pop()}
+                                        </span>
+                                    </div>
                                 )}
                             </div>
-                        ))}
-                    </div>
+
+                            {/* Book Info */}
+                            <div className="space-y-0.5">
+                                <p className="text-xs font-semibold text-white truncate leading-tight" title={entry.title}>
+                                    {entry.title}
+                                </p>
+                                <p className="text-[10px] text-slate-400 truncate" title={entry.author}>
+                                    {entry.author}
+                                </p>
+                            </div>
+
+                            {/* Status Footer */}
+                            <div className="flex items-center justify-between mt-2">
+                                <span className="text-[9px] text-slate-500 font-mono">
+                                    {formatSize(entry.file.size)}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                    {entry.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />}
+                                    {entry.status === 'error' && (
+                                        <span className="text-[9px] text-red-400 truncate max-w-[60px]" title={entry.error}>❌</span>
+                                    )}
+                                    {entry.status === 'uploading' && (
+                                        <div className="flex items-center gap-1">
+                                            <Loader2 className="w-3 h-3 text-blue-400 animate-spin" />
+                                            <span className="text-[9px] text-blue-300">{entry.progress}</span>
+                                        </div>
+                                    )}
+                                    {entry.status === 'pending' && (
+                                        <span className="text-[9px] text-slate-500">En attente</span>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    ))}
                 </div>
             )}
 
-            {/* Actions */}
-            <DialogFooter className="flex gap-2">
+            {/* ─── Actions ─── */}
+            <DialogFooter className="flex gap-2 pt-2 border-t border-white/5">
                 {isUploading ? (
                     <>
-                        <Button variant="outline" onClick={togglePause}>
+                        <Button variant="outline" onClick={togglePause} className="bg-white/5 border-white/10">
                             {isPaused ? <Play className="w-4 h-4 mr-1" /> : <Pause className="w-4 h-4 mr-1" />}
                             {isPaused ? 'Reprendre' : 'Pause'}
                         </Button>
-                        <Button variant="destructive" onClick={cancelUpload}>
+                        <Button variant="destructive" onClick={cancelUpload} className="bg-red-500/20 border-red-500/20 text-red-300">
                             <X className="w-4 h-4 mr-1" /> Annuler
                         </Button>
                     </>
                 ) : (
                     <>
-                        <Button variant="outline" onClick={onCancel}>Fermer</Button>
+                        <Button variant="outline" onClick={onCancel} className="bg-white/5 border-white/10">Fermer</Button>
                         {files.length > 0 && files.some(f => f.status === 'pending') && (
                             <Button
-                                className="bg-violet-600 hover:bg-violet-700"
+                                className="bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white shadow-lg shadow-violet-500/20"
                                 onClick={startUpload}
                             >
                                 <Upload className="w-4 h-4 mr-2" />
-                                Lancer l'upload ({files.filter(f => f.status === 'pending').length} fichiers)
+                                Lancer l&apos;upload ({pendingCount} fichiers)
                             </Button>
                         )}
                         {files.length > 0 && !files.some(f => f.status === 'pending') && (
-                            <Button onClick={onComplete}>
+                            <Button onClick={onComplete} className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400">
                                 <CheckCircle2 className="w-4 h-4 mr-2" /> Terminé
                             </Button>
                         )}
@@ -1219,3 +1327,4 @@ function BulkUploadForm({
         </div>
     );
 }
+
