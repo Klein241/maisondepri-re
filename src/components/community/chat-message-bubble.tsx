@@ -175,9 +175,18 @@ export function ChatMessageBubble({
 
                     {/* Reply reference */}
                     {msg.reply_to_content && (
-                        <div className="mb-1 px-2 py-1 rounded-lg bg-white/5 border-l-2 border-indigo-400 text-[10px] text-slate-400">
-                            <span className="font-semibold text-indigo-400">{msg.reply_to_sender || 'Message'}</span>
-                            <p className="truncate">{msg.reply_to_content}</p>
+                        <div className="mb-1 px-2 py-1 rounded-lg bg-white/5 border-l-2 border-indigo-400 text-[10px] text-slate-400 flex items-start gap-2">
+                            <div className="flex-1 min-w-0">
+                                <span className="font-semibold text-indigo-400">{msg.reply_to_sender || 'Message'}</span>
+                                <p className="truncate">{msg.reply_to_content}</p>
+                            </div>
+                            {msg.reply_to_image_url && (
+                                <img
+                                    src={msg.reply_to_image_url}
+                                    alt=""
+                                    className="w-10 h-10 rounded-md object-cover shrink-0"
+                                />
+                            )}
                         </div>
                     )}
 

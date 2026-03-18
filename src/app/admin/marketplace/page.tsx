@@ -176,18 +176,16 @@ export default function AdminMarketplacePage() {
                 seller = newSeller;
             }
 
-            const productData = {
+            const productData: Record<string, any> = {
                 seller_id: seller!.id,
                 title: title.trim(),
                 description: description.trim(),
                 price: parseFloat(price),
                 currency,
                 category,
-                condition,
                 location: location.trim() || null,
                 images,
                 status: 'active' as const,
-                is_featured: true,
             };
 
             if (editingProduct) {

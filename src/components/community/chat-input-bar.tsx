@@ -120,8 +120,17 @@ export function ChatInputBar({
                 <div className="flex items-center gap-2 mb-1 px-3 py-2 bg-slate-800/90 rounded-xl border-l-3 border-indigo-500">
                     <div className="flex-1 min-w-0">
                         <p className="text-[10px] text-indigo-400 font-semibold">↩ Répondre à {replyingTo.sender?.full_name || 'Message'}</p>
-                        <p className="text-[11px] text-slate-400 truncate">{replyingTo.content}</p>
+                        <p className="text-[11px] text-slate-400 truncate">
+                            {replyingTo.type === 'image' ? '📷 Photo' : replyingTo.type === 'file' ? `📎 ${replyingTo.file_name || 'Fichier'}` : replyingTo.type === 'voice' ? '🎤 Message vocal' : replyingTo.content}
+                        </p>
                     </div>
+                    {(replyingTo.image_url || (replyingTo.type === 'image' && replyingTo.file_url)) && (
+                        <img
+                            src={replyingTo.image_url || replyingTo.file_url}
+                            alt=""
+                            className="w-10 h-10 rounded-md object-cover shrink-0"
+                        />
+                    )}
                     <button onClick={onClearReply} className="text-slate-500 hover:text-white p-1"><X className="h-3.5 w-3.5" /></button>
                 </div>
             )}

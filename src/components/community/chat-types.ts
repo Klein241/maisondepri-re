@@ -55,11 +55,14 @@ export interface Message {
     reply_to?: string;
     reply_to_content?: string;
     reply_to_sender?: string;
+    reply_to_image_url?: string;
     sender_id: string;
     sender?: ChatUser;
     created_at: string;
     is_read: boolean;
     read_by?: string[];
+    comment_count?: number;
+    reactions?: Record<string, string>;
 }
 
 export interface TypingUser {
