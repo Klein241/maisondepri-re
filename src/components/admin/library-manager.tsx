@@ -24,6 +24,14 @@ import {
 import { toast } from 'sonner';
 import { notifyNewBook } from '@/lib/notifications';
 
+// PDF.js for automatic cover extraction
+import * as pdfjsLib from 'pdfjs-dist';
+
+// Set worker source for pdf.js
+if (typeof window !== 'undefined') {
+    pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+}
+
 // R2 upload helper
 const WORKER_URL = process.env.NEXT_PUBLIC_WORKER_URL || process.env.NEXT_PUBLIC_NOTIFICATION_WORKER_URL || '';
 const ADMIN_KEY = process.env.NEXT_PUBLIC_ADMIN_KEY || '';
@@ -60,6 +68,40 @@ async function deleteFromR2(url: string): Promise<void> {
         },
         body: JSON.stringify({ key: r2Match[1] }),
     });
+}
+
+// =====================================================
+// Auto-extract first page of PDF as cover image
+// =====================================================
+async function extractPdfCover(file: File): Promise<File | null> {
+    try {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        const page = await pdf.getPage(1);
+
+        // Render at good quality for cover (scale for ~400px width)
+        const viewport = page.getViewport({ scale: 1.5 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d')!;
+
+        await page.render({ canvasContext: ctx, viewport }).promise;
+
+        // Convert to JPEG blob
+        const blob = await new Promise<Blob | null>((resolve) =>
+            canvas.toBlob(resolve, 'image/jpeg', 0.85)
+        );
+
+        if (!blob) return null;
+
+        // Create File object from blob
+        const coverName = file.name.replace(/\.(pdf|epub)$/i, '_cover.jpg');
+        return new File([blob], coverName, { type: 'image/jpeg' });
+    } catch (err) {
+        console.warn('Could not extract PDF cover:', err);
+        return null;
+    }
 }
 
 const CATEGORIES = [
@@ -405,7 +447,7 @@ function BookForm({ initialData, onSave, onCancel }: { initialData: Book | null;
     const fileInputRef = useRef<HTMLInputElement>(null);
     const coverInputRef = useRef<HTMLInputElement>(null);
 
-    const handleBookFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const handleBookFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (!file) return;
 
@@ -426,6 +468,20 @@ function BookForm({ initialData, onSave, onCancel }: { initialData: Book | null;
             } else {
                 setTitle(name.replace(/_/g, ' '));
             }
+        }
+
+        // Auto-extract cover from PDF if no cover set yet
+        if (ext === 'pdf' && !coverFile && !coverPreview) {
+            try {
+                const autoCover = await extractPdfCover(file);
+                if (autoCover) {
+                    setCoverFile(autoCover);
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setCoverPreview(ev.target?.result as string);
+                    reader.readAsDataURL(autoCover);
+                    toast.success('📸 Couverture extraite automatiquement !');
+                }
+            } catch { /* ignore */ }
         }
     };
 
@@ -845,11 +901,28 @@ function BulkUploadForm({
                 const result = await uploadToR2(files[i].file, 'books');
                 const ext = files[i].file.name.split('.').pop()?.toLowerCase();
 
+                // 2. Auto-extract cover from PDF first page
+                let coverUrl: string | null = null;
+                if (ext === 'pdf') {
+                    setFiles(prev => prev.map((f, idx) =>
+                        idx === i ? { ...f, progress: '📸 Extraction couverture...' } : f
+                    ));
+                    try {
+                        const coverFile = await extractPdfCover(files[i].file);
+                        if (coverFile) {
+                            const coverResult = await uploadToR2(coverFile, 'covers');
+                            coverUrl = coverResult.url;
+                        }
+                    } catch (coverErr) {
+                        console.warn('Cover extraction failed, continuing without cover:', coverErr);
+                    }
+                }
+
                 setFiles(prev => prev.map((f, idx) =>
                     idx === i ? { ...f, progress: 'Enregistrement en base...' } : f
                 ));
 
-                // 2. Generate slug
+                // 3. Generate slug
                 const slug = files[i].title
                     .toLowerCase()
                     .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -858,13 +931,13 @@ function BulkUploadForm({
                     .replace(/-+/g, '-')
                     .slice(0, 80) + '-' + Date.now().toString(36);
 
-                // 3. Insert into Supabase
+                // 4. Insert into Supabase
                 const bookData: Record<string, any> = {
                     title: files[i].title,
                     author: files[i].author,
                     description: '',
                     category: bulkCategory,
-                    cover_url: null,
+                    cover_url: coverUrl,
                     file_url: result.url,
                     file_name: files[i].file.name,
                     file_size: files[i].file.size,
@@ -1073,12 +1146,12 @@ function BulkUploadForm({
                             <div
                                 key={idx}
                                 className={`flex items-center gap-3 p-2 rounded-lg text-sm transition-colors ${entry.status === 'done'
-                                        ? 'bg-green-500/10 border border-green-500/20'
-                                        : entry.status === 'error'
-                                            ? 'bg-red-500/10 border border-red-500/20'
-                                            : entry.status === 'uploading'
-                                                ? 'bg-blue-500/10 border border-blue-500/20'
-                                                : 'bg-white/5 border border-white/5'
+                                    ? 'bg-green-500/10 border border-green-500/20'
+                                    : entry.status === 'error'
+                                        ? 'bg-red-500/10 border border-red-500/20'
+                                        : entry.status === 'uploading'
+                                            ? 'bg-blue-500/10 border border-blue-500/20'
+                                            : 'bg-white/5 border border-white/5'
                                     }`}
                             >
                                 {/* Status icon */}
