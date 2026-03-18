@@ -449,7 +449,7 @@ export function NotificationBell() {
                             animate={{ opacity: 1, y: 0, scale: 1 }}
                             exit={{ opacity: 0, y: -20, scale: 0.95 }}
                             transition={{ duration: 0.25 }}
-                            className="fixed top-14 left-1 right-1 sm:left-auto sm:right-4 sm:w-96 max-h-[80vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-9999"
+                            className="fixed top-12 left-2 right-2 sm:left-auto sm:right-4 sm:w-96 max-h-[85vh] sm:max-h-[80vh] bg-[#121620] border border-white/10 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden z-9999"
                         >
                             {/* Header */}
                             <div className="flex items-center justify-between px-4 py-3 border-b border-white/5">
@@ -506,7 +506,7 @@ export function NotificationBell() {
                             )}
 
                             {/* Notification List */}
-                            <ScrollArea className="max-h-[55vh] overflow-y-auto">
+                            <ScrollArea className="max-h-[60vh] sm:max-h-[55vh] overflow-y-auto">
                                 {notifications.length === 0 ? (
                                     <div className="text-center py-12 px-4">
                                         <Bell className="h-10 w-10 text-slate-700 mx-auto mb-3" />
@@ -521,7 +521,7 @@ export function NotificationBell() {
                                                 initial={{ opacity: 0, x: -10 }}
                                                 animate={{ opacity: 1, x: 0 }}
                                                 className={cn(
-                                                    "px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors border-b border-white/3",
+                                                    "px-3 sm:px-4 py-2.5 sm:py-3 flex items-start gap-2 sm:gap-3 cursor-pointer transition-colors border-b border-white/3",
                                                     !notif.read
                                                         ? "bg-indigo-500/5 hover:bg-indigo-500/10"
                                                         : "hover:bg-white/5"
@@ -531,9 +531,9 @@ export function NotificationBell() {
                                                 {/* Icon or Avatar */}
                                                 <div className="shrink-0 mt-0.5">
                                                     {notif.sender_avatar ? (
-                                                        <Avatar className="h-9 w-9 border border-white/10">
+                                                        <Avatar className="h-8 w-8 sm:h-9 sm:w-9 border border-white/10">
                                                             <AvatarImage src={notif.sender_avatar} />
-                                                            <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-xs">
+                                                            <AvatarFallback className="bg-indigo-600/30 text-indigo-300 text-[10px] sm:text-xs">
                                                                 {notif.sender_name?.[0] || '?'}
                                                             </AvatarFallback>
                                                         </Avatar>

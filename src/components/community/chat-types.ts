@@ -63,6 +63,7 @@ export interface Message {
     read_by?: string[];
     comment_count?: number;
     reactions?: Record<string, string>;
+    is_downloadable?: boolean; // Feature 9: sender controls download permission
 }
 
 export interface TypingUser {

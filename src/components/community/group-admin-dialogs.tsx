@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     Send, Search, Loader2, BookOpen, CalendarDays,
     Megaphone, Pin, ArrowRightLeft, Calendar, X
@@ -194,10 +194,65 @@ export function GroupAdminDialogs(props: GroupAdminDialogsProps) {
         loadThreadComments(threadMessage.id);
     }
 
+    // Feature 7: Realtime subscription for thread comments — visible to ALL members
+    const commentChannelRef = useRef<any>(null);
+    useEffect(() => {
+        if (!threadMessage) {
+            // Cleanup when thread closes
+            if (commentChannelRef.current) {
+                commentChannelRef.current.unsubscribe();
+                commentChannelRef.current = null;
+            }
+            return;
+        }
+
+        // Subscribe to new comments on this message
+        (async () => {
+            const { supabase: sb } = await import('@/lib/supabase');
+
+            // Cleanup previous channel
+            if (commentChannelRef.current) {
+                commentChannelRef.current.unsubscribe();
+            }
+
+            const channel = sb.channel(`comments_${threadMessage.id}`)
+                .on('postgres_changes', {
+                    event: 'INSERT',
+                    schema: 'public',
+                    table: 'prayer_group_message_comments',
+                    filter: `message_id=eq.${threadMessage.id}`,
+                }, (payload) => {
+                    const c = payload.new as any;
+                    if (c.user_id !== user.id) {
+                        setThreadComments(prev => {
+                            if (prev.some((p: any) => p.text === c.content && p.userId === c.user_id)) return prev;
+                            return [...prev, {
+                                text: c.content,
+                                time: new Date(c.created_at).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+                                userId: c.user_id,
+                                senderName: c.sender_name || 'Membre',
+                            }];
+                        });
+                    }
+                })
+                .subscribe();
+
+            commentChannelRef.current = channel;
+        })();
+
+        return () => {
+            if (commentChannelRef.current) {
+                commentChannelRef.current.unsubscribe();
+                commentChannelRef.current = null;
+            }
+        };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [threadMessage?.id]);
+
     const getMemberName = (uid: string) => {
         if (uid === user.id) return user.name || 'Moi';
-        const member = groupMembers.find(m => m.user_id === uid);
-        return member?.profiles?.full_name || 'Membre';
+        const member = groupMembers.find(m => m.id === uid);
+        return member?.full_name || 'Membre';
     };
 
     return (

@@ -38,6 +38,7 @@ import { BibleShareDialog } from './bible-share-dialog';
 import { ChatMessageBubble } from './chat-message-bubble';
 import { ChatInputBar } from './chat-input-bar';
 import { GroupGameDialog } from './group-game-dialog';
+import { FloatingBubbles } from './floating-bubbles';
 import { getInitials, formatTime, getMemberColor, normalizeBibleBookName } from './chat-utils';
 
 export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
@@ -179,6 +180,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Group Game state
     const [showGroupGame, setShowGroupGame] = useState(false);
+
+    // Feature 11: Floating bubbles for prayers/tools
+    const [floatingItems, setFloatingItems] = useState<Array<{
+        id: string;
+        type: 'prayer' | 'tool' | 'group' | 'bible';
+        title: string;
+        icon?: string;
+        onClick?: () => void;
+    }>>([]);
     const [activeGameSession, setActiveGameSession] = useState<{
         startedBy: string;
         startedByName: string;
@@ -512,11 +522,38 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             })
             .subscribe();
 
+        // Feature 7+8: Realtime subscription for reactions & comment_count on group messages
+        const msgUpdateChannel = supabase
+            .channel(`msg_reactions_${user.id}_${sessionId}`)
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'prayer_group_messages',
+            }, (payload) => {
+                const updated = payload.new as any;
+                if (updated?.id) {
+                    setMessages(prev => prev.map(m => {
+                        if (m.id === updated.id) {
+                            return {
+                                ...m,
+                                reactions: typeof updated.reactions === 'string'
+                                    ? JSON.parse(updated.reactions || '{}')
+                                    : (updated.reactions || {}),
+                                comment_count: updated.comment_count ?? m.comment_count,
+                            };
+                        }
+                        return m;
+                    }));
+                }
+            })
+            .subscribe();
+
         return () => {
             dmChannel.unsubscribe();
             groupChannel.unsubscribe();
             typingChannel.unsubscribe();
             groupDeleteChannel.unsubscribe();
+            msgUpdateChannel.unsubscribe();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only user.id - refs are used for conversation/group
@@ -1026,6 +1063,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // Feature 7: Multi-file upload handler with progress
     const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+    // Feature 9: download permission toggle for shared files
+    const [fileDownloadable, setFileDownloadable] = useState(true);
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
@@ -1044,6 +1083,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         });
 
         if (validFiles.length === 0) return;
+
+        // Feature 9: Ask the sender about download permissions
+        const allowDownload = window.confirm(
+            `📁 Envoyer ${validFiles.length} fichier(s) ?\n\nOK = Téléchargeable par tous\nAnnuler = Consultation uniquement (pas de téléchargement)`
+        );
+        setFileDownloadable(allowDownload);
 
         setIsUploadingFile(true);
 
@@ -1114,11 +1159,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         setIsUploadingFile(false);
     };
 
-    // Helper to send a file/image message
+    // Helper to send a file/image message — Feature 9: includes downloadable flag
     const sendFileMessage = async (fileUrl: string, fileName: string, fileType: string, isImage: boolean) => {
         if (!user) return;
         const msgType = isImage ? 'image' : 'file';
-        const content = isImage ? `🖼️ Image: ${fileName}` : `📎 ${fileName}`;
+        const downloadLabel = fileDownloadable ? '' : ' 🔒';
+        const content = isImage ? `🖼️ Image: ${fileName}${downloadLabel}` : `📎 ${fileName}${downloadLabel}`;
 
         if (view === 'conversation' && selectedConversation) {
             const { data, error } = await supabase
@@ -1140,6 +1186,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     file_url: fileUrl,
                     file_name: fileName,
                     file_type: fileType,
+                    is_downloadable: fileDownloadable,
                     sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
                 }]);
             }
@@ -1163,6 +1210,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     file_url: fileUrl,
                     file_name: fileName,
                     file_type: fileType,
+                    is_downloadable: fileDownloadable,
                     sender_id: data.user_id,
                     sender: { id: user.id, full_name: user.name, avatar_url: user.avatar || null },
                     is_read: true,
@@ -1486,6 +1534,52 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             } else {
                 setPinnedPrayer(null);
             }
+
+            // Feature 11: Detect tool/prayer messages and create floating bubbles
+            setFloatingItems([]); // Clear previous group's bubbles
+            (async () => {
+                try {
+                    const { data: recentMsgs } = await supabase
+                        .from('prayer_group_messages')
+                        .select('id, content, type, created_at')
+                        .eq('group_id', gId)
+                        .order('created_at', { ascending: false })
+                        .limit(50);
+
+                    if (recentMsgs) {
+                        const bubbles: typeof floatingItems = [];
+                        for (const m of recentMsgs) {
+                            const c = m.content || '';
+                            // Pinned prayer
+                            if (c.includes('📌') && c.includes('SUJET DE PRIÈRE')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'prayer', title: 'Sujet de prière épinglé', icon: '🙏' });
+                            }
+                            // Bible passage
+                            else if (c.startsWith('📖')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'bible', title: 'Passage Bible partagé', icon: '📖' });
+                            }
+                            // Announcement
+                            else if (c.includes('📢') && c.includes('ANNONCE')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'tool', title: 'Annonce du groupe', icon: '📢' });
+                            }
+                            // Fasting program
+                            else if (c.includes('🕐') && c.includes('PROGRAMME DE JEÛNE')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'tool', title: 'Programme de jeûne', icon: '🕐' });
+                            }
+                            // Event
+                            else if (c.includes('📅') && c.includes('ÉVÉNEMENT')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'group', title: 'Événement planifié', icon: '📅' });
+                            }
+                            // Meet link
+                            else if (c.includes('📹') && c.includes('meet.google.com')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'group', title: 'Réunion Meet', icon: '📹' });
+                            }
+                            if (bubbles.length >= 5) break; // Max 5 bubbles
+                        }
+                        setFloatingItems(bubbles);
+                    }
+                } catch { /* ignore */ }
+            })();
 
             // Start polling fallback for group messages
             if (groupPollRef.current) clearInterval(groupPollRef.current);
@@ -2774,7 +2868,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             >
                                 <Phone className="h-5 w-5 sm:h-5 sm:w-5" />
                             </Button>
-                            {/* Feature 9: Google Meet video button */}
+                            {/* Feature 4: Google Meet video — sends only the link */}
                             <Button
                                 variant="ghost"
                                 size="icon"
@@ -2786,7 +2880,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                         supabase.from('prayer_group_messages').insert({
                                             group_id: currentGroup.id,
                                             user_id: user.id,
-                                            content: `📹 **APPEL VIDÉO** 📹\n\n${user.name || 'Un membre'} a lancé un appel vidéo Google Meet.\n\n🔗 Rejoignez ici : ${meetUrl}\n\nCliquez sur le lien pour participer !`,
+                                            content: `📹 Réunion Meet\n${meetUrl}`,
                                             type: 'text'
                                         }).then(({ data }) => {
                                             if (data) {
@@ -2798,7 +2892,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 }]);
                                             }
                                         });
-                                        toast.success('Appel vidéo lancé !');
+                                        toast.success('Lien Meet envoyé dans le groupe');
                                     }
                                 }}
                                 title="Appel vidéo Google Meet"
@@ -3017,6 +3111,14 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 )}
             </AnimatePresence>
 
+            {/* Feature 11: Floating draggable bubbles for prayers/tools in group */}
+            {view === 'group' && floatingItems.length > 0 && (
+                <FloatingBubbles
+                    items={floatingItems}
+                    onRemove={(id) => setFloatingItems(prev => prev.filter(item => item.id !== id))}
+                />
+            )}
+
             {/* Input Area — ChatInputBar component */}
             <ChatInputBar
                 view={view as 'conversation' | 'group'}
@@ -3052,12 +3154,12 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 inputRef={inputRef}
             />
 
-            {/* Group Tools Dialog - Full Integration */}
+            {/* Group Tools Dialog - Full Integration — responsive on mobile */}
             <Dialog open={showGroupTools} onOpenChange={setShowGroupTools}>
-                <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
-                    <DialogHeader className="p-4 pb-0">
-                        <DialogTitle className="flex items-center gap-2 text-white">
-                            <Settings className="h-5 w-5 text-amber-400" />
+                <DialogContent className="max-w-lg w-[95vw] sm:w-full max-h-[90vh] sm:max-h-[85vh] overflow-y-auto bg-slate-900 border-white/10 p-0">
+                    <DialogHeader className="p-3 sm:p-4 pb-0">
+                        <DialogTitle className="flex items-center gap-2 text-white text-sm sm:text-base">
+                            <Settings className="h-4 w-4 sm:h-5 sm:w-5 text-amber-400" />
                             Outils de groupe
                         </DialogTitle>
                     </DialogHeader>
