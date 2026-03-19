@@ -80,3 +80,44 @@ ADD COLUMN IF NOT EXISTS scheduled_at TIMESTAMPTZ DEFAULT NULL;
 -- 8. Add is_open to prayer_groups (for auto-close after 24h)
 ALTER TABLE prayer_groups
 ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT true;
+
+-- 9. Create library_ads table (for advertising system)
+CREATE TABLE IF NOT EXISTS library_ads (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    title TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    image_url TEXT NOT NULL,
+    link_url TEXT DEFAULT '',
+    is_active BOOLEAN DEFAULT true,
+    display_order INTEGER DEFAULT 0,
+    click_count INTEGER DEFAULT 0,
+    view_count INTEGER DEFAULT 0,
+    placement TEXT DEFAULT 'book_detail',
+    start_date DATE DEFAULT NULL,
+    end_date DATE DEFAULT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Add scheduling columns if table already existed
+ALTER TABLE library_ads
+ADD COLUMN IF NOT EXISTS start_date DATE DEFAULT NULL,
+ADD COLUMN IF NOT EXISTS end_date DATE DEFAULT NULL;
+
+-- RLS for library_ads
+ALTER TABLE library_ads ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Anyone can read ads" ON library_ads;
+    DROP POLICY IF EXISTS "Authenticated can manage ads" ON library_ads;
+END $$;
+
+CREATE POLICY "Anyone can read ads"
+ON library_ads FOR SELECT
+USING (true);
+
+CREATE POLICY "Authenticated can manage ads"
+ON library_ads FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);
