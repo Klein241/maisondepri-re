@@ -187,6 +187,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         type: 'prayer' | 'tool' | 'group' | 'bible';
         title: string;
         icon?: string;
+        content?: string;
         onClick?: () => void;
     }>>([]);
     const [activeGameSession, setActiveGameSession] = useState<{
@@ -557,6 +558,80 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [user?.id]); // Only user.id - refs are used for conversation/group
+
+    // Bug 4 FIX: Auto-close groups whose 24h timer has expired
+    useEffect(() => {
+        if (!user) return;
+
+        const checkAutoCloseGroups = async () => {
+            try {
+                // Find groups marked as closed (is_open = false) with auto-close description
+                const { data: closedGroups } = await supabase
+                    .from('prayer_groups')
+                    .select('id, description, name')
+                    .eq('is_open', false);
+
+                if (!closedGroups || closedGroups.length === 0) return;
+
+                const now = new Date();
+                for (const group of closedGroups) {
+                    const desc = group.description || '';
+                    // Match: "📌 🎉 PRIÈRE EXAUCÉE - Fermeture auto le DD/MM/YYYY à HH:MM"
+                    if (!desc.includes('PRIÈRE EXAUCÉE') || !desc.includes('Fermeture auto')) continue;
+
+                    // Parse date from description: "le DD/MM/YYYY à HH:MM"
+                    const dateMatch = desc.match(/le (\d{2})\/(\d{2})\/(\d{4}) à (\d{2}):(\d{2})/);
+                    if (!dateMatch) continue;
+
+                    const [, day, month, year, hour, minute] = dateMatch;
+                    const closeDate = new Date(
+                        parseInt(year), parseInt(month) - 1, parseInt(day),
+                        parseInt(hour), parseInt(minute)
+                    );
+
+                    // If close date has passed, delete the group
+                    if (now >= closeDate) {
+                        console.log(`Auto-deleting group "${group.name}" (24h expired)`);
+
+                        // Delete messages first
+                        await supabase
+                            .from('prayer_group_messages')
+                            .delete()
+                            .eq('group_id', group.id);
+
+                        // Delete members
+                        await supabase
+                            .from('prayer_group_members')
+                            .delete()
+                            .eq('group_id', group.id);
+
+                        // Delete group
+                        await supabase
+                            .from('prayer_groups')
+                            .delete()
+                            .eq('id', group.id);
+
+                        // If user was viewing this group, go back to list
+                        if (selectedGroupRef.current?.id === group.id) {
+                            setView('list');
+                            setSelectedGroup(null);
+                            toast.info(`🕊️ Le groupe "${group.name}" a été archivé (prière exaucée).`);
+                        }
+
+                        // Refresh group list
+                        loadGroups();
+                    }
+                }
+            } catch (e) {
+                console.error('Auto-close check error:', e);
+            }
+        };
+
+        checkAutoCloseGroups();
+        const interval = setInterval(checkAutoCloseGroups, 300000); // Every 5 min
+        return () => clearInterval(interval);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]);
 
     // Auto-scroll to bottom on new messages
     useEffect(() => {
@@ -1535,7 +1610,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 setPinnedPrayer(null);
             }
 
-            // Feature 11: Detect tool/prayer messages and create floating bubbles
+            // Feature 11: Detect tool/prayer messages and create floating bubbles with content
             setFloatingItems([]); // Clear previous group's bubbles
             (async () => {
                 try {
@@ -1552,27 +1627,27 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             const c = m.content || '';
                             // Pinned prayer
                             if (c.includes('📌') && c.includes('SUJET DE PRIÈRE')) {
-                                bubbles.push({ id: `bubble-${m.id}`, type: 'prayer', title: 'Sujet de prière épinglé', icon: '🙏' });
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'prayer', title: 'Sujet de prière épinglé', icon: '🙏', content: c });
                             }
                             // Bible passage
                             else if (c.startsWith('📖')) {
-                                bubbles.push({ id: `bubble-${m.id}`, type: 'bible', title: 'Passage Bible partagé', icon: '📖' });
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'bible', title: 'Passage Bible partagé', icon: '📖', content: c });
                             }
                             // Announcement
                             else if (c.includes('📢') && c.includes('ANNONCE')) {
-                                bubbles.push({ id: `bubble-${m.id}`, type: 'tool', title: 'Annonce du groupe', icon: '📢' });
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'tool', title: 'Annonce du groupe', icon: '📢', content: c });
                             }
                             // Fasting program
                             else if (c.includes('🕐') && c.includes('PROGRAMME DE JEÛNE')) {
-                                bubbles.push({ id: `bubble-${m.id}`, type: 'tool', title: 'Programme de jeûne', icon: '🕐' });
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'tool', title: 'Programme de jeûne', icon: '🕐', content: c });
                             }
                             // Event
                             else if (c.includes('📅') && c.includes('ÉVÉNEMENT')) {
-                                bubbles.push({ id: `bubble-${m.id}`, type: 'group', title: 'Événement planifié', icon: '📅' });
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'group', title: 'Événement planifié', icon: '📅', content: c });
                             }
-                            // Meet link
-                            else if (c.includes('📹') && c.includes('meet.google.com')) {
-                                bubbles.push({ id: `bubble-${m.id}`, type: 'group', title: 'Réunion Meet', icon: '📹' });
+                            // Meet link (just the URL)
+                            else if (c.includes('meet.google.com/')) {
+                                bubbles.push({ id: `bubble-${m.id}`, type: 'group', title: 'Réunion Meet', icon: '📹', content: c });
                             }
                             if (bubbles.length >= 5) break; // Max 5 bubbles
                         }
@@ -1724,8 +1799,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     // renderMessageContent — now handled by ChatMessageBubble component
 
-    // Count online members in current group
-    const onlineMembersCount = groupMembers.filter(m => m.is_online || onlineUsers[m.id]).length;
+    // Count online members — ONLY use Presence channel (onlineUsers), NOT stale DB is_online
+    const onlineMembersCount = groupMembers.filter(m => onlineUsers[m.id]).length;
 
     // Check if current user is admin/creator
     const isGroupAdmin = selectedGroup && (
@@ -2868,19 +2943,27 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             >
                                 <Phone className="h-5 w-5 sm:h-5 sm:w-5" />
                             </Button>
-                            {/* Feature 4: Google Meet video — sends only the link */}
+                            {/* Feature 4: Google Meet video — generates unique room link */}
                             <Button
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-purple-400 hover:bg-purple-500/10 h-10 w-10 sm:h-11 sm:w-11"
                                 onClick={() => {
-                                    const meetUrl = `https://meet.google.com/new`;
+                                    // Generate a unique meeting code: abc-defg-hij
+                                    const chars = 'abcdefghijklmnopqrstuvwxyz';
+                                    const seg = (len: number) => Array.from({ length: len }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+                                    const meetCode = `${seg(3)}-${seg(4)}-${seg(3)}`;
+                                    const meetUrl = `https://meet.google.com/${meetCode}`;
+
+                                    // Open the meet link for the initiator
                                     window.open(meetUrl, '_blank', 'noopener,noreferrer');
+
                                     if (currentGroup && user) {
+                                        // Send ONLY the link in group chat
                                         supabase.from('prayer_group_messages').insert({
                                             group_id: currentGroup.id,
                                             user_id: user.id,
-                                            content: `📹 Réunion Meet\n${meetUrl}`,
+                                            content: meetUrl,
                                             type: 'text'
                                         }).then(({ data }) => {
                                             if (data) {
@@ -3061,14 +3144,17 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                         onThread={setThreadMessage}
                                         onDelete={deleteMessage}
                                         onReaction={(msgId, _emoji, newReactions) => {
+                                            // Optimistic local update FIRST (instant feedback)
+                                            setMessages(prev => prev.map(m =>
+                                                m.id === msgId ? { ...m, reactions: newReactions as any } : m
+                                            ));
+                                            // Then persist to DB — send as JSONB object, NOT string
                                             const table = view === 'group' ? 'prayer_group_messages' : 'direct_messages';
                                             supabase.from(table)
-                                                .update({ reactions: JSON.stringify(newReactions) })
+                                                .update({ reactions: newReactions })
                                                 .eq('id', msgId)
-                                                .then(() => {
-                                                    setMessages(prev => prev.map(m =>
-                                                        m.id === msgId ? { ...m, reactions: newReactions as any } : m
-                                                    ));
+                                                .then(({ error }) => {
+                                                    if (error) console.error('Reaction update error:', error);
                                                 });
                                         }}
                                     />
@@ -3211,7 +3297,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             </div>
 
                             {/* Quick Actions */}
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2">
                                 {/* Add Member */}
                                 <Button
                                     variant="outline"
@@ -3261,7 +3347,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                             {isGroupAdmin && (
                                 <div className="space-y-2">
                                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Admin</p>
-                                    <div className="grid grid-cols-2 gap-2">
+                                    <div className="grid grid-cols-1 min-[380px]:grid-cols-2 gap-2">
                                         <Button
                                             variant="outline"
                                             size="sm"
@@ -3361,7 +3447,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                     <AvatarImage src={member.avatar_url || undefined} />
                                                     <AvatarFallback className="text-[9px] bg-slate-600">{getInitials(member.full_name)}</AvatarFallback>
                                                 </Avatar>
-                                                {(member.is_online || onlineUsers[member.id]) && (
+                                                {onlineUsers[member.id] && (
                                                     <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 bg-green-500 rounded-full border border-slate-900" />
                                                 )}
                                             </div>
@@ -3369,7 +3455,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                                 <p className="text-xs text-white truncate">{member.full_name || 'Utilisateur'}</p>
                                                 <p className="text-[9px] text-slate-500">
                                                     {member.role === 'admin' ? '👑 Admin' : 'Membre'}
-                                                    {(member.is_online || onlineUsers[member.id]) && ' • 🟢'}
+                                                    {onlineUsers[member.id] && ' • 🟢'}
                                                 </p>
                                             </div>
                                             {isGroupAdmin && member.id !== user.id && member.role !== 'admin' && (

@@ -183,6 +183,31 @@ export function LibraryView() {
     useEffect(() => {
         loadBooks();
         loadAds();
+
+        // Bug 3 FIX: Auto-publish scheduled books whose scheduled_at has passed
+        const autoPublishScheduled = async () => {
+            try {
+                const now = new Date().toISOString();
+                const { data } = await supabase
+                    .from('library_books')
+                    .select('id')
+                    .eq('is_published', false)
+                    .not('scheduled_at', 'is', null)
+                    .lte('scheduled_at', now);
+
+                if (data && data.length > 0) {
+                    for (const book of data) {
+                        await supabase
+                            .from('library_books')
+                            .update({ is_published: true })
+                            .eq('id', book.id);
+                    }
+                    // Reload to show newly published books
+                    loadBooks();
+                }
+            } catch { /* ignore - column may not exist */ }
+        };
+        autoPublishScheduled();
     }, []);
 
     // Load user data only when logged in

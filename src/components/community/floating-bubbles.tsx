@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
-import { motion, useMotionValue, useTransform, PanInfo } from 'framer-motion';
-import { X, MessageCircle, Heart, BookOpen, Users } from 'lucide-react';
+import { useState, useRef } from 'react';
+import { motion, AnimatePresence, PanInfo } from 'framer-motion';
+import { X, Heart, MessageCircle, Users, BookOpen } from 'lucide-react';
 
 interface FloatingBubbleItem {
     id: string;
     type: 'prayer' | 'tool' | 'group' | 'bible';
     title: string;
     icon?: string;
+    content?: string; // The full content to show on click
     onClick?: () => void;
 }
 
@@ -41,9 +42,8 @@ function DraggableBubble({
     onRemove: (id: string) => void;
 }) {
     const [isDragging, setIsDragging] = useState(false);
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [showContent, setShowContent] = useState(false);
     const [position, setPosition] = useState({ x: 0, y: 0 });
-    const constraintsRef = useRef<HTMLDivElement>(null);
 
     const Icon = ICONS[item.type] || Heart;
     const colorClass = COLORS[item.type] || COLORS.prayer;
@@ -57,66 +57,128 @@ function DraggableBubble({
     };
 
     return (
-        <motion.div
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{
-                scale: 1,
-                opacity: 1,
-                x: position.x,
-                y: position.y,
-            }}
-            exit={{ scale: 0, opacity: 0 }}
-            drag
-            dragMomentum={false}
-            onDragStart={() => setIsDragging(true)}
-            onDragEnd={handleDragEnd}
-            whileDrag={{ scale: 1.1, zIndex: 100 }}
-            className="fixed z-9990 cursor-grab active:cursor-grabbing"
-            style={{
-                right: 16,
-                bottom: 100 + index * 60,
-            }}
-        >
-            {/* Main bubble */}
-            <div
-                onClick={() => {
-                    if (!isDragging) {
-                        if (item.onClick) item.onClick();
-                        else setIsExpanded(!isExpanded);
-                    }
+        <>
+            <motion.div
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{
+                    scale: 1,
+                    opacity: 1,
+                    x: position.x,
+                    y: position.y,
                 }}
-                className={`relative w-12 h-12 rounded-full bg-linear-to-br ${colorClass} shadow-lg shadow-black/30 flex items-center justify-center`}
+                exit={{ scale: 0, opacity: 0 }}
+                drag
+                dragMomentum={false}
+                onDragStart={() => setIsDragging(true)}
+                onDragEnd={handleDragEnd}
+                whileDrag={{ scale: 1.1, zIndex: 100 }}
+                className="fixed z-9990 cursor-grab active:cursor-grabbing"
+                style={{
+                    right: 16,
+                    bottom: 100 + index * 60,
+                }}
             >
-                {item.icon ? (
-                    <span className="text-lg">{item.icon}</span>
-                ) : (
-                    <Icon className="h-5 w-5 text-white" />
-                )}
-
-                {/* Pulse animation */}
-                <div className={`absolute inset-0 rounded-full bg-linear-to-br ${colorClass} animate-ping opacity-20`} />
-
-                {/* Close button */}
-                <button
-                    onClick={(e) => { e.stopPropagation(); onRemove(item.id); }}
-                    className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity shadow-md"
+                {/* Main bubble */}
+                <div
+                    onClick={() => {
+                        if (!isDragging) {
+                            if (item.onClick) {
+                                item.onClick();
+                                // Remove after click
+                                setTimeout(() => onRemove(item.id), 300);
+                            } else if (item.content) {
+                                // Show content popup
+                                setShowContent(true);
+                            } else {
+                                // No content — just remove
+                                onRemove(item.id);
+                            }
+                        }
+                    }}
+                    className={`relative w-12 h-12 rounded-full bg-linear-to-br ${colorClass} shadow-lg shadow-black/30 flex items-center justify-center`}
                 >
-                    <X className="h-3 w-3 text-white" />
-                </button>
-            </div>
+                    {item.icon ? (
+                        <span className="text-lg">{item.icon}</span>
+                    ) : (
+                        <Icon className="h-5 w-5 text-white" />
+                    )}
 
-            {/* Expanded label */}
-            {isExpanded && (
+                    {/* Pulse animation */}
+                    <div className={`absolute inset-0 rounded-full bg-linear-to-br ${colorClass} animate-ping opacity-20`} />
+
+                    {/* Close button */}
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onRemove(item.id); }}
+                        className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity shadow-md"
+                    >
+                        <X className="h-3 w-3 text-white" />
+                    </button>
+                </div>
+
+                {/* Title tooltip on hover */}
                 <motion.div
-                    initial={{ opacity: 0, x: 10, scale: 0.8 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-900/95 backdrop-blur-sm text-white text-xs px-3 py-2 rounded-xl shadow-lg border border-white/10 max-w-[200px]"
+                    initial={{ opacity: 0, scale: 0.8 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className="absolute right-14 top-1/2 -translate-y-1/2 whitespace-nowrap bg-slate-900/95 backdrop-blur-sm text-white text-[10px] px-2 py-1 rounded-lg shadow-lg border border-white/10 pointer-events-none"
                 >
-                    <p className="font-semibold truncate">{item.title}</p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">Appuyez pour ouvrir · Glissez pour déplacer</p>
+                    {item.title}
                 </motion.div>
-            )}
-        </motion.div>
+            </motion.div>
+
+            {/* Feature 11: Content popup — shows full content, then bubble disappears */}
+            <AnimatePresence>
+                {showContent && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-9999 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+                        onClick={() => {
+                            setShowContent(false);
+                            // Remove the bubble after viewing
+                            setTimeout(() => onRemove(item.id), 200);
+                        }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.8, y: 20 }}
+                            animate={{ scale: 1, y: 0 }}
+                            exit={{ scale: 0.8, y: 20 }}
+                            onClick={e => e.stopPropagation()}
+                            className="bg-slate-900 border border-white/10 rounded-2xl p-5 max-w-md w-full max-h-[70vh] overflow-y-auto shadow-2xl"
+                        >
+                            {/* Header */}
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className={`w-10 h-10 rounded-full bg-linear-to-br ${colorClass} flex items-center justify-center shrink-0`}>
+                                    {item.icon ? (
+                                        <span className="text-lg">{item.icon}</span>
+                                    ) : (
+                                        <Icon className="h-5 w-5 text-white" />
+                                    )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <h3 className="text-white font-semibold text-sm">{item.title}</h3>
+                                    <p className="text-[10px] text-slate-400">Appuyez à l'extérieur pour fermer</p>
+                                </div>
+                                <button
+                                    onClick={() => {
+                                        setShowContent(false);
+                                        setTimeout(() => onRemove(item.id), 200);
+                                    }}
+                                    className="p-1.5 hover:bg-white/10 rounded-full transition-colors"
+                                >
+                                    <X className="h-4 w-4 text-slate-400" />
+                                </button>
+                            </div>
+
+                            {/* Content */}
+                            <div className="text-slate-300 text-sm whitespace-pre-wrap leading-relaxed">
+                                {item.content || 'Aucun contenu disponible'}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+        </>
     );
 }
 

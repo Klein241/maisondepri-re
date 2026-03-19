@@ -149,6 +149,50 @@ export function LibraryManager() {
 
     useEffect(() => {
         fetchBooks();
+
+        // Bug 3 FIX: Auto-publish scheduled books whose scheduled_at has passed
+        const checkScheduledBooks = async () => {
+            try {
+                const now = new Date().toISOString();
+                const { data: scheduledBooks, error } = await supabase
+                    .from('library_books')
+                    .select('id, title, author')
+                    .eq('is_published', false)
+                    .not('scheduled_at', 'is', null)
+                    .lte('scheduled_at', now);
+
+                if (error || !scheduledBooks || scheduledBooks.length === 0) return;
+
+                // Auto-publish each book
+                for (const book of scheduledBooks) {
+                    await supabase
+                        .from('library_books')
+                        .update({ is_published: true })
+                        .eq('id', book.id);
+
+                    // Send notification
+                    const { data: { user: authUser } } = await supabase.auth.getUser();
+                    if (authUser) {
+                        notifyNewBook({
+                            bookId: book.id,
+                            bookTitle: book.title,
+                            bookAuthor: book.author,
+                            publisherId: authUser.id,
+                            publisherName: 'Publication auto',
+                        }).catch(() => { });
+                    }
+                }
+
+                if (scheduledBooks.length > 0) {
+                    toast.success(`📚 ${scheduledBooks.length} livre(s) publié(s) automatiquement (programmation)`);
+                    fetchBooks(); // refresh list
+                }
+            } catch { /* ignore */ }
+        };
+
+        checkScheduledBooks();
+        const interval = setInterval(checkScheduledBooks, 60000); // Check every minute
+        return () => clearInterval(interval);
     }, []);
 
     const fetchBooks = async () => {
@@ -259,6 +303,58 @@ export function LibraryManager() {
             toast.success(`🗑️ ${deleted} livre${deleted > 1 ? 's' : ''} supprimé${deleted > 1 ? 's' : ''} avec succès.`);
         } else {
             toast.warning(`${deleted} supprimé${deleted > 1 ? 's' : ''}, ${errors} erreur${errors > 1 ? 's' : ''}.`);
+        }
+    };
+
+    // ── Bulk Publish/Hide ──────────────────────────────
+    const [isBulkPublishing, setIsBulkPublishing] = useState(false);
+    const handleBulkPublish = async (publish: boolean) => {
+        if (selectedBooks.size === 0) return;
+        const count = selectedBooks.size;
+        const action = publish ? 'publier' : 'masquer';
+        if (!confirm(`${publish ? '📢' : '🔒'} ${action.charAt(0).toUpperCase() + action.slice(1)} ${count} livre${count > 1 ? 's' : ''} ?`)) return;
+
+        setIsBulkPublishing(true);
+        let updated = 0;
+        let errors = 0;
+
+        for (const bookId of selectedBooks) {
+            try {
+                const { error } = await supabase
+                    .from('library_books')
+                    .update({ is_published: publish })
+                    .eq('id', bookId);
+                if (error) throw error;
+                updated++;
+
+                if (publish) {
+                    const book = books.find(b => b.id === bookId);
+                    if (book && !book.is_published) {
+                        const { data: { user: authUser } } = await supabase.auth.getUser();
+                        if (authUser) {
+                            notifyNewBook({
+                                bookId: book.id,
+                                bookTitle: book.title,
+                                bookAuthor: book.author,
+                                publisherId: authUser.id,
+                                publisherName: 'Administrateur',
+                            }).catch(console.error);
+                        }
+                    }
+                }
+            } catch (e: any) {
+                errors++;
+            }
+        }
+
+        setSelectedBooks(new Set());
+        await fetchBooks();
+        setIsBulkPublishing(false);
+
+        if (errors === 0) {
+            toast.success(`${publish ? '📢' : '🔒'} ${updated} livre${updated > 1 ? 's' : ''} ${publish ? 'publié' : 'masqué'}${updated > 1 ? 's' : ''}.`);
+        } else {
+            toast.warning(`${updated} traité${updated > 1 ? 's' : ''}, ${errors} erreur${errors > 1 ? 's' : ''}.`);
         }
     };
 
@@ -411,6 +507,34 @@ export function LibraryManager() {
                             onClick={() => setSelectedBooks(new Set())}
                         >
                             Tout désélectionner
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isBulkPublishing}
+                            onClick={() => handleBulkPublish(true)}
+                            className="gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10"
+                        >
+                            {isBulkPublishing ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <Eye className="w-4 h-4" />
+                            )}
+                            Publier ({selectedBooks.size})
+                        </Button>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={isBulkPublishing}
+                            onClick={() => handleBulkPublish(false)}
+                            className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                        >
+                            {isBulkPublishing ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                                <EyeOff className="w-4 h-4" />
+                            )}
+                            Masquer ({selectedBooks.size})
                         </Button>
                         <Button
                             variant="destructive"

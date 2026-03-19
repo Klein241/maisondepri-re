@@ -333,13 +333,23 @@ export function ChatMessageBubble({
                         title="Commenter"
                     >
                         <span>💬</span><span>Commenter</span>
-                        {(msg as any).comment_count > 0 && (
-                            <span className="bg-indigo-500 text-white text-[9px] rounded-full px-1.5 min-w-[16px] text-center font-bold animate-pulse">
-                                {(msg as any).comment_count}
-                            </span>
-                        )}
                     </button>
                 </div>
+
+                {/* Feature 7: Comment count badge — positioned BELOW the message container */}
+                {msg.comment_count && msg.comment_count > 0 && (
+                    <button
+                        onClick={() => onThread(msg)}
+                        className={cn(
+                            "flex items-center gap-1 mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-medium transition-colors cursor-pointer",
+                            "bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30 border border-indigo-500/30",
+                            isOwn ? "ml-auto" : ""
+                        )}
+                    >
+                        <span>💬</span>
+                        <span>{msg.comment_count} commentaire{msg.comment_count > 1 ? 's' : ''}</span>
+                    </button>
+                )}
             </div>
 
             {/* ═══ FULLSCREEN LIGHTBOX — Feature 10: supports images, videos, PDFs ═══ */}
