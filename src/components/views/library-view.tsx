@@ -304,7 +304,16 @@ export function LibraryView() {
                 .eq('is_active', true)
                 .order('display_order', { ascending: true })
                 .limit(6);
-            if (data) setAds(data);
+            if (data) {
+                // Filter by date range (start_date / end_date)
+                const today = new Date().toISOString().split('T')[0];
+                const validAds = data.filter(ad => {
+                    if (ad.start_date && ad.start_date > today) return false; // not started yet
+                    if (ad.end_date && ad.end_date < today) return false;     // expired
+                    return true;
+                });
+                setAds(validAds);
+            }
         } catch (e) { /* table may not exist yet */ }
     };
 
@@ -661,6 +670,11 @@ export function LibraryView() {
                         ads.forEach((ad, i) => {
                             const pos = Math.min((i + 1) * 2, items.length);
                             items.splice(pos + i, 0, { type: 'ad', data: ad });
+                            // Track impression (view_count)
+                            supabase.from('library_ads')
+                                .update({ view_count: (ad.view_count || 0) + 1 })
+                                .eq('id', ad.id)
+                                .then(() => { });
                         });
 
                         if (items.length === 0) return null;
