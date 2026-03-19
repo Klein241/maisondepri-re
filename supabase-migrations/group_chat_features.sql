@@ -121,3 +121,34 @@ ON library_ads FOR ALL
 TO authenticated
 USING (true)
 WITH CHECK (true);
+
+-- 10. Create push_subscriptions table (for Web Push / VAPID)
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    user_id UUID NOT NULL,
+    endpoint TEXT NOT NULL,
+    p256dh TEXT NOT NULL DEFAULT '',
+    auth TEXT NOT NULL DEFAULT '',
+    user_agent TEXT DEFAULT '',
+    device_name TEXT DEFAULT 'Unknown',
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(endpoint)
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_subs_user_id ON push_subscriptions(user_id);
+CREATE INDEX IF NOT EXISTS idx_push_subs_active ON push_subscriptions(is_active);
+
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Service role can manage push_subscriptions" ON push_subscriptions;
+END $$;
+
+-- Allow authenticated users to manage their own subscriptions
+CREATE POLICY "Service role can manage push_subscriptions"
+ON push_subscriptions FOR ALL
+USING (true)
+WITH CHECK (true);
