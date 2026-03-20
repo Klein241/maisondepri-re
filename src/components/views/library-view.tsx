@@ -610,7 +610,7 @@ export function LibraryView() {
                             <h2 className="text-lg font-bold text-white mb-1">{selectedBook.title}</h2>
                             <p className="text-sm text-slate-400 mb-2">{selectedBook.author}</p>
                             <Badge className="bg-primary/20 text-primary border-none text-[10px] mb-2">
-                                {CATEGORIES.find(c => c.id === selectedBook.category)?.icon} {CATEGORIES.find(c => c.id === selectedBook.category)?.label}
+                                {categories.find(c => c.id === selectedBook.category)?.icon} {categories.find(c => c.id === selectedBook.category)?.label || selectedBook.category}
                             </Badge>
                             <div className="flex items-center gap-3 text-xs text-slate-500 mb-2">
                                 {selectedBook.file_size > 0 && (

@@ -32,7 +32,7 @@ async function uploadAdImage(file: File): Promise<string> {
             formData.append('folder', 'ads');
             const res = await fetch(`${WORKER_URL}/api/r2/upload`, {
                 method: 'POST',
-                headers: { 'X-Admin-Key': ADMIN_KEY },
+                headers: { 'Authorization': `Bearer ${ADMIN_KEY}` },
                 body: formData,
             });
             if (res.ok) {
@@ -58,8 +58,8 @@ async function deleteAdImage(url: string) {
     if (WORKER_URL && url.includes('r2')) {
         try {
             await fetch(`${WORKER_URL}/api/r2/delete`, {
-                method: 'DELETE',
-                headers: { 'Content-Type': 'application/json', 'X-Admin-Key': ADMIN_KEY },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ADMIN_KEY}` },
                 body: JSON.stringify({ url }),
             });
             return;
@@ -81,7 +81,7 @@ const AD_PLACEMENTS = [
         bg: 'bg-blue-500/10 border-blue-500/20',
     },
     {
-        value: 'library_home',
+        value: 'home_feed',
         label: '📚 Accueil bibliothèque',
         description: 'Bannière en haut de la page bibliothèque',
         icon: BookOpenCheck,
@@ -97,7 +97,7 @@ const AD_PLACEMENTS = [
         bg: 'bg-amber-500/10 border-amber-500/20',
     },
     {
-        value: 'home',
+        value: 'reader_end',
         label: '🏠 Page d\'accueil',
         description: 'Bannière sur la page principale',
         icon: Home,
