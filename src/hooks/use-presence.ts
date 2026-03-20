@@ -26,23 +26,25 @@ export function usePresence(userId: string | undefined) {
         // ── 1. Set user online in DB ──────────────────────────────
         const setOnline = async () => {
             try {
-                await supabase
+                const { error } = await supabase
                     .from('profiles')
                     .update({ is_online: true, last_seen: new Date().toISOString() })
                     .eq('id', userId);
+                if (error) console.warn('[Presence] setOnline failed:', error.message);
             } catch (e) {
-                console.log('Online status columns may not exist yet');
+                console.warn('[Presence] setOnline exception:', e);
             }
         };
 
         const setOffline = async () => {
             try {
-                await supabase
+                const { error } = await supabase
                     .from('profiles')
                     .update({ is_online: false, last_seen: new Date().toISOString() })
                     .eq('id', userId);
+                if (error) console.warn('[Presence] setOffline failed:', error.message);
             } catch (e) {
-                // Ignore
+                console.warn('[Presence] setOffline exception:', e);
             }
         };
 
@@ -79,14 +81,15 @@ export function usePresence(userId: string | undefined) {
         // ── 3. Heartbeat: update last_seen every 20s ─────────────
         const heartbeatInterval = setInterval(async () => {
             try {
-                await supabase
+                const { error } = await supabase
                     .from('profiles')
                     .update({ is_online: true, last_seen: new Date().toISOString() })
                     .eq('id', userId);
+                if (error) console.warn('[Presence] heartbeat failed:', error.message);
             } catch (e) {
-                // Ignore
+                console.warn('[Presence] heartbeat exception:', e);
             }
-        }, 20000); // Every 20s (was 30s — more responsive now)
+        }, 20000);
 
         // ── 4. Real-time: Supabase Presence channel (INSTANT) ────
         const presenceChannel = supabase.channel('unified-presence');

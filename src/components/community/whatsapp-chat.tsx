@@ -38,7 +38,7 @@ import { BibleShareDialog } from './bible-share-dialog';
 import { ChatMessageBubble } from './chat-message-bubble';
 import { ChatInputBar } from './chat-input-bar';
 import { GroupGameDialog } from './group-game-dialog';
-import { FloatingBubbles } from './floating-bubbles';
+// FloatingBubbles removed — replaced by system notification messages in chat
 import { getInitials, formatTime, getMemberColor, normalizeBibleBookName } from './chat-utils';
 
 export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId, onlineUsers: externalOnlineUsers }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null; onlineUsers?: Record<string, boolean> }) {
@@ -3177,13 +3177,7 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                 )}
             </AnimatePresence>
 
-            {/* Feature 11: Floating draggable bubbles for prayers/tools in group */}
-            {view === 'group' && floatingItems.length > 0 && (
-                <FloatingBubbles
-                    items={floatingItems}
-                    onRemove={(id) => setFloatingItems(prev => prev.filter(item => item.id !== id))}
-                />
-            )}
+            {/* FloatingBubbles removed — group actions now show as system notification messages */}
 
             {/* Input Area — ChatInputBar component */}
             <ChatInputBar

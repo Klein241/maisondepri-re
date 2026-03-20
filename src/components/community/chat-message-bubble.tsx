@@ -337,7 +337,7 @@ export function ChatMessageBubble({
                 </div>
 
                 {/* Feature 7: Comment count badge — positioned BELOW the message container */}
-                {msg.comment_count && msg.comment_count > 0 && (
+                {msg.comment_count != null && msg.comment_count > 0 && (
                     <button
                         onClick={() => onThread(msg)}
                         className={cn(
