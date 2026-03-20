@@ -7,7 +7,7 @@ import { BottomNav } from '@/components/bottom-nav';
 import { useAppStore } from '@/lib/store';
 import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
-import { AppTutorial, useTutorial } from '@/components/app-tutorial';
+import { FeatureTutorialOverlay } from '@/components/feature-tutorial';
 
 // Dynamic imports to prevent TDZ errors in production bundles
 const HomeView = dynamic(() => import('@/components/views/home-view').then(m => ({ default: m.HomeView })), { ssr: false });
@@ -73,7 +73,6 @@ export default function Home() {
   const { user, isHydrated, activeTab, setActiveTab, selectedDay, setSelectedDay } = useAppStore();
   const [showSplash, setShowSplash] = useState(true);
   const [hideNav, setHideNav] = useState(false);
-  const { showTutorial, setShowTutorial } = useTutorial();
 
   const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
 
@@ -203,12 +202,8 @@ export default function Home() {
         />
       )}
 
-      {/* App tutorial - shown on first visit */}
-      <AnimatePresence>
-        {showTutorial && (
-          <AppTutorial onComplete={() => setShowTutorial(false)} />
-        )}
-      </AnimatePresence>
+      {/* Contextual feature tutorial - shown on first visit per feature */}
+      <FeatureTutorialOverlay featureId={activeTab} />
     </main>
   );
 }
