@@ -41,7 +41,7 @@ import { GroupGameDialog } from './group-game-dialog';
 import { FloatingBubbles } from './floating-bubbles';
 import { getInitials, formatTime, getMemberColor, normalizeBibleBookName } from './chat-utils';
 
-export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null }) {
+export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversationId, onlineUsers: externalOnlineUsers }: WhatsAppChatProps & { activeGroupId?: string | null; activeConversationId?: string | null; onlineUsers?: Record<string, boolean> }) {
     // View State
     const [view, setView] = useState<'list' | 'conversation' | 'group' | 'call_history'>('list');
 
@@ -61,6 +61,13 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     const [messages, setMessages] = useState<Message[]>([]);
     const [allUsers, setAllUsers] = useState<ChatUser[]>([]);
     const [onlineUsers, setOnlineUsers] = useState<Record<string, boolean>>({});
+
+    // Sync onlineUsers from parent (usePresence hook) when available
+    useEffect(() => {
+        if (externalOnlineUsers && Object.keys(externalOnlineUsers).length > 0) {
+            setOnlineUsers(externalOnlineUsers);
+        }
+    }, [externalOnlineUsers]);
     const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
     const [groupMembers, setGroupMembers] = useState<GroupMember[]>([]);
     const [showGroupMembers, setShowGroupMembers] = useState(false);
@@ -315,14 +322,28 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         };
         initData();
 
-        const cleanup = setupPresenceChannel();
+        // Presence is now managed by the parent (usePresence hook)
+        // We just ensure last_seen is updated when the chat is open
+        let lastSeenInterval: NodeJS.Timeout | null = null;
+        if (user) {
+            supabase.from('profiles')
+                .update({ is_online: true, last_seen: new Date().toISOString() })
+                .eq('id', user.id)
+                .then(() => { });
+            lastSeenInterval = setInterval(() => {
+                supabase.from('profiles')
+                    .update({ is_online: true, last_seen: new Date().toISOString() })
+                    .eq('id', user.id)
+                    .then(() => { });
+            }, 30000);
+        }
 
         // Disable polling - rely on realtime subscriptions only
         // This was causing the continuous refresh issue
         // const pollInterval = setInterval(...)
 
         return () => {
-            cleanup?.();
+            if (lastSeenInterval) clearInterval(lastSeenInterval);
             if (reloadTimeoutRef.current) {
                 clearTimeout(reloadTimeoutRef.current);
             }
@@ -638,49 +659,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
-    // Setup presence channel for online status
-    const setupPresenceChannel = () => {
-        if (!user) return;
-
-        // CRITICAL: All users MUST be on the SAME channel to see each other's presence
-        const channel = supabase.channel('global_presence');
-        presenceChannelRef.current = channel;
-
-        channel
-            .on('presence', { event: 'sync' }, () => {
-                const state = channel.presenceState();
-                const online: Record<string, boolean> = {};
-                Object.values(state).forEach((presences: any) => {
-                    presences.forEach((p: any) => {
-                        online[p.user_id] = true;
-                    });
-                });
-                setOnlineUsers(online);
-            })
-            .subscribe(async (status) => {
-                if (status === 'SUBSCRIBED') {
-                    await channel.track({ user_id: user.id });
-                    // Also update last_seen in profiles
-                    supabase.from('profiles')
-                        .update({ last_seen: new Date().toISOString() })
-                        .eq('id', user.id)
-                        .then(() => { });
-                }
-            });
-
-        // Periodically update last_seen
-        const lastSeenInterval = setInterval(() => {
-            supabase.from('profiles')
-                .update({ last_seen: new Date().toISOString() })
-                .eq('id', user.id)
-                .then(() => { });
-        }, 60000); // Every minute
-
-        return () => {
-            clearInterval(lastSeenInterval);
-            channel.unsubscribe();
-        };
-    };
+    // Presence is now unified via usePresence hook in the parent component
+    // The setupPresenceChannel function has been removed to avoid conflicts
 
     // Load functions
     const loadConversations = async () => {

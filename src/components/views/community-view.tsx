@@ -838,6 +838,7 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                             }}
                                             activeGroupId={openChatGroupId}
                                             activeConversationId={openChatConversationId}
+                                            onlineUsers={onlineUsers}
                                         />
                                     </div>
                                 </TabsContent>
