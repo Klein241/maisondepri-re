@@ -1,21 +1,19 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
-const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-
 // Lazy initialization — avoid throwing during SSG/build when env vars are not yet available
 let _supabase: SupabaseClient | null = null
 
 function getClient(): SupabaseClient {
     if (!_supabase) {
+        // Read env vars lazily (at call time, not at module evaluation time)
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+        const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+
         if (!supabaseUrl || !supabaseKey) {
-            if (typeof window === 'undefined') {
-                // During SSG build: return a chainable no-op proxy
-                // This prevents crashes when Next.js pre-renders pages that import supabase
-                return createNoOpProxy() as unknown as SupabaseClient
-            }
-            throw new Error('Variables d\'environnement Supabase manquantes')
+            // During SSG build or SSR without env vars: return a chainable no-op proxy
+            // This prevents crashes when Next.js pre-renders pages that import supabase
+            return createNoOpProxy() as unknown as SupabaseClient
         }
         _supabase = createClient(supabaseUrl, supabaseKey)
     }

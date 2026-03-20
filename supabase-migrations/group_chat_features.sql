@@ -152,3 +152,34 @@ CREATE POLICY "Service role can manage push_subscriptions"
 ON push_subscriptions FOR ALL
 USING (true)
 WITH CHECK (true);
+
+-- 11. Library Categories (admin-managed)
+CREATE TABLE IF NOT EXISTS library_categories (
+    id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT NOT NULL UNIQUE,
+    icon TEXT DEFAULT '📁',
+    description TEXT DEFAULT '',
+    sort_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+ALTER TABLE library_categories ENABLE ROW LEVEL SECURITY;
+
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Everyone can read library_categories" ON library_categories;
+    DROP POLICY IF EXISTS "Authenticated can manage library_categories" ON library_categories;
+END $$;
+
+CREATE POLICY "Everyone can read library_categories"
+ON library_categories FOR SELECT
+USING (true);
+
+CREATE POLICY "Authenticated can manage library_categories"
+ON library_categories FOR ALL
+TO authenticated
+USING (true)
+WITH CHECK (true);

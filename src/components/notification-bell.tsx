@@ -259,7 +259,9 @@ export function NotificationBell() {
         try {
             const audio = new Audio('/notification.mp3');
             audio.volume = 0.4;
-            audio.play().catch(() => { });
+            audio.addEventListener('canplaythrough', () => {
+                audio.play().catch(() => { });
+            }, { once: true });
         } catch (e) { }
     }, []);
 

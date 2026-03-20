@@ -65,8 +65,13 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     // ── Preload notification sound ──────────────────────────
     useEffect(() => {
         if (typeof window !== 'undefined') {
-            soundRef.current = new Audio('/notification.mp3');
-            soundRef.current.volume = 0.4;
+            try {
+                const audio = new Audio('/notification.mp3');
+                audio.volume = 0.4;
+                // Only assign if the file loads successfully
+                audio.addEventListener('canplaythrough', () => { soundRef.current = audio; }, { once: true });
+                audio.addEventListener('error', () => { /* notification.mp3 not found, sound disabled */ }, { once: true });
+            } catch { /* ignore */ }
         }
     }, []);
 

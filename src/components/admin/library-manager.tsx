@@ -146,6 +146,10 @@ export function LibraryManager() {
     const [isBulkUploading, setIsBulkUploading] = useState(false);
     const [selectedBooks, setSelectedBooks] = useState<Set<string>>(new Set());
     const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [isBulkPaused, setIsBulkPaused] = useState(false);
+    const [bulkProgress, setBulkProgress] = useState({ current: 0, total: 0, action: '' });
+    const bulkPauseRef = useRef(false);
+    const bulkCancelRef = useRef(false);
 
     useEffect(() => {
         fetchBooks();
@@ -263,29 +267,38 @@ export function LibraryManager() {
         if (!confirm(`⚠️ Supprimer ${count} livre${count > 1 ? 's' : ''} ? Cette action est irréversible.`)) return;
 
         setIsBulkDeleting(true);
+        bulkCancelRef.current = false;
+        bulkPauseRef.current = false;
         let deleted = 0;
         let errors = 0;
+        const ids = Array.from(selectedBooks);
+        setBulkProgress({ current: 0, total: ids.length, action: 'Suppression' });
 
-        for (const bookId of selectedBooks) {
-            const book = books.find(b => b.id === bookId);
+        for (let i = 0; i < ids.length; i++) {
+            if (bulkCancelRef.current) break;
+            while (bulkPauseRef.current) {
+                await new Promise(r => setTimeout(r, 500));
+                if (bulkCancelRef.current) break;
+            }
+            if (bulkCancelRef.current) break;
+
+            const book = books.find(b => b.id === ids[i]);
             if (!book) continue;
+            setBulkProgress({ current: i + 1, total: ids.length, action: 'Suppression' });
 
             try {
-                // Delete file from R2 (or legacy Supabase Storage)
                 if (book.file_url) {
                     await deleteFromR2(book.file_url).catch(() => {
                         const filePath = book.file_url.split('/library/')[1];
                         if (filePath) supabase.storage.from('library').remove([filePath]);
                     });
                 }
-                // Delete cover from R2 (or legacy Supabase Storage)
                 if (book.cover_url) {
                     await deleteFromR2(book.cover_url).catch(() => {
                         const coverPath = book.cover_url!.split('/library/')[1];
                         if (coverPath) supabase.storage.from('library').remove([coverPath]);
                     });
                 }
-                // Delete book record
                 const { error } = await supabase.from('library_books').delete().eq('id', book.id);
                 if (error) throw error;
                 deleted++;
@@ -298,15 +311,19 @@ export function LibraryManager() {
         setSelectedBooks(new Set());
         await fetchBooks();
         setIsBulkDeleting(false);
+        setIsBulkPaused(false);
+        setBulkProgress({ current: 0, total: 0, action: '' });
 
-        if (errors === 0) {
+        if (bulkCancelRef.current) {
+            toast.info(`Suppression annulée. ${deleted} sur ${ids.length} supprimé(s).`);
+        } else if (errors === 0) {
             toast.success(`🗑️ ${deleted} livre${deleted > 1 ? 's' : ''} supprimé${deleted > 1 ? 's' : ''} avec succès.`);
         } else {
             toast.warning(`${deleted} supprimé${deleted > 1 ? 's' : ''}, ${errors} erreur${errors > 1 ? 's' : ''}.`);
         }
     };
 
-    // ── Bulk Publish/Hide ──────────────────────────────
+    // ── Bulk Publish/Hide with Pause/Stop + Grouped Notification ──
     const [isBulkPublishing, setIsBulkPublishing] = useState(false);
     const handleBulkPublish = async (publish: boolean) => {
         if (selectedBooks.size === 0) return;
@@ -315,31 +332,36 @@ export function LibraryManager() {
         if (!confirm(`${publish ? '📢' : '🔒'} ${action.charAt(0).toUpperCase() + action.slice(1)} ${count} livre${count > 1 ? 's' : ''} ?`)) return;
 
         setIsBulkPublishing(true);
+        bulkCancelRef.current = false;
+        bulkPauseRef.current = false;
         let updated = 0;
         let errors = 0;
+        const ids = Array.from(selectedBooks);
+        const publishedBookTitles: string[] = [];
+        setBulkProgress({ current: 0, total: ids.length, action: publish ? 'Publication' : 'Masquage' });
 
-        for (const bookId of selectedBooks) {
+        for (let i = 0; i < ids.length; i++) {
+            if (bulkCancelRef.current) break;
+            while (bulkPauseRef.current) {
+                await new Promise(r => setTimeout(r, 500));
+                if (bulkCancelRef.current) break;
+            }
+            if (bulkCancelRef.current) break;
+
+            setBulkProgress({ current: i + 1, total: ids.length, action: publish ? 'Publication' : 'Masquage' });
+
             try {
                 const { error } = await supabase
                     .from('library_books')
                     .update({ is_published: publish })
-                    .eq('id', bookId);
+                    .eq('id', ids[i]);
                 if (error) throw error;
                 updated++;
 
                 if (publish) {
-                    const book = books.find(b => b.id === bookId);
+                    const book = books.find(b => b.id === ids[i]);
                     if (book && !book.is_published) {
-                        const { data: { user: authUser } } = await supabase.auth.getUser();
-                        if (authUser) {
-                            notifyNewBook({
-                                bookId: book.id,
-                                bookTitle: book.title,
-                                bookAuthor: book.author,
-                                publisherId: authUser.id,
-                                publisherName: 'Administrateur',
-                            }).catch(console.error);
-                        }
+                        publishedBookTitles.push(book.title);
                     }
                 }
             } catch (e: any) {
@@ -347,11 +369,60 @@ export function LibraryManager() {
             }
         }
 
+        // Send ONE grouped notification for all published books
+        if (publish && publishedBookTitles.length > 0 && !bulkCancelRef.current) {
+            try {
+                const { data: { user: authUser } } = await supabase.auth.getUser();
+                if (authUser) {
+                    const { data: profile } = await supabase
+                        .from('profiles')
+                        .select('full_name')
+                        .eq('id', authUser.id)
+                        .single();
+
+                    // Build a single notification with all book titles
+                    const bookList = publishedBookTitles.length <= 5
+                        ? publishedBookTitles.map(t => `📖 ${t}`).join('\n')
+                        : publishedBookTitles.slice(0, 5).map(t => `📖 ${t}`).join('\n') + `\n... et ${publishedBookTitles.length - 5} autre(s)`;
+
+                    const WORKER_URL_NOTIF = process.env.NEXT_PUBLIC_WORKER_URL || process.env.NEXT_PUBLIC_NOTIFICATION_WORKER_URL || '';
+                    if (WORKER_URL_NOTIF) {
+                        // Get all user IDs for notification
+                        const { data: allUsers } = await supabase
+                            .from('profiles')
+                            .select('id')
+                            .neq('id', authUser.id);
+
+                        const recipientIds = allUsers?.map(u => u.id) || [];
+
+                        await fetch(`${WORKER_URL_NOTIF}/notify`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                action_type: 'new_book_published',
+                                actor_id: authUser.id,
+                                actor_name: profile?.full_name || 'Administrateur',
+                                recipient_ids: recipientIds.slice(0, 200),
+                                target_name: `${publishedBookTitles.length} nouveaux livres`,
+                                message_preview: bookList,
+                            }),
+                        }).catch(console.error);
+                    }
+                }
+            } catch (e) {
+                console.error('Grouped notification error:', e);
+            }
+        }
+
         setSelectedBooks(new Set());
         await fetchBooks();
         setIsBulkPublishing(false);
+        setIsBulkPaused(false);
+        setBulkProgress({ current: 0, total: 0, action: '' });
 
-        if (errors === 0) {
+        if (bulkCancelRef.current) {
+            toast.info(`${publish ? 'Publication' : 'Masquage'} annulé(e). ${updated} sur ${ids.length} traité(s).`);
+        } else if (errors === 0) {
             toast.success(`${publish ? '📢' : '🔒'} ${updated} livre${updated > 1 ? 's' : ''} ${publish ? 'publié' : 'masqué'}${updated > 1 ? 's' : ''}.`);
         } else {
             toast.warning(`${updated} traité${updated > 1 ? 's' : ''}, ${errors} erreur${errors > 1 ? 's' : ''}.`);
@@ -494,62 +565,54 @@ export function LibraryManager() {
 
                 {/* Bulk Selection Bar */}
                 {selectedBooks.size > 0 && (
-                    <div className="flex items-center gap-3 mb-4 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                        <CheckSquare className="w-5 h-5 text-red-400 shrink-0" />
-                        <span className="text-sm font-medium text-red-300">
-                            {selectedBooks.size} livre{selectedBooks.size > 1 ? 's' : ''} sélectionné{selectedBooks.size > 1 ? 's' : ''}
-                        </span>
-                        <div className="flex-1" />
-                        <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-muted-foreground hover:text-white"
-                            onClick={() => setSelectedBooks(new Set())}
-                        >
-                            Tout désélectionner
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={isBulkPublishing}
-                            onClick={() => handleBulkPublish(true)}
-                            className="gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10"
-                        >
-                            {isBulkPublishing ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Eye className="w-4 h-4" />
-                            )}
-                            Publier ({selectedBooks.size})
-                        </Button>
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            disabled={isBulkPublishing}
-                            onClick={() => handleBulkPublish(false)}
-                            className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
-                        >
-                            {isBulkPublishing ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <EyeOff className="w-4 h-4" />
-                            )}
-                            Masquer ({selectedBooks.size})
-                        </Button>
-                        <Button
-                            variant="destructive"
-                            size="sm"
-                            disabled={isBulkDeleting}
-                            onClick={handleBulkDelete}
-                            className="gap-2"
-                        >
-                            {isBulkDeleting ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                                <Trash2 className="w-4 h-4" />
-                            )}
-                            Supprimer ({selectedBooks.size})
-                        </Button>
+                    <div className="space-y-2 mb-4">
+                        <div className="flex items-center gap-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20 flex-wrap">
+                            <CheckSquare className="w-5 h-5 text-red-400 shrink-0" />
+                            <span className="text-sm font-medium text-red-300">
+                                {selectedBooks.size} livre{selectedBooks.size > 1 ? 's' : ''} sélectionné{selectedBooks.size > 1 ? 's' : ''}
+                            </span>
+                            <div className="flex-1" />
+                            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-white" onClick={() => setSelectedBooks(new Set())}>
+                                Tout désélectionner
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={isBulkPublishing || isBulkDeleting} onClick={() => handleBulkPublish(true)}
+                                className="gap-2 border-green-500/30 text-green-400 hover:bg-green-500/10">
+                                {isBulkPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4" />}
+                                Publier ({selectedBooks.size})
+                            </Button>
+                            <Button variant="outline" size="sm" disabled={isBulkPublishing || isBulkDeleting} onClick={() => handleBulkPublish(false)}
+                                className="gap-2 border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
+                                {isBulkPublishing ? <Loader2 className="w-4 h-4 animate-spin" /> : <EyeOff className="w-4 h-4" />}
+                                Masquer ({selectedBooks.size})
+                            </Button>
+                            <Button variant="destructive" size="sm" disabled={isBulkDeleting || isBulkPublishing} onClick={handleBulkDelete} className="gap-2">
+                                {isBulkDeleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                                Supprimer ({selectedBooks.size})
+                            </Button>
+                        </div>
+
+                        {/* Pause / Stop controls during bulk operations */}
+                        {(isBulkDeleting || isBulkPublishing) && (
+                            <div className="flex items-center gap-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                                <span className="text-sm text-blue-300">
+                                    {bulkProgress.action}: {bulkProgress.current}/{bulkProgress.total}
+                                </span>
+                                <div className="flex-1 bg-white/10 rounded-full h-2 overflow-hidden">
+                                    <div className="bg-blue-500 h-full rounded-full transition-all" style={{ width: `${bulkProgress.total > 0 ? (bulkProgress.current / bulkProgress.total * 100) : 0}%` }} />
+                                </div>
+                                <Button variant="outline" size="sm"
+                                    onClick={() => { bulkPauseRef.current = !bulkPauseRef.current; setIsBulkPaused(!isBulkPaused); }}
+                                    className={`gap-1.5 ${isBulkPaused ? 'border-green-500/50 text-green-400' : 'border-amber-500/50 text-amber-400'}`}>
+                                    {isBulkPaused ? '▶ Reprendre' : '⏸ Pause'}
+                                </Button>
+                                <Button variant="destructive" size="sm"
+                                    onClick={() => { bulkCancelRef.current = true; bulkPauseRef.current = false; setIsBulkPaused(false); }}
+                                    className="gap-1.5">
+                                    ⏹ Arrêter
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 )}
 

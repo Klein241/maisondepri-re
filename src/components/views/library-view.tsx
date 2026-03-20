@@ -15,18 +15,23 @@ import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/lib/store';
 
-// Categories
-const CATEGORIES = [
-    { id: 'all', label: 'Tout', icon: '📚' },
-    { id: 'bible-study', label: 'Étude biblique', icon: '📖' },
-    { id: 'prayer', label: 'Prière', icon: '🙏' },
-    { id: 'theology', label: 'Théologie', icon: '⛪' },
-    { id: 'devotional', label: 'Dévotionnel', icon: '💝' },
-    { id: 'biography', label: 'Biographie', icon: '👤' },
-    { id: 'youth', label: 'Jeunesse', icon: '🌟' },
-    { id: 'worship', label: 'Louange', icon: '🎵' },
-    { id: 'other', label: 'Autres', icon: '📕' },
-];
+// Categories — loaded dynamically from Supabase (admin-managed)
+const DEFAULT_CATEGORY_ALL = { id: 'all', label: 'Tout', icon: '📚' };
+
+// Category icons by id
+const CATEGORY_ICONS: Record<string, string> = {
+    'bible-study': '📖', 'prayer': '🙏', 'theology': '⛪',
+    'devotional': '💝', 'biography': '👤', 'youth': '🌟',
+    'worship': '🎵', 'other': '📕',
+};
+
+// "New" badge: books published within the last 7 days
+const NEW_BOOK_DAYS = 7;
+function isNewBook(createdAt: string | undefined): boolean {
+    if (!createdAt) return false;
+    const diff = Date.now() - new Date(createdAt).getTime();
+    return diff < NEW_BOOK_DAYS * 24 * 60 * 60 * 1000;
+}
 
 interface Book {
     id: string;
@@ -44,6 +49,7 @@ interface Book {
     rating_count: number;
     download_count: number;
     slug: string | null;
+    created_at?: string;
 }
 
 interface LibraryAd {
@@ -168,6 +174,9 @@ export function LibraryView() {
     // Ads state
     const [ads, setAds] = useState<LibraryAd[]>([]);
 
+    // Dynamic categories from Supabase
+    const [categories, setCategories] = useState<{ id: string; label: string; icon: string }[]>([DEFAULT_CATEGORY_ALL]);
+
     const isLoggedIn = !!user?.id;
 
     // Require auth helper
@@ -254,10 +263,53 @@ export function LibraryView() {
 
             if (error) throw error;
             setBooks(data || []);
+
+            // Load dynamic categories from admin-managed table
+            await loadCategories(data || []);
         } catch (e) {
             console.error('Error loading books:', e);
         }
         setIsLoading(false);
+    };
+
+    const loadCategories = async (loadedBooks: Book[]) => {
+        try {
+            // Try loading from library_categories table (admin-managed)
+            const { data: dbCategories, error } = await supabase
+                .from('library_categories')
+                .select('*')
+                .eq('is_active', true)
+                .order('sort_order', { ascending: true });
+
+            if (!error && dbCategories && dbCategories.length > 0) {
+                const cats = [
+                    DEFAULT_CATEGORY_ALL,
+                    ...dbCategories.map((c: any) => ({
+                        id: c.slug || c.id,
+                        label: c.name,
+                        icon: c.icon || CATEGORY_ICONS[c.slug] || '📁',
+                    })),
+                ];
+                setCategories(cats);
+                return;
+            }
+
+            // Fallback: extract unique categories from existing books
+            const uniqueCats = new Set(loadedBooks.map(b => b.category).filter(Boolean));
+            if (uniqueCats.size > 0) {
+                const cats = [
+                    DEFAULT_CATEGORY_ALL,
+                    ...Array.from(uniqueCats).map(cat => ({
+                        id: cat,
+                        label: cat.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+                        icon: CATEGORY_ICONS[cat] || '📁',
+                    })),
+                ];
+                setCategories(cats);
+            }
+        } catch {
+            // Keep default categories on error
+        }
     };
 
     const loadUserFavorites = async () => {
@@ -800,7 +852,7 @@ export function LibraryView() {
 
                 {/* Categories */}
                 <div className="flex gap-2 overflow-x-auto pb-3 mb-4 scrollbar-hide">
-                    {CATEGORIES.map(cat => (
+                    {categories.map(cat => (
                         <button key={cat.id} onClick={() => setSelectedCategory(cat.id)}
                             className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${selectedCategory === cat.id
                                 ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-500/30'
@@ -865,6 +917,7 @@ export function LibraryView() {
                     <div className="grid grid-cols-3 gap-3">
                         {filteredBooks.map(book => {
                             const isFav = favorites.has(book.id);
+                            const bookIsNew = isNewBook(book.created_at);
 
                             return (
                                 <motion.div key={book.id} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}
@@ -877,6 +930,12 @@ export function LibraryView() {
                                                 <BookCover title={book.title} category={book.category} />
                                             )}
                                         </div>
+                                        {/* New badge */}
+                                        {bookIsNew && (
+                                            <div className="absolute top-1.5 left-1.5 bg-emerald-500 text-white text-[8px] font-bold uppercase px-1.5 py-0.5 rounded-full shadow-lg shadow-emerald-500/40 animate-pulse">
+                                                New
+                                            </div>
+                                        )}
                                         {isFav && (
                                             <div className="absolute top-1.5 right-1.5 bg-red-500/90 rounded-full p-1">
                                                 <Heart className="h-2.5 w-2.5 text-white fill-white" />
