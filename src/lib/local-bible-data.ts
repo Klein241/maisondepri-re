@@ -106,12 +106,17 @@ export const OLD_TESTAMENT_BOOKS = BIBLE_BOOKS.filter(b => b.testament === 'AT')
 export const NEW_TESTAMENT_BOOKS = BIBLE_BOOKS.filter(b => b.testament === 'NT');
 
 // Parse verse text from file line format: "1  verse text here"
+// Also strips Hebrew cross-reference prefixes like "(7:26)" that appear in some LSG files
 export function parseVerseLine(line: string): { verse: number; text: string } | null {
     const match = line.match(/^(\d+)\s+(.+)$/);
     if (match) {
+        let text = match[2].trim();
+        // Remove Hebrew cross-reference prefix: "(7:26) Actual text..."
+        // These appear in ~95 files where Hebrew and Christian verse numbering differ
+        text = text.replace(/^\(\d+:\d+\)\s*/, '');
         return {
             verse: parseInt(match[1], 10),
-            text: match[2].trim()
+            text
         };
     }
     return null;

@@ -261,12 +261,24 @@ export function BibleView() {
                             Mémorisation
                         </button>
 
-                        <div className="parole-nav-label" style={{ marginTop: 20 }}>Livres</div>
+                        <div className="parole-nav-label" style={{ marginTop: 20 }}>Ancien Testament</div>
                     </div>
 
                     <div className="parole-sidebar-book">
                         <div className="parole-book-grid">
-                            {books.filter(b => b.testament === 'NT').slice(0, 12).map(b => (
+                            {books.filter(b => b.testament === 'OT').map(b => (
+                                <button
+                                    key={b.id}
+                                    className={`parole-book-chip ${activeBook?.id === b.id ? 'active' : ''}`}
+                                    onClick={() => { selectBook(b); setScreen('reader'); }}
+                                >
+                                    {b.abbreviation}
+                                </button>
+                            ))}
+                        </div>
+                        <div className="parole-nav-label" style={{ padding: '12px 0 6px', margin: 0 }}>Nouveau Testament</div>
+                        <div className="parole-book-grid">
+                            {books.filter(b => b.testament === 'NT').map(b => (
                                 <button
                                     key={b.id}
                                     className={`parole-book-chip ${activeBook?.id === b.id ? 'active' : ''}`}

@@ -1,45 +1,48 @@
 /* ══════════════════════════════════════
-   PAROLE — Bible LSG 1910 Design System
+   PAROLE — Bible LSG 1910 (Dark Mode)
+   Harmonised with app dark theme
    ══════════════════════════════════════ */
 
 .parole {
-  --ink: #1A1814;
-  --ink2: #3D3A34;
+  --ink: #E8E4DC;
+  --ink2: #B5AFA5;
   --ink3: #7A7469;
-  --ink4: #B5AFA5;
-  --parchment: #FBF9F5;
-  --warm: #F5F1EA;
-  --warm2: #EDE8DF;
-  --warm3: #DDD7CB;
-  --gold: #B8963E;
-  --gold-l: #F5EDD6;
-  --gold-d: #8A6E28;
-  --violet: #5B4FCF;
-  --violet-l: #ECEAFC;
-  --violet-d: #3D3499;
-  --hl-y: rgba(250, 210, 80, 0.35);
+  --ink4: #4A463E;
+  --bg: #0B0E14;
+  --bg2: #11141B;
+  --bg3: #181C24;
+  --bg4: #1F232D;
+  --border1: rgba(255, 255, 255, 0.06);
+  --border2: rgba(255, 255, 255, 0.1);
+  --gold: #C9A84C;
+  --gold-l: rgba(201, 168, 76, 0.12);
+  --gold-d: #A88A3A;
+  --violet: #7B6FEF;
+  --violet-l: rgba(123, 111, 239, 0.1);
+  --violet-d: #5B4FCF;
+  --hl-y: rgba(250, 210, 80, 0.18);
   --hl-y-b: #C9950A;
-  --hl-g: rgba(52, 199, 140, 0.22);
+  --hl-g: rgba(52, 199, 140, 0.14);
   --hl-g-b: #1A8C5E;
-  --hl-b: rgba(80, 150, 250, 0.22);
+  --hl-b: rgba(80, 150, 250, 0.14);
   --hl-b-b: #1E6ED4;
-  --hl-r: rgba(230, 80, 80, 0.18);
+  --hl-r: rgba(230, 80, 80, 0.14);
   --hl-r-b: #C03030;
-  --hl-p: rgba(190, 80, 220, 0.18);
+  --hl-p: rgba(190, 80, 220, 0.14);
   --hl-p-b: #9030B0;
-  --note-c: #5B4FCF;
+  --note-c: #7B6FEF;
   --p-r: 12px;
   --p-r-lg: 20px;
   --p-serif: var(--font-cormorant), 'Cormorant Garamond', Georgia, 'Times New Roman', serif;
   --p-sans: var(--font-outfit), 'Outfit', system-ui, -apple-system, sans-serif;
-  --p-shadow: 0 2px 16px rgba(26, 24, 20, 0.08);
-  --p-shadow-lg: 0 8px 40px rgba(26, 24, 20, 0.13);
+  --p-shadow: 0 2px 16px rgba(0, 0, 0, 0.3);
+  --p-shadow-lg: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
 
 /* ═══ LAYOUT ═══ */
 .parole {
   font-family: var(--p-sans);
-  background: var(--warm);
+  background: var(--bg);
   color: var(--ink);
   min-height: 100%;
   font-size: 15px;
@@ -55,7 +58,7 @@
 .parole-sidebar {
   width: 260px;
   flex-shrink: 0;
-  background: var(--ink);
+  background: var(--bg2);
   display: flex;
   flex-direction: column;
   height: 100vh;
@@ -63,11 +66,12 @@
   top: 0;
   overflow: hidden;
   z-index: 50;
+  border-right: 0.5px solid var(--border1);
 }
 
 .parole-sidebar-logo {
   padding: 28px 24px 20px;
-  border-bottom: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-bottom: 0.5px solid var(--border1);
 }
 
 .parole-logo-mark {
@@ -95,13 +99,13 @@
   font-family: var(--p-serif);
   font-size: 22px;
   font-weight: 500;
-  color: #fff;
+  color: var(--ink);
   letter-spacing: -0.01em;
 }
 
 .parole-logo-sub {
   font-size: 10px;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--ink4);
   margin-top: 2px;
   letter-spacing: .08em;
   text-transform: uppercase;
@@ -116,7 +120,7 @@
 .parole-nav-label {
   font-size: 10px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.25);
+  color: var(--ink4);
   letter-spacing: .1em;
   text-transform: uppercase;
   padding: 0 12px;
@@ -130,7 +134,7 @@
   padding: 9px 12px;
   border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--ink3);
   font-size: 13.5px;
   font-weight: 400;
   transition: background .15s, color .15s;
@@ -149,13 +153,13 @@
 }
 
 .parole-nav-item:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink2);
 }
 
 .parole-nav-item.active {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
   font-weight: 500;
 }
 
@@ -167,7 +171,7 @@
   margin-left: auto;
   font-size: 10px;
   background: var(--gold);
-  color: var(--ink);
+  color: var(--bg);
   border-radius: 20px;
   padding: 1px 7px;
   font-weight: 600;
@@ -175,22 +179,22 @@
 
 .parole-sidebar-book {
   padding: 16px 12px;
-  border-top: 0.5px solid rgba(255, 255, 255, 0.08);
+  border-top: 0.5px solid var(--border1);
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 .parole-book-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 4px;
-  max-height: 300px;
-  overflow-y: auto;
 }
 
 .parole-book-chip {
   padding: 6px 8px;
   border-radius: 8px;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--ink3);
   cursor: pointer;
   background: transparent;
   border: 0.5px solid transparent;
@@ -200,14 +204,14 @@
 }
 
 .parole-book-chip:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--ink2);
 }
 
 .parole-book-chip.active {
-  background: rgba(184, 150, 62, 0.15);
+  background: var(--gold-l);
   color: var(--gold);
-  border-color: rgba(184, 150, 62, 0.3);
+  border-color: rgba(201, 168, 76, 0.2);
   font-weight: 500;
 }
 
@@ -221,8 +225,8 @@
 
 /* ═══ TOP NAV ═══ */
 .parole-topnav {
-  background: var(--parchment);
-  border-bottom: 0.5px solid var(--warm3);
+  background: var(--bg);
+  border-bottom: 0.5px solid var(--border1);
   padding: 14px 32px;
   display: flex;
   align-items: center;
@@ -274,7 +278,7 @@
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  border: 0.5px solid var(--warm3);
+  border: 0.5px solid var(--border2);
   background: transparent;
   color: var(--ink3);
   cursor: pointer;
@@ -287,7 +291,7 @@
 }
 
 .parole-ch-arrow:hover {
-  background: var(--warm2);
+  background: var(--bg3);
   color: var(--ink);
 }
 
@@ -306,7 +310,7 @@
   height: 34px;
   padding: 0 14px;
   border-radius: 9px;
-  border: 0.5px solid var(--warm3);
+  border: 0.5px solid var(--border2);
   background: transparent;
   color: var(--ink3);
   font-family: var(--p-sans);
@@ -326,24 +330,24 @@
 }
 
 .parole-action-btn:hover {
-  background: var(--warm2);
+  background: var(--bg3);
   color: var(--ink);
 }
 
 .parole-action-btn.primary {
-  background: var(--ink);
+  background: var(--violet);
   color: #fff;
   border-color: transparent;
 }
 
 .parole-action-btn.primary:hover {
-  background: var(--ink2);
+  background: var(--violet-d);
 }
 
 /* ═══ SEARCH ═══ */
 .parole-search-wrap {
-  background: var(--parchment);
-  border-bottom: 0.5px solid var(--warm3);
+  background: var(--bg);
+  border-bottom: 0.5px solid var(--border1);
   padding: 10px 32px;
   display: none;
   gap: 10px;
@@ -359,8 +363,8 @@
   height: 36px;
   padding: 0 14px;
   border-radius: 9px;
-  border: 0.5px solid var(--warm3);
-  background: var(--warm);
+  border: 0.5px solid var(--border2);
+  background: var(--bg3);
   font-family: var(--p-sans);
   font-size: 13px;
   color: var(--ink);
@@ -388,8 +392,8 @@
   align-items: center;
   gap: 12px;
   padding: 8px 32px;
-  background: var(--parchment);
-  border-bottom: 0.5px solid var(--warm3);
+  background: var(--bg);
+  border-bottom: 0.5px solid var(--border1);
 }
 
 .parole-font-bar.open {
@@ -467,7 +471,7 @@
   content: '';
   flex: 1;
   height: 0.5px;
-  background: var(--warm3);
+  background: var(--border2);
 }
 
 .parole-divider-diamond {
@@ -518,7 +522,7 @@
 }
 
 .parole-verse-content:hover {
-  background: var(--warm2);
+  background: var(--bg3);
 }
 
 .parole-verse-content.hl-yellow {
@@ -552,7 +556,7 @@
 }
 
 .parole-verse-content.hl-orange {
-  background: rgba(240, 160, 40, 0.22);
+  background: rgba(240, 160, 40, 0.14);
   border-left-color: #C07A10;
   padding-left: 10px;
 }
@@ -572,8 +576,8 @@
 }
 
 .parole-vtext mark {
-  background: rgba(250, 210, 80, 0.5);
-  color: var(--gold-d);
+  background: rgba(250, 210, 80, 0.35);
+  color: var(--gold);
   border-radius: 3px;
   padding: 1px 2px;
 }
@@ -600,7 +604,8 @@
   top: -46px;
   left: 44px;
   z-index: 200;
-  background: var(--ink);
+  background: var(--bg4);
+  border: 0.5px solid var(--border2);
   border-radius: 12px;
   padding: 8px 12px;
   display: flex;
@@ -617,7 +622,9 @@
   left: 20px;
   width: 10px;
   height: 10px;
-  background: var(--ink);
+  background: var(--bg4);
+  border-right: 0.5px solid var(--border2);
+  border-bottom: 0.5px solid var(--border2);
   transform: rotate(45deg);
   border-radius: 2px;
 }
@@ -644,7 +651,7 @@
 .parole-tb-div {
   width: 0.5px;
   height: 16px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--border2);
   margin: 0 2px;
 }
 
@@ -652,9 +659,9 @@
   font-size: 11px;
   font-family: var(--p-sans);
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--ink3);
   background: transparent;
-  border: 0.5px solid rgba(255, 255, 255, 0.15);
+  border: 0.5px solid var(--border2);
   border-radius: 7px;
   padding: 3px 9px;
   cursor: pointer;
@@ -662,8 +669,8 @@
 }
 
 .parole-tb-act:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
 }
 
 .parole-tb-act.rm {
@@ -723,7 +730,7 @@
   font-size: 12px;
   padding: 4px 10px;
   border-radius: 7px;
-  border: 0.5px solid var(--warm3);
+  border: 0.5px solid var(--border2);
   background: transparent;
   color: var(--ink3);
   cursor: pointer;
@@ -732,7 +739,7 @@
 }
 
 .parole-btn-ghost:hover {
-  background: var(--warm2);
+  background: var(--bg3);
   color: var(--ink);
 }
 
@@ -773,8 +780,8 @@
 /* ═══ SIDE PANEL ═══ */
 .parole-side-panel {
   display: none;
-  border-left: 0.5px solid var(--warm3);
-  background: var(--parchment);
+  border-left: 0.5px solid var(--border1);
+  background: var(--bg2);
   padding: 28px 24px;
   overflow-y: auto;
   max-height: calc(100vh - 57px);
@@ -798,8 +805,8 @@
 .parole-ann-card {
   padding: 14px 16px;
   border-radius: 12px;
-  background: var(--warm);
-  border: 0.5px solid var(--warm3);
+  background: var(--bg3);
+  border: 0.5px solid var(--border1);
   margin-bottom: 10px;
   cursor: pointer;
   transition: border-color .15s, background .15s;
@@ -807,7 +814,7 @@
 
 .parole-ann-card:hover {
   border-color: var(--violet);
-  background: var(--warm2);
+  background: var(--bg4);
 }
 
 .parole-ann-card-ref {
@@ -890,8 +897,8 @@
 .parole-streak-card {
   flex: 1;
   min-width: 140px;
-  background: var(--warm);
-  border: 0.5px solid var(--warm3);
+  background: var(--bg3);
+  border: 0.5px solid var(--border1);
   border-radius: 16px;
   padding: 20px 22px;
 }
@@ -928,8 +935,8 @@
 }
 
 .parole-plan-card {
-  background: var(--parchment);
-  border: 0.5px solid var(--warm3);
+  background: var(--bg2);
+  border: 0.5px solid var(--border1);
   border-radius: 16px;
   overflow: hidden;
   margin-bottom: 20px;
@@ -937,7 +944,7 @@
 
 .parole-plan-card-header {
   padding: 18px 22px 14px;
-  border-bottom: 0.5px solid var(--warm3);
+  border-bottom: 0.5px solid var(--border1);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -958,7 +965,7 @@
 
 .parole-prog-bar {
   height: 3px;
-  background: var(--warm3);
+  background: var(--bg4);
   border-radius: 2px;
   margin: 14px 22px 0;
   overflow: hidden;
@@ -984,7 +991,7 @@
   align-items: center;
   gap: 14px;
   padding: 11px 22px;
-  border-bottom: 0.5px solid var(--warm3);
+  border-bottom: 0.5px solid var(--border1);
   cursor: pointer;
   transition: background .12s;
 }
@@ -994,18 +1001,18 @@
 }
 
 .parole-day-row:hover {
-  background: var(--warm2);
+  background: var(--bg3);
 }
 
 .parole-day-row.today {
-  background: rgba(184, 150, 62, 0.06);
+  background: rgba(201, 168, 76, 0.06);
 }
 
 .parole-day-check {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 1.5px solid var(--warm3);
+  border: 1.5px solid var(--border2);
   flex-shrink: 0;
   display: flex;
   align-items: center;
@@ -1023,8 +1030,8 @@
   display: block;
   width: 7px;
   height: 5px;
-  border-left: 1.5px solid #fff;
-  border-bottom: 1.5px solid #fff;
+  border-left: 1.5px solid var(--bg);
+  border-bottom: 1.5px solid var(--bg);
   transform: rotate(-45deg) translateY(-1px);
 }
 
@@ -1053,7 +1060,7 @@
   padding: 1px 8px;
   border-radius: 20px;
   background: var(--gold-l);
-  color: var(--gold-d);
+  color: var(--gold);
 }
 
 .parole-day-ref {
@@ -1077,8 +1084,8 @@
 }
 
 .parole-plan-option {
-  background: var(--parchment);
-  border: 0.5px solid var(--warm3);
+  background: var(--bg2);
+  border: 0.5px solid var(--border1);
   border-radius: 14px;
   padding: 18px 20px;
   cursor: pointer;
@@ -1087,7 +1094,7 @@
 
 .parole-plan-option:hover {
   border-color: var(--gold);
-  background: var(--warm);
+  background: var(--bg3);
 }
 
 .parole-plan-option.selected {
@@ -1112,7 +1119,7 @@
 
 .parole-plan-opt-dur {
   font-size: 11px;
-  color: var(--gold-d);
+  color: var(--gold);
   font-weight: 600;
   margin-top: 8px;
 }
@@ -1128,8 +1135,8 @@
 .parole-flash-card {
   width: 100%;
   max-width: 540px;
-  background: var(--parchment);
-  border: 0.5px solid var(--warm3);
+  background: var(--bg2);
+  border: 0.5px solid var(--border1);
   border-radius: 20px;
   padding: 36px 40px;
   text-align: center;
@@ -1147,7 +1154,7 @@
 }
 
 .parole-flash-card.flipped {
-  background: var(--warm);
+  background: var(--bg3);
   border-color: var(--violet);
 }
 
@@ -1198,8 +1205,8 @@
   flex: 1;
   padding: 12px 8px;
   border-radius: 12px;
-  border: 0.5px solid var(--warm3);
-  background: var(--parchment);
+  border: 0.5px solid var(--border1);
+  background: var(--bg2);
   font-family: var(--p-sans);
   font-size: 13px;
   font-weight: 500;
@@ -1213,8 +1220,8 @@
 }
 
 .parole-flash-btn.hard {
-  color: #C03030;
-  border-color: rgba(230, 80, 80, 0.3);
+  color: #ff6b6b;
+  border-color: rgba(230, 80, 80, 0.2);
 }
 
 .parole-flash-btn.hard:hover:not(:disabled) {
@@ -1222,17 +1229,17 @@
 }
 
 .parole-flash-btn.ok {
-  color: #B8963E;
-  border-color: rgba(184, 150, 62, 0.3);
+  color: var(--gold);
+  border-color: rgba(201, 168, 76, 0.2);
 }
 
 .parole-flash-btn.ok:hover:not(:disabled) {
-  background: rgba(184, 150, 62, 0.08);
+  background: rgba(201, 168, 76, 0.08);
 }
 
 .parole-flash-btn.easy {
-  color: #1A8C5E;
-  border-color: rgba(52, 199, 140, 0.3);
+  color: #34C78C;
+  border-color: rgba(52, 199, 140, 0.2);
 }
 
 .parole-flash-btn.easy:hover:not(:disabled) {
@@ -1262,8 +1269,8 @@
 }
 
 .parole-memo-stat {
-  background: var(--warm);
-  border: 0.5px solid var(--warm3);
+  background: var(--bg3);
+  border: 0.5px solid var(--border1);
   border-radius: 12px;
   padding: 16px;
   text-align: center;
@@ -1285,7 +1292,7 @@
 /* QUEUE */
 .parole-memo-queue {
   margin-top: 28px;
-  border-top: 0.5px solid var(--warm3);
+  border-top: 0.5px solid var(--border1);
   padding-top: 24px;
 }
 
@@ -1304,8 +1311,8 @@
   gap: 14px;
   padding: 10px 14px;
   border-radius: 10px;
-  border: 0.5px solid var(--warm3);
-  background: var(--parchment);
+  border: 0.5px solid var(--border1);
+  background: var(--bg2);
   margin-bottom: 8px;
   cursor: pointer;
   transition: border-color .15s;
@@ -1342,17 +1349,17 @@
 
 .parole-due-now {
   background: rgba(230, 80, 80, 0.12);
-  color: #C03030;
+  color: #ff6b6b;
 }
 
 .parole-due-soon {
-  background: rgba(184, 150, 62, 0.12);
-  color: var(--gold-d);
+  background: rgba(201, 168, 76, 0.12);
+  color: var(--gold);
 }
 
 .parole-due-later {
   background: rgba(52, 199, 140, 0.1);
-  color: #1A8C5E;
+  color: #34C78C;
 }
 
 /* ═══ BOOK SELECTOR OVERLAY ═══ */
@@ -1360,7 +1367,7 @@
   position: fixed;
   inset: 0;
   z-index: 100;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
@@ -1368,7 +1375,8 @@
 }
 
 .parole-book-modal {
-  background: var(--parchment);
+  background: var(--bg2);
+  border: 0.5px solid var(--border2);
   border-radius: 20px;
   width: 90%;
   max-width: 480px;
@@ -1379,7 +1387,7 @@
 
 .parole-book-modal-header {
   padding: 20px 24px;
-  border-bottom: 0.5px solid var(--warm3);
+  border-bottom: 0.5px solid var(--border1);
 }
 
 .parole-book-modal-title {
@@ -1410,7 +1418,7 @@
 .parole-chapter-btn {
   aspect-ratio: 1;
   border-radius: 10px;
-  border: 0.5px solid var(--warm3);
+  border: 0.5px solid var(--border2);
   background: transparent;
   color: var(--ink3);
   font-family: var(--p-sans);
@@ -1424,13 +1432,13 @@
 }
 
 .parole-chapter-btn:hover {
-  background: var(--warm2);
+  background: var(--bg3);
   color: var(--ink);
 }
 
 .parole-chapter-btn.active {
   background: var(--gold);
-  color: #fff;
+  color: var(--bg);
   border-color: var(--gold);
   font-weight: 600;
 }
@@ -1448,7 +1456,7 @@
 .parole-spinner {
   width: 32px;
   height: 32px;
-  border: 2px solid var(--warm3);
+  border: 2px solid var(--border2);
   border-top-color: var(--gold);
   border-radius: 50%;
   animation: parole-spin 0.8s linear infinite;
@@ -1474,8 +1482,8 @@
   position: sticky;
   bottom: 0;
   z-index: 50;
-  background: var(--parchment);
-  border-top: 0.5px solid var(--warm3);
+  background: var(--bg2);
+  border-top: 0.5px solid var(--border1);
   padding: 8px 12px;
 }
 
@@ -1509,7 +1517,7 @@
 
 .parole-mobile-pill.active {
   background: var(--gold-l);
-  color: var(--gold-d);
+  color: var(--gold);
 }
 
 /* ═══ RESPONSIVE ═══ */
@@ -1523,7 +1531,7 @@
   }
 
   .parole-topnav {
-    padding: 12px 16px;
+    padding: 10px 16px;
   }
 
   .parole-search-wrap {
@@ -1535,7 +1543,7 @@
   }
 
   .parole-screen {
-    padding: 24px 16px 80px;
+    padding: 24px 16px 100px;
   }
 
   .parole-chapter-name {
@@ -1550,8 +1558,41 @@
     display: block;
   }
 
+  .parole-side-panel {
+    display: none !important;
+  }
+
   .parole-topnav-right .parole-action-btn span {
     display: none;
+  }
+
+  .parole-breadcrumb-book {
+    font-size: 16px;
+  }
+
+  .parole-breadcrumb-ch {
+    font-size: 16px;
+  }
+
+  .parole-plans-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .parole-flash-card {
+    padding: 24px 20px;
+  }
+
+  .parole-memo-stats-row {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+  }
+
+  .parole-memo-stat {
+    padding: 12px 8px;
+  }
+
+  .parole-memo-stat-num {
+    font-size: 22px;
   }
 }
 
@@ -1561,6 +1602,10 @@
 }
 
 .parole ::-webkit-scrollbar-thumb {
-  background: var(--warm3);
+  background: var(--border2);
   border-radius: 4px;
+}
+
+.parole ::-webkit-scrollbar-track {
+  background: transparent;
 }

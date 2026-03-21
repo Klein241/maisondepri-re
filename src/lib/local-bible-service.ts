@@ -15,12 +15,11 @@ import {
     formatReference
 } from './local-bible-data';
 
-import { supabase } from './supabase';
-
 // Cache for loaded chapters
 const chapterCache: Map<string, BibleChapter> = new Map();
 
-// Load a chapter from local files or Supabase override
+// Load a chapter from local .txt files (public/bible/)
+// All Bible data is offline — Louis Segond 1910 complete
 export async function loadChapter(bookId: string, chapter: number): Promise<BibleChapter | null> {
     const cacheKey = `${bookId}_${chapter}`;
 
@@ -42,55 +41,8 @@ export async function loadChapter(bookId: string, chapter: number): Promise<Bibl
     }
 
     try {
-        // 1. Try to fetch from Supabase "bible_chapters" (Override)
-        // Use a strict 2s timeout via Promise.race to never block local file loading
-        const fetchOverride = async (): Promise<BibleChapter | null> => {
-            try {
-                const { data, error } = await supabase
-                    .from('bible_chapters')
-                    .select('content')
-                    .match({ book_id: bookId, chapter_number: chapter })
-                    .single();
-
-                if (data && !error) {
-                    const verses = JSON.parse(data.content);
-                    return {
-                        book: bookId,
-                        bookName: book.name,
-                        chapter,
-                        verses: verses.map((v: any) => ({
-                            book: bookId,
-                            bookName: book.name,
-                            chapter,
-                            verse: v.verse,
-                            text: v.text
-                        }))
-                    } as BibleChapter;
-                }
-            } catch (err) {
-                // Silently ignore errors (offline, table doesn't exist, etc.)
-            }
-            return null;
-        };
-
-        // Timeout promise: resolves to null after 2s
-        const timeoutPromise = new Promise<BibleChapter | null>((resolve) => {
-            setTimeout(() => resolve(null), 2000);
-        });
-
-        // Race: override check vs 2s timeout — whichever finishes first wins
-        const overrideData = await Promise.race([fetchOverride(), timeoutPromise]);
-        if (overrideData) {
-            chapterCache.set(cacheKey, overrideData);
-            return overrideData;
-        }
-
-        // 2. Fallback to local file
-        // Direct access to flat file structure in public/bible/
-        // Filenames are normalized (lowercase, no accents)
-        // e.g. /bible/genese_1.txt
+        // Load from local file: /bible/genese_1.txt
         const url = `/bible/${bookId}_${chapter}.txt`;
-        console.log(`[Bible] Loading local file: ${url}`);
         const response = await fetch(url);
 
         if (!response.ok) {
@@ -110,9 +62,12 @@ export async function loadChapter(bookId: string, chapter: number): Promise<Bibl
                 // Match formats like: "1. text", "1: text", "1\ttext", etc.
                 const lenientMatch = line.match(/^(\d+)[.:\-\t]\s*(.+)$/);
                 if (lenientMatch) {
+                    let lenientText = lenientMatch[2].trim();
+                    // Also strip Hebrew cross-references here
+                    lenientText = lenientText.replace(/^\(\d+:\d+\)\s*/, '');
                     parsed = {
                         verse: parseInt(lenientMatch[1], 10),
-                        text: lenientMatch[2].trim()
+                        text: lenientText
                     };
                 }
             }
