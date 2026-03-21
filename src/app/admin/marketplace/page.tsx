@@ -6,15 +6,12 @@ import {
     Image as ImageIcon, Loader2, Search, Package, Star, ArrowLeft,
     BookMarked, Upload, X, Check
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { supabase } from '@/lib/supabase';
 import { toast } from 'sonner';
 import {
@@ -24,20 +21,22 @@ import {
 
 export default function AdminMarketplacePage() {
     const [products, setProducts] = useState<Product[]>([]);
-    const [books, setBooks] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [search, setSearch] = useState('');
-    const [tab, setTab] = useState<'products' | 'post'>('products');
+    const [tab, setTab] = useState<'products' | 'post' | 'orders'>('products');
+    const [orders, setOrders] = useState<any[]>([]);
 
     // Post product form
     const [title, setTitle] = useState('');
     const [description, setDescription] = useState('');
     const [price, setPrice] = useState('');
-    const [currency, setCurrency] = useState('XOF');
+    const [currency, setCurrency] = useState('XAF');
     const [category, setCategory] = useState<ProductCategory>('other');
-    const [condition, setCondition] = useState<'new' | 'like_new' | 'used'>('new');
     const [location, setLocation] = useState('');
     const [images, setImages] = useState<string[]>([]);
+    const [stockQuantity, setStockQuantity] = useState('1');
+    const [isNegotiable, setIsNegotiable] = useState(false);
+    const [deliveryOptions, setDeliveryOptions] = useState<string[]>(['pickup']);
     const [isUploading, setIsUploading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -46,21 +45,32 @@ export default function AdminMarketplacePage() {
     // Load all products
     const loadProducts = useCallback(async () => {
         setLoading(true);
-        const { data, error } = await supabase
-            .from('marketplace_products')
         try {
             const { data, error } = await supabase
                 .from('marketplace_products')
-                .select('*')
+                .select('*, seller:marketplace_sellers(id, user_id, shop_name, is_verified)')
                 .order('created_at', { ascending: false });
-            if (!error) setProducts(data || []);
+            if (!error) setProducts((data || []) as any);
         } catch (e: any) { }
         setLoading(false);
     }, []);
 
+    // Load orders
+    const loadOrders = useCallback(async () => {
+        try {
+            const { data } = await supabase
+                .from('marketplace_orders')
+                .select('*, product:marketplace_products(id, title, images, price, currency), buyer:profiles!marketplace_orders_buyer_id_fkey(id, full_name, avatar_url)')
+                .order('created_at', { ascending: false })
+                .limit(50);
+            if (data) setOrders(data);
+        } catch { }
+    }, []);
+
     useEffect(() => {
         loadProducts();
-    }, [loadProducts]);
+        loadOrders();
+    }, [loadProducts, loadOrders]);
 
     // Toggle product pin (featured)
     const togglePinProduct = async (product: Product) => {
@@ -98,9 +108,17 @@ export default function AdminMarketplacePage() {
         }
     };
 
-    // Toggle book pin
-    // Toggle book pin
-    // Function moved to library manager
+    // Update order status
+    const updateOrderStatus = async (orderId: string, status: string) => {
+        const { error } = await supabase
+            .from('marketplace_orders')
+            .update({ status })
+            .eq('id', orderId);
+        if (!error) {
+            setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+            toast.success(`Commande ${status === 'confirmed' ? 'confirmée' : status === 'shipped' ? 'expédiée' : status === 'delivered' ? 'livrée' : status === 'cancelled' ? 'annulée' : 'mise à jour'}`);
+        }
+    };
 
     // Image upload
     const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -135,7 +153,6 @@ export default function AdminMarketplacePage() {
 
         setIsSaving(true);
         try {
-            // Get admin user
             const { data: { user } } = await supabase.auth.getUser();
             if (!user) throw new Error('Non connecté');
 
@@ -153,7 +170,8 @@ export default function AdminMarketplacePage() {
                         user_id: user.id,
                         shop_name: 'Boutique Admin',
                         is_verified: true,
-                        plan: 'premium',
+                        plan: 'enterprise',
+                        max_products: 999,
                     })
                     .select('id')
                     .single();
@@ -170,6 +188,9 @@ export default function AdminMarketplacePage() {
                 category,
                 location: location.trim() || null,
                 images,
+                stock_quantity: parseInt(stockQuantity) || 1,
+                is_negotiable: isNegotiable,
+                delivery_options: deliveryOptions,
                 status: 'active' as const,
             };
 
@@ -188,7 +209,6 @@ export default function AdminMarketplacePage() {
                 toast.success('Produit publié sur la marketplace !');
             }
 
-            // Reset form
             resetForm();
             setTab('products');
             loadProducts();
@@ -199,9 +219,11 @@ export default function AdminMarketplacePage() {
     };
 
     const resetForm = () => {
-        setTitle(''); setDescription(''); setPrice(''); setCurrency('XOF');
-        setCategory('other'); setCondition('new'); setLocation('');
+        setTitle(''); setDescription(''); setPrice(''); setCurrency('XAF');
+        setCategory('other'); setLocation('');
         setImages([]); setEditingProduct(null);
+        setStockQuantity('1'); setIsNegotiable(false);
+        setDeliveryOptions(['pickup']);
     };
 
     const startEdit = (product: Product) => {
@@ -210,9 +232,11 @@ export default function AdminMarketplacePage() {
         setPrice(String(product.price));
         setCurrency(product.currency);
         setCategory(product.category);
-        setCondition(product.condition);
         setLocation(product.location || '');
         setImages(product.images || []);
+        setStockQuantity(String(product.stock_quantity || 1));
+        setIsNegotiable(product.is_negotiable || false);
+        setDeliveryOptions(product.delivery_options || ['pickup']);
         setEditingProduct(product);
         setTab('post');
     };
@@ -224,6 +248,17 @@ export default function AdminMarketplacePage() {
 
     const pinnedProducts = products.filter(p => (p as any).is_featured);
 
+    const getStatusBadge = (status: string) => {
+        switch (status) {
+            case 'pending': return <Badge className="bg-amber-500/20 text-amber-400 border-none text-[9px]">⏳ En attente</Badge>;
+            case 'confirmed': return <Badge className="bg-blue-500/20 text-blue-400 border-none text-[9px]">✅ Confirmée</Badge>;
+            case 'shipped': return <Badge className="bg-purple-500/20 text-purple-400 border-none text-[9px]">📦 Expédiée</Badge>;
+            case 'delivered': return <Badge className="bg-green-500/20 text-green-400 border-none text-[9px]">✓ Livrée</Badge>;
+            case 'cancelled': return <Badge className="bg-red-500/20 text-red-400 border-none text-[9px]">✗ Annulée</Badge>;
+            default: return <Badge className="bg-slate-500/20 text-slate-400 border-none text-[9px]">{status}</Badge>;
+        }
+    };
+
     return (
         <div className="space-y-6">
             {/* Header */}
@@ -234,7 +269,7 @@ export default function AdminMarketplacePage() {
                         Gestion Marketplace
                     </h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        {products.length} produits · {pinnedProducts.length} épinglés
+                        {products.length} produits · {pinnedProducts.length} épinglés · {orders.length} commandes
                     </p>
                 </div>
                 <Button onClick={() => { resetForm(); setTab('post'); }} className="bg-orange-600 hover:bg-orange-700">
@@ -251,6 +286,14 @@ export default function AdminMarketplacePage() {
                     className={tab === 'products' ? 'bg-orange-600' : ''}
                 >
                     <Package className="h-4 w-4 mr-1" /> Produits ({products.length})
+                </Button>
+                <Button
+                    variant={tab === 'orders' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => { setTab('orders'); loadOrders(); }}
+                    className={tab === 'orders' ? 'bg-blue-600' : ''}
+                >
+                    <ShoppingBag className="h-4 w-4 mr-1" /> Commandes ({orders.length})
                 </Button>
                 <Button
                     variant={tab === 'post' ? 'default' : 'outline'}
@@ -313,7 +356,6 @@ export default function AdminMarketplacePage() {
                                 <Card key={product.id} className="bg-white/5 border-white/10">
                                     <CardContent className="p-4">
                                         <div className="flex gap-4">
-                                            {/* Image */}
                                             <div className="w-16 h-16 rounded-lg overflow-hidden bg-white/5 shrink-0">
                                                 {product.images?.[0] ? (
                                                     <img src={product.images[0]} alt="" className="w-full h-full object-cover" />
@@ -323,9 +365,8 @@ export default function AdminMarketplacePage() {
                                                     </div>
                                                 )}
                                             </div>
-                                            {/* Info */}
                                             <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
                                                     <h3 className="font-semibold text-sm truncate">{product.title}</h3>
                                                     {(product as any).is_featured && (
                                                         <Badge className="bg-orange-600/20 text-orange-400 text-[9px] border-none">📌</Badge>
@@ -338,10 +379,9 @@ export default function AdminMarketplacePage() {
                                                     </Badge>
                                                 </div>
                                                 <p className="text-xs text-slate-400 mt-0.5">
-                                                    {formatPrice(product.price, product.currency)} · {product.category}
+                                                    {formatPrice(product.price, product.currency)} · {product.category} · Stock: {product.stock_quantity}
                                                 </p>
                                             </div>
-                                            {/* Actions */}
                                             <div className="flex items-center gap-1 shrink-0">
                                                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => togglePinProduct(product)}
                                                     title={(product as any).is_featured ? 'Désépingler' : 'Épingler'}>
@@ -360,6 +400,82 @@ export default function AdminMarketplacePage() {
                                                 <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => deleteProduct(product.id)}>
                                                     <Trash2 className="h-4 w-4 text-red-400" />
                                                 </Button>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ═══ ORDERS TAB ═══ */}
+            {tab === 'orders' && (
+                <div className="space-y-4">
+                    {orders.length === 0 ? (
+                        <div className="text-center py-12 text-slate-500">
+                            <ShoppingBag className="h-10 w-10 mx-auto mb-3 opacity-50" />
+                            <p>Aucune commande pour le moment</p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-3">
+                            {orders.map(order => (
+                                <Card key={order.id} className="bg-white/5 border-white/10">
+                                    <CardContent className="p-4">
+                                        <div className="flex items-start gap-4">
+                                            <div className="w-12 h-12 rounded-lg overflow-hidden bg-white/5 shrink-0">
+                                                {order.product?.images?.[0] ? (
+                                                    <img src={order.product.images[0]} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    <div className="w-full h-full flex items-center justify-center">
+                                                        <Package className="h-5 w-5 text-slate-600" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <h3 className="font-semibold text-sm truncate">{order.product?.title || 'Produit supprimé'}</h3>
+                                                    {getStatusBadge(order.status)}
+                                                </div>
+                                                <p className="text-xs text-slate-400 mt-0.5">
+                                                    Acheteur: {order.buyer?.full_name || 'Inconnu'} · Qté: {order.quantity} · {formatPrice(order.total_price, order.product?.currency || 'XAF')}
+                                                </p>
+                                                <p className="text-[10px] text-slate-500 mt-0.5">
+                                                    {new Date(order.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                </p>
+                                                {order.delivery_address && (
+                                                    <p className="text-[10px] text-slate-500 mt-0.5">📍 {order.delivery_address}</p>
+                                                )}
+                                                {order.notes && (
+                                                    <p className="text-[10px] text-slate-500 mt-0.5">📝 {order.notes}</p>
+                                                )}
+                                            </div>
+                                            <div className="flex flex-col gap-1 shrink-0">
+                                                {order.status === 'pending' && (
+                                                    <>
+                                                        <Button size="sm" className="h-7 text-[10px] bg-blue-600 hover:bg-blue-700"
+                                                            onClick={() => updateOrderStatus(order.id, 'confirmed')}>
+                                                            ✅ Confirmer
+                                                        </Button>
+                                                        <Button size="sm" variant="outline" className="h-7 text-[10px] text-red-400 border-red-500/30"
+                                                            onClick={() => updateOrderStatus(order.id, 'cancelled')}>
+                                                            ✗ Annuler
+                                                        </Button>
+                                                    </>
+                                                )}
+                                                {order.status === 'confirmed' && (
+                                                    <Button size="sm" className="h-7 text-[10px] bg-purple-600 hover:bg-purple-700"
+                                                        onClick={() => updateOrderStatus(order.id, 'shipped')}>
+                                                        📦 Expédier
+                                                    </Button>
+                                                )}
+                                                {order.status === 'shipped' && (
+                                                    <Button size="sm" className="h-7 text-[10px] bg-green-600 hover:bg-green-700"
+                                                        onClick={() => updateOrderStatus(order.id, 'delivered')}>
+                                                        ✓ Livrée
+                                                    </Button>
+                                                )}
                                             </div>
                                         </div>
                                     </CardContent>
@@ -434,21 +550,53 @@ export default function AdminMarketplacePage() {
                                     className="w-full h-10 rounded-md bg-slate-800 border border-white/10 px-3 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
                                 >
                                     {PRODUCT_CATEGORIES.map(c => (
-                                        <option key={c.value} value={c.value}>{c.icon} {c.label}</option>
+                                        <option key={c.id} value={c.id}>{c.icon} {c.label}</option>
                                     ))}
                                 </select>
                             </div>
                             <div>
-                                <Label className="text-xs text-slate-400">État</Label>
-                                <select
-                                    value={condition}
-                                    onChange={e => setCondition(e.target.value as any)}
-                                    className="w-full h-10 rounded-md bg-slate-800 border border-white/10 px-3 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
-                                >
-                                    <option value="new">Neuf</option>
-                                    <option value="like_new">Comme neuf</option>
-                                    <option value="used">Utilisé</option>
-                                </select>
+                                <Label className="text-xs text-slate-400">Stock</Label>
+                                <Input
+                                    type="number"
+                                    min="1"
+                                    value={stockQuantity}
+                                    onChange={e => setStockQuantity(e.target.value)}
+                                    className="bg-white/5 border-white/10"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="checkbox"
+                                    id="negotiable"
+                                    checked={isNegotiable}
+                                    onChange={e => setIsNegotiable(e.target.checked)}
+                                    className="w-4 h-4 rounded border-white/20 bg-white/5"
+                                />
+                                <Label htmlFor="negotiable" className="text-xs text-slate-400 cursor-pointer">Prix négociable</Label>
+                            </div>
+                            <div>
+                                <Label className="text-xs text-slate-400">Livraison</Label>
+                                <div className="flex gap-2 mt-1">
+                                    {['pickup', 'delivery', 'shipping'].map(opt => (
+                                        <button
+                                            key={opt}
+                                            onClick={() => {
+                                                setDeliveryOptions(prev =>
+                                                    prev.includes(opt) ? prev.filter(o => o !== opt) : [...prev, opt]
+                                                );
+                                            }}
+                                            className={`text-[10px] px-2 py-1 rounded-lg transition-all ${deliveryOptions.includes(opt)
+                                                    ? 'bg-orange-600/30 text-orange-300 border border-orange-500/30'
+                                                    : 'bg-white/5 text-slate-500 border border-white/10'
+                                                }`}
+                                        >
+                                            {opt === 'pickup' ? '🏪 Retrait' : opt === 'delivery' ? '🚗 Livraison' : '📦 Expédition'}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 
