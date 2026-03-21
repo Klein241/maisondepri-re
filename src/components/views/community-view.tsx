@@ -35,6 +35,7 @@ import { TestimonyCard } from "@/components/community/testimony-card";
 import { ChatMessage } from "@/components/community/chat-message";
 import { VoiceMessagePlayer } from "@/components/community/voice-message-player";
 import { cn } from "@/lib/utils";
+import { AdBanner } from '@/components/ads/ad-banner';
 import { formatDistanceToNow } from "date-fns";
 import { fr } from "date-fns/locale";
 import { toast } from "sonner";
@@ -698,6 +699,9 @@ export function CommunityView({ onHideNav }: CommunityViewProps = {}) {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* Sidebar Ad */}
+                                <AdBanner placement="sidebar" variant="card" className="mb-2" />
 
                                 {/* Tab List - stays in header */}
                                 <TabsList className="w-full bg-white/5 p-1 rounded-2xl">

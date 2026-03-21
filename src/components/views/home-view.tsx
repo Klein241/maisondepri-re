@@ -64,6 +64,7 @@ import { useRouter } from 'next/navigation';
 import { getDay } from '@/lib/program-data';
 import { cn } from '@/lib/utils';
 import { TabType } from '@/lib/types';
+import { AdBanner } from '@/components/ads/ad-banner';
 import { supabase } from '@/lib/supabase';
 import { NotificationBell } from '@/components/notification-bell';
 import { toast } from 'sonner';
@@ -1129,6 +1130,9 @@ export function HomeView({ onNavigateToDay, onNavigateTo }: HomeViewProps) {
                             ))}
                         </div>
                     </motion.div>
+
+                    {/* Home Page Ad — reader_end placement */}
+                    <AdBanner placement="reader_end" variant="banner" className="mt-2" />
                 </main>
 
                 {/* Live Registration Flow (for guests) */}

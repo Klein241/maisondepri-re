@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { supabase } from '@/lib/supabase';
 import { useAppStore } from '@/lib/store';
+import { AdBanner } from '@/components/ads/ad-banner';
 
 // Categories — loaded dynamically from Supabase (admin-managed)
 const DEFAULT_CATEGORY_ALL = { id: 'all', label: 'Tout', icon: '📚' };
@@ -59,6 +60,9 @@ interface LibraryAd {
     image_url: string;
     link_url: string;
     is_active: boolean;
+    placement: string;
+    click_count: number;
+    view_count: number;
 }
 
 function slugify(text: string): string {
@@ -354,14 +358,15 @@ export function LibraryView() {
                 .from('library_ads')
                 .select('*')
                 .eq('is_active', true)
+                .eq('placement', 'book_detail')
                 .order('display_order', { ascending: true })
-                .limit(6);
+                .limit(3);
             if (data) {
                 // Filter by date range (start_date / end_date)
                 const today = new Date().toISOString().split('T')[0];
                 const validAds = data.filter(ad => {
-                    if (ad.start_date && ad.start_date > today) return false; // not started yet
-                    if (ad.end_date && ad.end_date < today) return false;     // expired
+                    if (ad.start_date && ad.start_date > today) return false;
+                    if (ad.end_date && ad.end_date < today) return false;
                     return true;
                 });
                 setAds(validAds);
@@ -862,6 +867,9 @@ export function LibraryView() {
                     ))}
                 </div>
 
+                {/* Ad Banner — home_feed placement */}
+                <AdBanner placement="home_feed" variant="banner" className="mb-4" />
+
                 {/* Reading History (login required) */}
                 {showHistory && isLoggedIn && (
                     <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mb-6">
@@ -899,6 +907,9 @@ export function LibraryView() {
                         )}
                     </motion.div>
                 )}
+
+                {/* Search Results Ad (inline) — shown when user is searching */}
+                {searchQuery && <AdBanner placement="search_results" variant="inline" className="mb-4" />}
 
                 {/* Books Grid */}
                 {isLoading ? (

@@ -20,6 +20,7 @@ import {
     Product, PRODUCT_CATEGORIES, ProductCategory,
     formatPrice
 } from '@/lib/marketplace-types';
+import { AdBanner } from '@/components/ads/ad-banner';
 
 // Product image placeholder
 function ProductImagePlaceholder({ category }: { category: string }) {
@@ -429,6 +430,9 @@ export function MarketplaceView() {
                         </button>
                     ))}
                 </div>
+
+                {/* Marketplace Ad */}
+                <AdBanner placement="marketplace" variant="banner" className="mb-4" />
 
                 {/* Products Grid */}
                 {isLoading ? (
