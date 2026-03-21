@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Crimson_Pro } from "next/font/google";
+import { Inter, Crimson_Pro, Cormorant_Garamond, Outfit } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { AuthListener } from "@/components/auth-listener";
@@ -20,9 +20,24 @@ const crimsonPro = Crimson_Pro({
   variable: "--font-crimson",
   subsets: ["latin"],
   weight: ['400', '600', '700'],
-  style: ['normal'], // Only load normal style, not italic to reduce unused fonts
+  style: ['normal'],
   display: "swap",
   preload: true,
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: "--font-cormorant",
+  subsets: ["latin"],
+  weight: ['400', '500', '600'],
+  style: ['normal', 'italic'],
+  display: "swap",
+});
+
+const outfit = Outfit({
+  variable: "--font-outfit",
+  subsets: ["latin"],
+  weight: ['300', '400', '500', '600'],
+  display: "swap",
 });
 
 export const metadata: Metadata = {
@@ -72,7 +87,7 @@ export default function RootLayout({
         <meta name="msapplication-TileImage" content="/icon-192.png" />
       </head>
       <body
-        className={`${inter.variable} ${crimsonPro.variable} antialiased`}
+        className={`${inter.variable} ${crimsonPro.variable} ${cormorant.variable} ${outfit.variable} antialiased`}
       >
         <ThemeProvider
           attribute="class"
