@@ -104,13 +104,37 @@ export default function NotificationsPage() {
 
         try {
             if (targetMode === 'all') {
-                // Send to all users using RPC
-                const { error } = await supabase.rpc('broadcast_notification', {
+                // Try RPC broadcast first (sends to ALL users at once)
+                const { error: rpcError } = await supabase.rpc('broadcast_notification', {
                     notif_title: formData.title,
                     notif_message: formData.message,
                     notif_type: formData.type
                 });
-                if (error) throw error
+
+                if (rpcError) {
+                    // Fallback: fetch all users and insert individually
+                    console.warn('RPC broadcast failed, using fallback:', rpcError.message);
+                    const { data: allUsers } = await supabase
+                        .from('profiles')
+                        .select('id');
+
+                    if (allUsers && allUsers.length > 0) {
+                        const notifications = allUsers.map(u => ({
+                            user_id: u.id,
+                            title: formData.title,
+                            message: formData.message,
+                            type: formData.type,
+                            is_read: false
+                        }));
+
+                        const { error: insertError } = await supabase
+                            .from('notifications')
+                            .insert(notifications);
+
+                        if (insertError) throw insertError;
+                    }
+                }
+
                 toast.success("Notification envoyée à tous les utilisateurs!")
             } else {
                 // Send to selected users individually
