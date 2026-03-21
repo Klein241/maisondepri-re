@@ -47,7 +47,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const setActiveTab = useAppStore(s => s.setActiveTab);
     const setPendingNavigation = useAppStore(s => s.setPendingNavigation);
     const triggerDMRefresh = useAppStore(s => s.triggerDMRefresh);
-    const soundRef = useRef<HTMLAudioElement | null>(null);
+    // Sound is now played via Web Audio API in playSound() — no ref needed
 
     const {
         notifications,
@@ -62,27 +62,26 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
         clearAll,
     } = useNotifications();
 
-    // ── Preload notification sound ──────────────────────────
-    useEffect(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                const audio = new Audio('/notification.mp3');
-                audio.volume = 0.4;
-                // Only assign if the file loads successfully
-                audio.addEventListener('canplaythrough', () => { soundRef.current = audio; }, { once: true });
-                audio.addEventListener('error', () => { /* notification.mp3 not found, sound disabled */ }, { once: true });
-            } catch { /* ignore */ }
-        }
-    }, []);
-
-    // ── Play notification sound ─────────────────────────────
+    // ── Play notification sound (native Web Audio API — no mp3 needed) ──
     const playSound = useCallback(() => {
         try {
-            if (soundRef.current) {
-                soundRef.current.currentTime = 0;
-                soundRef.current.play().catch(() => { });
-            }
-        } catch (e) { /* ignore */ }
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const playTone = (freq: number, startTime: number, duration: number) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0.3, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+                osc.start(startTime);
+                osc.stop(startTime + duration);
+            };
+            // Double-beep (Facebook/Messenger style)
+            playTone(830, ctx.currentTime, 0.15);
+            playTone(1000, ctx.currentTime + 0.18, 0.15);
+        } catch { /* ignore — AudioContext not available */ }
     }, []);
 
     // ── System notification (browser/service worker) ────────

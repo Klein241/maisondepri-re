@@ -5,6 +5,11 @@
 [build.environment]
   NODE_VERSION = "20"
   NEXT_TELEMETRY_DISABLED = "1"
+  NEXT_PUBLIC_SUPABASE_URL = "https://holomdzjifrgirkjuaqv.supabase.co"
+  NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhvbG9tZHpqaWZyZ2lya2p1YXF2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAxMjIwODEsImV4cCI6MjA4NTY5ODA4MX0.RK_zCz3b2LazVZ-LtIRmcK2rC3KLXbSuXfc-mUE9S34"
+  NEXT_PUBLIC_WORKER_URL = "https://maisondepriere-notifications.bufferwave.workers.dev"
+  NEXT_PUBLIC_GOOGLE_CLIENT_ID = "585921336296-np8i09h6l468i0lu7oh97jckgilmp5ah.apps.googleusercontent.com"
+  NEXT_PUBLIC_ADMIN_KEY = "00b9ddb0f9014c6386f0d8c53fee6530e4d22e78cf454e0b"
 
 # NO @netlify/plugin-nextjs — this is a STATIC site (output: 'export')
 # Using the plugin would consume serverless function credits unnecessarily

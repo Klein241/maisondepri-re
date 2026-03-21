@@ -255,13 +255,24 @@ export function NotificationBell() {
             }
         }
 
-        // Always play notification sound (Facebook-style double-tone)
+        // Play native notification sound using Web Audio API (no mp3 needed)
         try {
-            const audio = new Audio('/notification.mp3');
-            audio.volume = 0.4;
-            audio.addEventListener('canplaythrough', () => {
-                audio.play().catch(() => { });
-            }, { once: true });
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const playTone = (freq: number, startTime: number, duration: number) => {
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+                osc.frequency.value = freq;
+                osc.type = 'sine';
+                gain.gain.setValueAtTime(0.3, startTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+                osc.start(startTime);
+                osc.stop(startTime + duration);
+            };
+            // Double-beep like Facebook/Messenger
+            playTone(830, ctx.currentTime, 0.15);
+            playTone(1000, ctx.currentTime + 0.18, 0.15);
         } catch (e) { }
     }, []);
 
