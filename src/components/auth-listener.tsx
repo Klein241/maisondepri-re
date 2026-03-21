@@ -29,6 +29,30 @@ async function ensureProfile(user: {
     }
 }
 
+// Check if user profile is active — if deactivated by admin, sign out
+async function checkProfileActive(userId: string): Promise<boolean> {
+    try {
+        const { data } = await supabase
+            .from('profiles')
+            .select('is_active')
+            .eq('id', userId)
+            .single();
+
+        if (data && data.is_active === false) {
+            console.warn('[Auth] User account is deactivated, signing out');
+            await supabase.auth.signOut();
+            alert('Votre compte a été désactivé par un administrateur. Contactez le support pour plus d\'informations.');
+            return false;
+        }
+        return true;
+    } catch {
+        // If profile doesn't exist (deleted by admin), sign out
+        console.warn('[Auth] Profile not found, signing out');
+        await supabase.auth.signOut();
+        return false;
+    }
+}
+
 export function AuthListener() {
     const { setUser } = useAppStore();
 
@@ -37,6 +61,13 @@ export function AuthListener() {
         const checkSession = async () => {
             const { data: { session } } = await supabase.auth.getSession();
             if (session?.user) {
+                // Check if account is still active before allowing access
+                const isActive = await checkProfileActive(session.user.id);
+                if (!isActive) {
+                    setUser(null);
+                    return;
+                }
+
                 // Set user immediately (don't wait for profile)
                 setUser({
                     id: session.user.id,
@@ -62,6 +93,13 @@ export function AuthListener() {
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (_event, session) => {
                 if (session?.user) {
+                    // Check if account is still active
+                    const isActive = await checkProfileActive(session.user.id);
+                    if (!isActive) {
+                        setUser(null);
+                        return;
+                    }
+
                     setUser({
                         id: session.user.id,
                         email: session.user.email || '',
@@ -86,3 +124,4 @@ export function AuthListener() {
 
     return null;
 }
+

@@ -107,8 +107,6 @@ export default function UsersPage() {
 
         setIsSaving(true);
         try {
-            // Note: In static export mode, we cannot create auth users (requires service role key).
-            // Instead, we create a profile entry. The user should sign up themselves.
             let email: string;
             let phone: string | null = null;
 
@@ -123,11 +121,27 @@ export default function UsersPage() {
                 email = newUser.identifier.trim();
             }
 
-            const id = crypto.randomUUID();
-            const { error } = await supabase
+            // Use signUp to create a proper auth user first
+            // This avoids the FK violation on profiles_id_fkey
+            const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+                email,
+                password: newUser.password,
+                options: {
+                    data: {
+                        full_name: newUser.full_name || 'Utilisateur',
+                    },
+                    emailRedirectTo: undefined, // no redirect needed for admin-created users
+                }
+            });
+
+            if (signUpError) throw signUpError;
+            if (!signUpData.user) throw new Error('Utilisateur non créé');
+
+            // Now update the profile with extra fields
+            const { error: profileError } = await supabase
                 .from('profiles')
-                .insert({
-                    id,
+                .upsert({
+                    id: signUpData.user.id,
                     email,
                     full_name: newUser.full_name || 'Utilisateur',
                     role: newUser.role,
@@ -138,9 +152,11 @@ export default function UsersPage() {
                     avatar_url: `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(newUser.full_name || 'U')}`,
                 });
 
-            if (error) throw error;
+            if (profileError) {
+                console.warn('Profile upsert warning:', profileError.message);
+            }
 
-            toast.success('Profil créé. L\'utilisateur devra s\'inscrire lui-même pour se connecter.');
+            toast.success('Utilisateur créé avec succès ! Il peut maintenant se connecter.');
             setIsAddDialogOpen(false);
             resetNewUser();
             fetchUsers();

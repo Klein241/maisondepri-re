@@ -66,6 +66,7 @@ export default function AdminGroupsPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [uniqueTotalMembers, setUniqueTotalMembers] = useState(0);
 
     // Create Group Dialog
     const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
@@ -120,6 +121,13 @@ export default function AdminGroupsPage() {
             }));
 
             setGroups(groupsWithCounts);
+
+            // Fetch total unique members across all groups for the stat card
+            const { data: allMembers } = await supabase
+                .from('prayer_group_members')
+                .select('user_id');
+            const uniqueUserIds = new Set((allMembers || []).map(m => m.user_id));
+            setUniqueTotalMembers(uniqueUserIds.size);
         } catch (e: any) {
             console.error('Error fetching groups:', e);
             toast.error('Erreur de chargement des groupes');
@@ -369,7 +377,7 @@ export default function AdminGroupsPage() {
         total: groups.length,
         urgent: groups.filter(g => g.is_urgent).length,
         closed: groups.filter(g => !g.is_open).length,
-        totalMembers: groups.reduce((acc, g) => acc + (g.member_count || 0), 0)
+        totalMembers: uniqueTotalMembers
     };
 
     const getInitials = (name: string | null | undefined) => {

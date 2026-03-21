@@ -1594,6 +1594,38 @@
   .parole-memo-stat-num {
     font-size: 22px;
   }
+
+  /* Verse toolbar — compact on mobile */
+  .parole-verse-toolbar {
+    position: relative;
+    top: auto;
+    left: 0;
+    margin-top: 6px;
+    margin-left: 44px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+    gap: 5px;
+    padding: 6px 8px;
+    white-space: normal;
+  }
+
+  .parole-verse-toolbar::after {
+    display: none;
+  }
+
+  .parole-hl-swatch {
+    width: 22px;
+    height: 22px;
+  }
+
+  .parole-tb-act {
+    font-size: 10px;
+    padding: 3px 7px;
+  }
+
+  .parole-tb-div {
+    display: none;
+  }
 }
 
 /* ═══ SCROLLBAR ═══ */

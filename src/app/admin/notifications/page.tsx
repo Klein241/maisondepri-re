@@ -181,7 +181,8 @@ export default function NotificationsPage() {
             fetchHistory()
         } catch (error: any) {
             console.error(error);
-            toast.error("Erreur: " + error.message)
+            const errMsg = typeof error?.message === 'string' ? error.message : JSON.stringify(error?.message || 'Erreur inconnue');
+            toast.error("Erreur: " + errMsg)
         } finally {
             setLoading(false)
         }
