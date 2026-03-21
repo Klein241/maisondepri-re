@@ -13,7 +13,7 @@ const inter = Inter({
   variable: "--font-inter",
   subsets: ["latin"],
   display: "swap",
-  preload: true,
+  preload: false,
 });
 
 const crimsonPro = Crimson_Pro({
@@ -22,7 +22,7 @@ const crimsonPro = Crimson_Pro({
   weight: ['400', '600', '700'],
   style: ['normal'],
   display: "swap",
-  preload: true,
+  preload: false,
 });
 
 const cormorant = Cormorant_Garamond({

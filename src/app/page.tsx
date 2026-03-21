@@ -117,12 +117,25 @@ export default function Home() {
     }
   }, [activeTab]);
 
-  // Handle splash screen duration
+  // Handle splash screen duration AND hydration safety timeout
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const splashTimer = setTimeout(() => {
       setShowSplash(false);
     }, 2500);
-    return () => clearTimeout(timer);
+
+    // Safety: if Zustand hydration never fires (empty/corrupt localStorage,
+    // first visit, or SSG), force isHydrated after 3s to prevent infinite splash
+    const hydrationTimer = setTimeout(() => {
+      if (!useAppStore.getState().isHydrated) {
+        console.warn('[App] Hydration timeout — forcing isHydrated=true');
+        useAppStore.getState().setHydrated(true);
+      }
+    }, 3000);
+
+    return () => {
+      clearTimeout(splashTimer);
+      clearTimeout(hydrationTimer);
+    };
   }, []);
 
   // Wait for hydration or splash screen
