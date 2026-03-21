@@ -843,30 +843,8 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
     };
 
     const loadMessages = async (type: 'conversation' | 'group', id: string) => {
-        // Feature 11: Load from local cache first for instant display
-        try {
-            const cached = type === 'group'
-                ? await getCachedGroupMessages(id)
-                : await getCachedConversationMessages(id);
-            if (cached.length > 0) {
-                setMessages(cached.map(m => ({
-                    id: m.id,
-                    content: m.content,
-                    type: m.type as any,
-                    voice_url: m.voice_url,
-                    voice_duration: m.voice_duration,
-                    file_url: m.file_url,
-                    file_name: m.file_name,
-                    file_type: m.file_type,
-                    sender_id: m.sender_id || m.user_id,
-                    sender: { id: m.sender_id || m.user_id, full_name: m.sender_name || null, avatar_url: m.sender_avatar || null },
-                    created_at: m.created_at,
-                    is_read: true,
-                })));
-            } else {
-                setMessages([]);
-            }
-        } catch { setMessages([]); }
+        // Show empty immediately to avoid stale cache flash
+        setMessages([]);
 
         // Fetch fresh from server
         try {
@@ -1392,9 +1370,11 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
         inputRef.current?.focus();
     };
 
-    // Voice recording
+    // Voice recording — isCancelledRef prevents onstop from sending when cancelled
+    const isCancelledRef = useRef(false);
     const startRecording = async () => {
         try {
+            isCancelledRef.current = false;
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
             mediaRecorderRef.current = mediaRecorder;
@@ -1408,9 +1388,15 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
             };
 
             mediaRecorder.onstop = async () => {
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 stream.getTracks().forEach(track => track.stop());
 
+                // Check cancel flag BEFORE assembling blob
+                if (isCancelledRef.current) {
+                    audioChunksRef.current = [];
+                    return;
+                }
+
+                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
                 // Use ref to get real duration (state is stale in this closure)
                 const duration = recordingTimeRef.current;
                 if (audioBlob.size > 0 && duration > 0) {
@@ -1449,8 +1435,10 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
 
     const cancelRecording = () => {
         if (mediaRecorderRef.current && isRecording) {
+            // Set cancel flag BEFORE stopping — onstop checks this
+            isCancelledRef.current = true;
+            audioChunksRef.current = [];
             mediaRecorderRef.current.stop();
-            audioChunksRef.current = []; // Clear chunks to not send
             setIsRecording(false);
             setIsPaused(false);
             setRecordingTime(0);
@@ -2836,7 +2824,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-green-400 hover:bg-green-500/10"
-                                onClick={() => setActiveCall({ type: 'audio', mode: 'private' })}
+                                onClick={() => {
+                                    if (currentRecipient) {
+                                        initiateCall({
+                                            callerId: user.id,
+                                            callerName: user.name || 'Utilisateur',
+                                            callerAvatar: user.avatar,
+                                            receiverId: currentRecipient.id,
+                                            callType: 'audio',
+                                            conversationId: selectedConversation?.id,
+                                        });
+                                    }
+                                    setActiveCall({ type: 'audio', mode: 'private' });
+                                }}
                                 title="Appel vocal"
                             >
                                 <Phone className="h-5 w-5" />
@@ -2845,7 +2845,19 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                                 variant="ghost"
                                 size="icon"
                                 className="rounded-full text-slate-400 hover:text-blue-400 hover:bg-blue-500/10"
-                                onClick={() => setActiveCall({ type: 'video', mode: 'private' })}
+                                onClick={() => {
+                                    if (currentRecipient) {
+                                        initiateCall({
+                                            callerId: user.id,
+                                            callerName: user.name || 'Utilisateur',
+                                            callerAvatar: user.avatar,
+                                            receiverId: currentRecipient.id,
+                                            callType: 'video',
+                                            conversationId: selectedConversation?.id,
+                                        });
+                                    }
+                                    setActiveCall({ type: 'video', mode: 'private' });
+                                }}
                                 title="Appel vidéo"
                             >
                                 <Video className="h-5 w-5" />
@@ -3641,6 +3653,41 @@ export function WhatsAppChat({ user, onHideNav, activeGroupId, activeConversatio
                     </div>
                 </DialogContent>
             </Dialog>
+            {/* WebRTC Call Overlay — DM/Group view */}
+            {activeCall && (
+                <WebRTCCall
+                    user={{ id: user.id, name: user.name || 'Utilisateur', avatar: user.avatar }}
+                    callType={activeCall.type}
+                    mode={activeCall.mode}
+                    remoteUser={activeCall.mode === 'private' && currentRecipient ? {
+                        id: currentRecipient.id,
+                        name: currentRecipient.full_name || 'Utilisateur',
+                        avatar: currentRecipient.avatar_url || undefined
+                    } : undefined}
+                    conversationId={activeCall.mode === 'private' ? selectedConversation?.id : undefined}
+                    groupId={activeCall.mode === 'group' ? currentGroup?.id : undefined}
+                    groupName={activeCall.mode === 'group' ? currentGroup?.name : undefined}
+                    groupMembers={activeCall.mode === 'group' ? groupMembers.map(m => ({ id: m.id, full_name: m.full_name || 'Membre', avatar_url: m.avatar_url })) : undefined}
+                    isIncoming={activeCall.isIncoming}
+                    onEnd={() => setActiveCall(null)}
+                />
+            )}
+
+            {/* Incoming Call Notification — DM/Group view */}
+            {incomingCall && !activeCall && (
+                <IncomingCallOverlay
+                    call={incomingCall}
+                    onAccept={() => {
+                        setActiveCall({
+                            type: incomingCall.callType,
+                            mode: incomingCall.mode || 'private',
+                            isIncoming: true
+                        });
+                        setIncomingCall(null);
+                    }}
+                    onReject={() => setIncomingCall(null)}
+                />
+            )}
         </div>
     );
 }

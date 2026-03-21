@@ -51,7 +51,7 @@ export function VoiceMessagePlayer({ voiceUrl, duration, isOwn }: { voiceUrl: st
     };
 
     return (
-        <div className="flex items-center gap-3 min-w-[140px] max-w-[220px] w-full">
+        <div className="flex items-center gap-3 min-w-[160px] max-w-[280px] w-full">
             <button
                 onClick={togglePlay}
                 className={cn(
